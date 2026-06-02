@@ -848,4 +848,268 @@ describe('ExtractionResolver', () => {
       await mem2.shutdown();
     });
   });
+
+  describe('defaultAcl (v13)', () => {
+    // ACL principals are opaque strings the host materialises (e.g. v25's
+    // `entity:<personId>`). Use a couple of literal tokens for the tests.
+    const PARTICIPANT_ACL = [
+      { principal: 'entity:person_a', actions: ['read'] as ('read' | 'write')[] },
+      { principal: 'entity:person_b', actions: ['read'] as ('read' | 'write')[] },
+    ];
+
+    it('stamps the acl on every NEW fact, materializing readPrincipals', async () => {
+      const out: ExtractionOutput = {
+        mentions: {
+          m1: { surface: 'Alice', type: 'person' },
+          m2: { surface: 'Acme', type: 'organization' },
+        },
+        facts: [
+          { subject: 'm1', predicate: 'works_at', object: 'm2', confidence: 0.9 },
+        ],
+      };
+      const result = await resolver.resolveAndIngest(out, 'sig_acl_1', scope, {
+        defaultAcl: PARTICIPANT_ACL,
+      });
+      expect(result.facts).toHaveLength(1);
+      const f = result.facts[0]!;
+      // Library stamps the acl verbatim …
+      expect(f.acl).toEqual(PARTICIPANT_ACL);
+      // … and materializes the principal tokens into readPrincipals.
+      expect(f.readPrincipals).toContain('entity:person_a');
+      expect(f.readPrincipals).toContain('entity:person_b');
+    });
+
+    it('stamps the acl on entities created this extraction', async () => {
+      const out: ExtractionOutput = {
+        mentions: {
+          m_task: {
+            surface: 'Send Q3 budget by Friday',
+            type: 'task',
+            identifiers: [
+              { kind: 'canonical', value: 'task:send-q3-budget-2026-04-30' },
+            ],
+          },
+        },
+        facts: [],
+      };
+      const result = await resolver.resolveAndIngest(out, 'sig_acl_2', scope, {
+        defaultAcl: PARTICIPANT_ACL,
+      });
+      expect(result.entities).toHaveLength(1);
+      const task = result.entities[0]!.entity;
+      expect(task.acl).toEqual(PARTICIPANT_ACL);
+      expect(task.readPrincipals).toContain('entity:person_a');
+      expect(task.readPrincipals).toContain('entity:person_b');
+    });
+
+    it('does NOT clobber pre-existing entity acl on re-resolve', async () => {
+      // First extraction stamps an initial ACL on a Person entity.
+      const FIRST_ACL = [
+        { principal: 'entity:person_a', actions: ['read'] as ('read' | 'write')[] },
+      ];
+      const out1: ExtractionOutput = {
+        mentions: {
+          m1: {
+            surface: 'Carol',
+            type: 'person',
+            identifiers: [{ kind: 'email', value: 'carol@acme.com' }],
+          },
+        },
+        facts: [],
+      };
+      const res1 = await resolver.resolveAndIngest(out1, 'sig_1', scope, {
+        defaultAcl: FIRST_ACL,
+      });
+      const personId = res1.entities[0]!.entity.id;
+      expect(res1.entities[0]!.entity.acl).toEqual(FIRST_ACL);
+
+      // Second extraction re-resolves the SAME Person (same identifier) with a
+      // DIFFERENT defaultAcl. Pre-existing acl must survive untouched —
+      // resolve-side never narrows access state.
+      const SECOND_ACL = [
+        { principal: 'entity:person_z', actions: ['read'] as ('read' | 'write')[] },
+      ];
+      const out2: ExtractionOutput = {
+        mentions: {
+          m1: {
+            surface: 'Carol',
+            type: 'person',
+            identifiers: [{ kind: 'email', value: 'carol@acme.com' }],
+          },
+        },
+        facts: [],
+      };
+      const res2 = await resolver.resolveAndIngest(out2, 'sig_2', scope, {
+        defaultAcl: SECOND_ACL,
+      });
+      expect(res2.entities[0]!.entity.id).toBe(personId);
+      expect(res2.entities[0]!.resolved).toBe(true);
+      // The re-resolved entity still carries the FIRST ACL (host must use
+      // memory.setAccess for explicit updates — resolver path never narrows).
+      const fetched = await mem.getEntity(personId, scope);
+      expect(fetched?.acl).toEqual(FIRST_ACL);
+    });
+
+    it('omitted defaultAcl leaves facts/entities with no acl (pre-v13 behavior)', async () => {
+      const out: ExtractionOutput = {
+        mentions: {
+          m1: { surface: 'Dave', type: 'person' },
+        },
+        facts: [
+          { subject: 'm1', predicate: 'works_at', value: 'somewhere' },
+        ],
+      };
+      const result = await resolver.resolveAndIngest(out, 'sig_acl_3', scope);
+      expect(result.entities[0]!.entity.acl).toBeUndefined();
+      expect(result.facts[0]!.acl).toBeUndefined();
+    });
+  });
+
+  describe('anchorIds passthrough (v13)', () => {
+    // Pre-create a real "priority" entity so we can use its id as a raw anchor.
+    // In production these are stamped by the host's priority pipeline; here we
+    // mint one inline so the test exercises only the resolver fallback path.
+    async function mintPriority(label: string) {
+      const res = await mem.upsertEntityBySurface(
+        { surface: label, type: 'priority', identifiers: [] },
+        scope,
+      );
+      return res.entity.id;
+    }
+
+    it('raw anchor id in fact.contextIds passes through when listed in anchorIds[]', async () => {
+      const priorityId = await mintPriority('Q3 Budget');
+
+      const out: ExtractionOutput = {
+        mentions: {
+          m1: { surface: 'John', type: 'person' },
+        },
+        facts: [
+          {
+            subject: 'm1',
+            predicate: 'expressed_concern',
+            value: 'Oracle pricing',
+            // Raw entity id — NOT a mention label. v12 would silently drop
+            // this; v13's anchorIds allowlist permits passthrough.
+            contextIds: [priorityId],
+            confidence: 0.85,
+            importance: 0.7,
+          },
+        ],
+      };
+      const result = await resolver.resolveAndIngest(out, 'sig_anchor_1', scope, {
+        anchorIds: [priorityId],
+      });
+
+      expect(result.facts).toHaveLength(1);
+      expect(result.facts[0]!.contextIds).toEqual([priorityId]);
+      // No "context label not found" entry should appear.
+      const dropMessages = result.unresolved
+        .filter((u) => u.where === 'fact:0')
+        .map((u) => u.reason);
+      expect(dropMessages).toEqual([]);
+    });
+
+    it('raw id NOT in anchorIds[] is dropped (current pre-v13 behavior for unknowns)', async () => {
+      const out: ExtractionOutput = {
+        mentions: {
+          m1: { surface: 'John', type: 'person' },
+        },
+        facts: [
+          {
+            subject: 'm1',
+            predicate: 'expressed_concern',
+            value: 'something',
+            contextIds: ['some_random_priority_id_that_is_not_allowlisted'],
+          },
+        ],
+      };
+      // No anchorIds passed → fallback is empty set → the raw id drops.
+      const result = await resolver.resolveAndIngest(out, 'sig_anchor_2', scope);
+      expect(result.facts).toHaveLength(1);
+      expect(result.facts[0]!.contextIds).toBeUndefined();
+      expect(result.unresolved.some((u) => /not found in mentions/.test(u.reason))).toBe(true);
+    });
+
+    it('servesAnchorId on task metadata accepts raw anchor id via the same allowlist', async () => {
+      const priorityId = await mintPriority('Q3 Launch');
+
+      const out: ExtractionOutput = {
+        mentions: {
+          t1: {
+            surface: 'Send Q3 status update',
+            type: 'task',
+            identifiers: [
+              { kind: 'canonical', value: 'task:send-q3-status-2026-06-30' },
+            ],
+            // Raw anchor id — pre-v13 would silently drop because the
+            // translator only consulted labelToEntityId.
+            metadata: {
+              state: 'proposed',
+              servesAnchorId: priorityId,
+            },
+          },
+        },
+        facts: [],
+      };
+      const result = await resolver.resolveAndIngest(out, 'sig_anchor_3', scope, {
+        anchorIds: [priorityId],
+      });
+
+      expect(result.entities).toHaveLength(1);
+      const task = result.entities[0]!.entity as { metadata?: { servesAnchorId?: string } };
+      expect(task.metadata?.servesAnchorId).toBe(priorityId);
+    });
+
+    it('stale anchor id (not visible in scope) is dropped + reported via unresolved', async () => {
+      // No priority is minted. Caller passes a plausible-looking but unknown id.
+      const STALE_ID = 'priority_that_does_not_exist_12345';
+
+      const out: ExtractionOutput = {
+        mentions: {
+          m1: { surface: 'John', type: 'person' },
+        },
+        facts: [
+          {
+            subject: 'm1',
+            predicate: 'expressed_concern',
+            value: 'pricing',
+            contextIds: [STALE_ID],
+          },
+        ],
+      };
+      const result = await resolver.resolveAndIngest(out, 'sig_anchor_stale', scope, {
+        anchorIds: [STALE_ID],
+      });
+
+      // The validating pre-pass logs a clearly-labeled unresolved entry.
+      expect(
+        result.unresolved.some(
+          (u) =>
+            u.where === 'options.anchorIds' &&
+            u.reason.includes('not visible in caller scope'),
+        ),
+      ).toBe(true);
+      // And because the id never enters knownAnchorIds, the fact's contextIds
+      // ALSO drop it through the normal fact-contextIds reporting path.
+      expect(result.facts).toHaveLength(1);
+      expect(result.facts[0]!.contextIds).toBeUndefined();
+    });
+
+    it('non-string anchor id input is rejected with a clear unresolved entry', async () => {
+      const result = await resolver.resolveAndIngest(
+        { mentions: { m1: { surface: 'X', type: 'person' } }, facts: [] },
+        'sig_anchor_typed',
+        scope,
+        {
+          // Cast through any to model a caller passing junk despite the types.
+          anchorIds: [123, null, ''] as unknown as string[],
+        },
+      );
+      const rejections = result.unresolved.filter((u) => u.where === 'options.anchorIds');
+      // 123 and null get the "non-string" rejection; "" is falsy and also rejected.
+      expect(rejections.length).toBeGreaterThanOrEqual(2);
+      expect(rejections.every((r) => /non-string anchor id rejected/.test(r.reason))).toBe(true);
+    });
+  });
 });

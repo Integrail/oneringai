@@ -35,12 +35,12 @@ const baseRegistry = PredicateRegistry.empty().registerAll([
 
 describe('defaultExtractionPrompt — subject-of hints (opt-in)', () => {
   it('exports current prompt version', () => {
-    // v12: task mentions teach `reporterId` (library-native task metadata
-    // field) so third-party commitments — "Anton: Sarah will own the launch
-    // deck" — land with assigneeId=m_sarah AND reporterId=m_anton. Replaces
-    // the v10/v11-era `committed_to(committer, task)` fact for this case;
-    // resolver translates the label via TRANSLATABLE_METADATA_FIELDS.
-    expect(DEFAULT_EXTRACTION_PROMPT_VERSION).toBe(12);
+    // v13: `extractableEntityTypes` allowlist parameterises the mention-schema
+    // `type` field + the intro; "world isn't a fact" posture explicitly bans
+    // participation/presence/vague-affect emissions; `expressed_concern` /
+    // `expressed_interest` require a priority binding via `contextIds`;
+    // examples re-grounded on predicates that exist in standard.ts.
+    expect(DEFAULT_EXTRACTION_PROMPT_VERSION).toBe(13);
   });
 
   it('default (no flag) does NOT include the subject-of section', () => {

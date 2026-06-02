@@ -1491,6 +1491,7 @@ export {
   createMemorySystemWithConnectors,
   defaultExtractionPrompt,
   DEFAULT_EXTRACTION_PROMPT_VERSION,
+  DEFAULT_EXTRACTABLE_ENTITY_TYPES,
   ExtractionResolver,
   SignalIngestor,
   ConnectorExtractor,

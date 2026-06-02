@@ -1210,6 +1210,21 @@ export interface UpsertBySurfaceInput {
    * On create (no match), all keys are set verbatim.
    */
   metadata?: Record<string, unknown>;
+  /**
+   * Optional explicit `acl` to stamp on the entity at CREATE time. Used by the
+   * extraction resolver (via `ExtractionResolverOptions.defaultAcl`) to grant
+   * read access to signal participants for content-bearing entity types (e.g.
+   * Task / Topic created from an email) so other ICOS users on the same thread
+   * can read the entity without re-extracting.
+   *
+   * **Create-only.** The match-existing branches (Tier 1 / Tier 4 dedup,
+   * normalized-name find) IGNORE this field and leave any pre-existing entity
+   * `acl` untouched — re-resolving across signals must never narrow or
+   * clobber access state another signal's writer established. The host
+   * grants additional access via `MemorySystem.setAccess` post-resolve when
+   * a per-entity update is genuinely intended.
+   */
+  acl?: ACLEntry[];
 }
 
 export interface UpsertBySurfaceOptions {

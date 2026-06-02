@@ -20,6 +20,7 @@ export type {
 export {
   defaultExtractionPrompt,
   DEFAULT_EXTRACTION_PROMPT_VERSION,
+  DEFAULT_EXTRACTABLE_ENTITY_TYPES,
 } from './defaultExtractionPrompt.js';
 export type {
   ExtractionPromptContext,

@@ -18,6 +18,7 @@
  * per-item and surfaced in the result for caller review.
  */
 
+import type { ACLEntry } from '../../access/principals.js';
 import { logger } from '../../infrastructure/observability/Logger.js';
 import type { MemorySystem } from '../MemorySystem.js';
 import type {
@@ -234,6 +235,67 @@ export interface ExtractionResolverOptions {
    * doesn't carry an `observedAt` field, so there's nothing to honor.
    */
   sourceObservedAt?: Date;
+  /**
+   * Allowlist of raw entity ids the LLM may reference directly inside facts'
+   * `contextIds` (and inside task metadata's `servesAnchorId`) without going
+   * through the mention/pre-resolved label vocabulary. Designed for ANCHORS
+   * (priorities, OKRs, focus areas) that the prompt's "Active priorities"
+   * block exposes by raw id — the LLM is told to echo those ids verbatim,
+   * so the resolver must accept them as legitimate.
+   *
+   * Behavior:
+   *  - Fact `contextIds` translation: when an entry is NOT in the local
+   *    label map AND IS in this allowlist, the entry passes through as a
+   *    raw entity id (no upsert, no resolve). Entries not in the label map
+   *    AND not in this allowlist are dropped to `unresolved` (current behavior).
+   *  - Mention `metadata.servesAnchorId` (task): same fallback — fixes the
+   *    pre-v13 silent-drop bug where the LLM emitted raw anchor ids per the
+   *    prompt's `<anchor_id>` placeholder but the translator only looked up
+   *    label-bound ids.
+   *
+   * The caller is responsible for membership integrity — typically this is
+   * `anchors.map(a => a.id)` from `ExtractionPromptContext.anchors[]`, kept
+   * in lock-step so the LLM sees the same ids the resolver accepts.
+   *
+   * Empty or omitted → pre-v13 behavior (label translation only).
+   */
+  anchorIds?: string[];
+  /**
+   * Default `acl` stamped on every newly-created fact AND every newly-created
+   * entity produced by this extraction. The library passes it through verbatim
+   * to `memory.addFact` and `memory.upsertEntityBySurface` — both write paths
+   * already accept `acl`; `materializePrincipals` unions it with owner/group/
+   * world so adding ACL grants never narrows existing visibility.
+   *
+   * Designed for the host's "grant by signal participants" policy: an email
+   * extracted by user A creates Task/Topic entities AND facts visible to every
+   * tenant participant (sender + recipients + cc), letting other ICOS users
+   * on the same thread read the same content without re-extracting.
+   *
+   * Semantics:
+   *  - **Facts:** applied uniformly to every fact newly written by this
+   *    extraction (Pass 2 creates + reconciliation `create` ops). There is no
+   *    per-fact `acl` channel today — `ExtractionFactSpec` has no `acl` field
+   *    and the LLM never emits one. If per-fact granularity is needed later,
+   *    add `acl?: ACLEntry[]` to `ExtractionFactSpec` and switch the write
+   *    site to `spec.acl ?? opts.defaultAcl`; until then this option is the
+   *    sole source of fact-level ACL stamping.
+   *  - **Entities — new only:** applied to each entity that the resolver
+   *    creates this extraction (`resolved: false`). Existing-entity matches
+   *    are NOT modified — pre-existing `acl` on a re-resolved entity stays
+   *    intact (resolver never clobbers cross-signal access state).
+   *  - **Reconciliation `update`/`archive`:** unaffected. Those ops patch
+   *    value/details/archived without touching `acl`/`readPrincipals`, so
+   *    facts retain their creation-time ACL across the lifetime.
+   *
+   * Pass `undefined` (or omit) to keep pre-0.x behavior — facts and entities
+   * inherit only the legacy owner/group/world principals from their scope.
+   *
+   * The host is responsible for building the ACL — typically via a helper like
+   * v25's `buildParticipantReadAcl(participantPersonIds)` which produces
+   * `{ principal: entity:<personId>, actions: ['read'] }` entries.
+   */
+  defaultAcl?: ACLEntry[];
 }
 
 // =============================================================================
@@ -330,6 +392,51 @@ export class ExtractionResolver {
       }
     }
 
+    // Anchor-id allowlist for the contextIds + metadata.servesAnchorId
+    // passthrough. See `ExtractionResolverOptions.anchorIds` for the contract.
+    //
+    // PRE-VALIDATE against memory: callers can in principle pass stale or
+    // mistyped ids (an anchor that was archived between the prompt render and
+    // the resolver call, a typo on a hand-curated test). Without validation
+    // those would persist as raw entity references on facts and as
+    // `metadata.servesAnchorId` on task entities — both bypass the storage
+    // layer's normal "context entity must exist + be visible" check because
+    // anchor passthrough is the explicit unchecked path.
+    //
+    // Validation cost is one `getEntity` per anchor (typically 1–5 per tick).
+    // Invalid ids drop with an `unresolved` entry so callers can detect drift;
+    // valid ids land in the Set used by every downstream loop. Empty input →
+    // empty Set (no DB calls).
+    const knownAnchorIds = new Set<EntityId>();
+    if (opts?.anchorIds && opts.anchorIds.length > 0) {
+      for (const aid of opts.anchorIds) {
+        if (!aid || typeof aid !== 'string') {
+          unresolved.push({
+            where: 'options.anchorIds',
+            reason: `non-string anchor id rejected: ${JSON.stringify(aid)}`,
+          });
+          continue;
+        }
+        if (knownAnchorIds.has(aid)) continue; // dedupe
+        try {
+          const ent = await this.memory.getEntity(aid, scope);
+          if (ent) {
+            knownAnchorIds.add(aid);
+          } else {
+            unresolved.push({
+              where: 'options.anchorIds',
+              reason: `anchor id "${aid}" not visible in caller scope — passthrough denied`,
+            });
+          }
+        } catch (err) {
+          unresolved.push({
+            where: 'options.anchorIds',
+            reason: `anchor id "${aid}" lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+      }
+    }
+
     // ----- Pass 1: mentions → entities -----
     // Resolve in two sub-phases so disambiguationEntityIds can include already-
     // resolved sibling labels (improves disambiguation).
@@ -350,6 +457,13 @@ export class ExtractionResolver {
             aliases: mention.aliases ?? [],
             disambiguationEntityIds,
             metadata: mention.metadata,
+            // Per `ExtractionResolverOptions.defaultAcl`: stamped on CREATE only.
+            // `upsertEntityBySurface` ignores `acl` when matching an existing
+            // entity (see EntityResolver) so a re-resolved cross-tenant Person
+            // is not narrowed by an inbound participant grant.
+            ...(opts?.defaultAcl && opts.defaultAcl.length > 0
+              ? { acl: opts.defaultAcl }
+              : {}),
           },
           scope,
           { autoResolveThreshold: opts?.autoResolveThreshold },
@@ -412,7 +526,12 @@ export class ExtractionResolver {
           continue;
         }
 
-        const id = labelToEntityId.get(llmVal);
+        // Same resolution order as fact-contextIds: local label map first;
+        // anchor-id allowlist fallback so raw anchor ids the LLM is told to
+        // echo (servesAnchorId) pass through without hitting the silent-drop
+        // pre-v13 path. See `ExtractionResolverOptions.anchorIds`.
+        const id =
+          labelToEntityId.get(llmVal) ?? (knownAnchorIds.has(llmVal) ? llmVal : undefined);
         if (id) {
           patch[key] = id;
           changed = true;
@@ -605,7 +724,12 @@ export class ExtractionResolver {
         if (spec.contextIds && spec.contextIds.length > 0) {
           const resolvedIds: EntityId[] = [];
           for (const cid of spec.contextIds) {
-            const resolved = labelToEntityId.get(cid);
+            // Resolution order: (1) local label map (mention or pre-resolved
+            // binding), then (2) the caller's anchor-id allowlist for raw
+            // entity ids the LLM is permitted to reference directly (e.g.
+            // priorities echoed from the "Active priorities" block).
+            const resolved =
+              labelToEntityId.get(cid) ?? (knownAnchorIds.has(cid) ? cid : undefined);
             if (!resolved) {
               unresolved.push({
                 where: `fact:${i}`,
@@ -686,6 +810,13 @@ export class ExtractionResolver {
             validUntil: toDate(spec.validUntil),
             sourceSignalId,
             evidenceQuote: spec.evidenceQuote,
+            // Per `ExtractionResolverOptions.defaultAcl`: applied uniformly to
+            // every fact newly written by this extraction. No per-fact acl
+            // channel exists today (`ExtractionFactSpec` has no acl field;
+            // the prompt doesn't surface it to the LLM).
+            ...(opts?.defaultAcl && opts.defaultAcl.length > 0
+              ? { acl: opts.defaultAcl }
+              : {}),
           },
           scope,
         );
@@ -713,6 +844,8 @@ export class ExtractionResolver {
         unresolved,
         opts.skepticFilter,
         opts.sourceObservedAt,
+        opts.defaultAcl,
+        knownAnchorIds,
       );
       // Capture newly created facts so callers see them in the result.
       // (dispatchReconciliationOps pushes onto writtenFacts directly.)
@@ -756,6 +889,8 @@ export class ExtractionResolver {
     unresolved: IngestionError[],
     skepticFilter: ((op: ReconciliationOp) => boolean) | undefined,
     sourceObservedAt: Date | undefined,
+    defaultAcl: ACLEntry[] | undefined,
+    knownAnchorIds: Set<EntityId>,
   ): Promise<OperationOutcome> {
     const outcome: OperationOutcome = {
       creates: 0,
@@ -814,9 +949,27 @@ export class ExtractionResolver {
               continue;
             }
           }
-          const contextIds = op.contextIds
-            ?.map((c) => labelToEntityId.get(c))
-            .filter((c): c is EntityId => !!c);
+          // Mirror Pass 2's fact-contextIds behavior: explicitly log every
+          // drop to `unresolved` so caller / LLM drift on reconciliation
+          // creates is debuggable. Resolution order matches Pass 2: local
+          // label map → anchor-id allowlist → drop.
+          let contextIds: EntityId[] | undefined;
+          if (op.contextIds && op.contextIds.length > 0) {
+            const resolved: EntityId[] = [];
+            for (const c of op.contextIds) {
+              const id =
+                labelToEntityId.get(c) ?? (knownAnchorIds.has(c) ? c : undefined);
+              if (!id) {
+                unresolved.push({
+                  where: `op:${i}`,
+                  reason: `create: context label "${c}" not found in mentions (dropped from contextIds; fact still written)`,
+                });
+                continue;
+              }
+              resolved.push(id);
+            }
+            contextIds = resolved.length > 0 ? resolved : undefined;
+          }
           await this.memory.addFact(
             {
               subjectId,
@@ -832,6 +985,10 @@ export class ExtractionResolver {
               evidenceQuote: op.evidenceQuote,
               observedAt: sourceObservedAt,
               dedup: true,
+              // Reconciliation creates respect the extraction-level ACL — a
+              // brand-new fact emitted as a reconciliation op should be as
+              // readable as a fresh-extraction fact.
+              ...(defaultAcl && defaultAcl.length > 0 ? { acl: defaultAcl } : {}),
             },
             scope,
           );

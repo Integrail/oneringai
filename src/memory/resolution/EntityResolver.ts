@@ -506,6 +506,12 @@ export class EntityResolver {
         contextIds: input.contextIds,
         aliasesForMerge,
         metadataMerge: opts?.metadataMerge ?? 'fillMissing',
+        // CREATE-only acl stamp: `tryAtomicCreateOrResolve` plumbs this into
+        // `NewEntity` → `createEntity`. On race-loss / pre-existing match, the
+        // helper falls into the alias-accumulation path which IGNORES `acl` —
+        // pre-existing entity access state is never narrowed by a later
+        // resolve. See `UpsertBySurfaceInput.acl` doc.
+        acl: input.acl,
       },
       scope,
     );
