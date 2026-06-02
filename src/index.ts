@@ -1777,6 +1777,26 @@ export type {
   SweepOptions,
 } from './memory/index.js';
 
+// Bare-name `Identifier` alongside the existing `MemoryIdentifier` alias —
+// host code historically imported it under the unaliased name. Both
+// aliases must remain valid; consumers of `MemoryIdentifier` (e.g. ICOS's
+// ChiefOfStaffProfileGenerator) and consumers of the bare `Identifier`
+// (e.g. ICOS's participantResolver) coexist.
+export type { Identifier } from './memory/index.js';
+
+// Composer types — the composer VALUES (taskContentComposer, etc.) are
+// re-exported above for hosts that WRAP a library default. The TYPES were
+// missing from the top-level surface, so hosts that declare their own
+// composer via `EntityContentComposer` could not import the contract
+// without reaching into the `./memory` subpath (which is not in the
+// package's `exports`). Adding them here keeps the public surface
+// self-contained.
+export type {
+  EntityContentComposer,
+  FactContentComposer,
+  ComposeContext,
+} from './memory/index.js';
+
 // ============ Integration Testing ============
 export { IntegrationTestRunner, registerSuite } from './testing/integration/index.js';
 export type {
