@@ -160,7 +160,7 @@ export function applyRestrainedExtractionContract(
           itemRef: `mention:${label}`,
           reasonCode: 'no_anchors',
           reasonText:
-            'No active anchors for this user; task kept without binding for downstream FYI scoring.',
+            'No active anchors for this extraction context; task kept without binding for downstream FYI scoring.',
           meta: { surface: mention.surface },
         });
         continue;

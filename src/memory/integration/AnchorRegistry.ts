@@ -40,7 +40,8 @@ export interface Anchor {
  */
 export interface AnchorRegistry {
   /**
-   * Return active anchors for the user. Empty array means "no active
+   * Return active anchors for the supplied user or host-defined scope. Empty
+   * array means "no active
    * anchors" — under `strict` priority binding, callers should treat this as
    * a hard signal that nothing should be emitted.
    */
@@ -48,7 +49,8 @@ export interface AnchorRegistry {
 
   /**
    * Validate a host-emitted binding. Returns `true` if `anchorId` is one of
-   * this user's currently active anchors. Implementations may apply
+   * the currently active anchors for the supplied user or host-defined scope.
+   * Implementations may apply
    * additional rules (recency, scope, etc.).
    */
   validateBinding(userId: string, anchorId: string): Promise<boolean>;

@@ -113,6 +113,17 @@ describe('prompt v5 — strict preset', () => {
     expect(p).toContain('servesAnchorId');
   });
 
+  it('renders a host-supplied anchor context description', () => {
+    const p = defaultExtractionPrompt({
+      signalText: 'x',
+      eagerness: EAGERNESS_PRESETS.strict,
+      anchors: ANCHORS,
+      anchorContextDescription: 'The active priorities for ICOS participants in this email',
+    });
+    expect(p).toContain('The active priorities for ICOS participants in this email');
+    expect(p).not.toContain("The user's currently active priorities");
+  });
+
   it('emits the no-active-priorities clause when strict + zero anchors — but tasks still extract', () => {
     // v10+: strict + zero anchors no longer suppresses extraction. The clause
     // tells the LLM to extract normally and omit servesAnchorId; the host

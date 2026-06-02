@@ -224,11 +224,22 @@ export interface ExtractionPromptContext {
   eagerness?: EagernessProfile;
 
   /**
-   * Active anchors (priorities, OKRs, focus areas) for the user. Surfaced in
-   * the prompt only when `eagerness.requirePriorityBinding !== 'off'`. Each
+   * Active anchors (priorities, OKRs, focus areas) for the current extraction
+   * context. Hosts may pass one user's anchors, a project/team anchor set, or
+   * a merged participant-priority set for shared source processing. Surfaced
+   * in the prompt only when `eagerness.requirePriorityBinding !== 'off'`. Each
    * anchor's `id` is what the LLM should echo back as `servesAnchorId`.
    */
   anchors?: Anchor[];
+
+  /**
+   * Human-readable description of what `anchors` represent. Defaults to a
+   * source-neutral phrase so shared-source processors do not have to pretend
+   * the anchors belong to a single claimant user.
+   *
+   * Example: "The active priorities for ICOS users participating in this email".
+   */
+  anchorContextDescription?: string;
 
   /**
    * Recent dismissals to inject as negative examples. Rendered up to
@@ -350,6 +361,7 @@ export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
     preResolvedBindings,
     eagerness,
     anchors,
+    anchorContextDescription,
     negativeExamples,
     priorThreadContext,
     priorFacts,
@@ -437,7 +449,12 @@ export function defaultExtractionPrompt(ctx: ExtractionPromptContext): string {
   const scopeDescription = describeScope(targetScope ?? {});
   const preResolvedSection = renderPreResolvedBindings(preResolvedBindings);
   const knownSection = renderKnownEntities(knownEntities);
-  const restraintSection = renderRestraintSection(eagerness, anchors, negativeExamples);
+  const restraintSection = renderRestraintSection(
+    eagerness,
+    anchors,
+    negativeExamples,
+    anchorContextDescription,
+  );
   const reconciliationMode = !!priorFacts && priorFacts.length > 0;
   const reconciliationSection = renderReconciliationSection(priorFacts);
   const factSchemaSuffix = eagerness ? renderFactSchemaSuffix(eagerness) : '';
@@ -967,12 +984,13 @@ function makeNonce(): string {
  *
  * The section reframes the LLM's job: silence is the easy answer; output
  * requires explicit justification, evidence, and (when configured) a binding
- * to a stated user priority.
+ * to an active priority anchor.
  */
 function renderRestraintSection(
   eagerness: EagernessProfile | undefined,
   anchors: Anchor[] | undefined,
   negativeExamples: Array<{ snippet: string; reason?: string }> | undefined,
+  anchorContextDescription: string | undefined,
 ): string {
   if (!eagerness) return '';
 
@@ -994,7 +1012,7 @@ function renderRestraintSection(
   lines.push('');
   lines.push('## Restraint posture');
   lines.push(
-    'Silence is the **easy answer**. Output requires evidence and (where configured) a binding to one of the user\'s stated priorities. Acting needs justification; skipping does not. If the signal is thin or noisy, prefer empty arrays.',
+    'Silence is the **easy answer**. Output requires evidence and (where configured) a binding to an active priority anchor. Acting needs justification; skipping does not. If the signal is thin or noisy, prefer empty arrays.',
   );
 
   if (eagerness.requireJustification) {
@@ -1021,8 +1039,11 @@ function renderRestraintSection(
         ? "### Priority binding (REQUIRED for task mentions)"
         : '### Priority binding (preferred for task mentions)',
     );
+    const anchorContext = sanitizeInlineString(
+      anchorContextDescription ?? 'The active priorities for this extraction context',
+    );
     lines.push(
-      "The user's currently active priorities. For every `task` mention, include `metadata.servesAnchorId` set to one of these ids:",
+      `${anchorContext}. For every \`task\` mention, include \`metadata.servesAnchorId\` set to one of these ids:`,
     );
     for (const a of anchors) {
       const kind = a.kind ? ` [${sanitizeInlineString(a.kind)}]` : '';
@@ -1056,7 +1077,7 @@ function renderRestraintSection(
     lines.push('');
     lines.push('### No active priorities');
     lines.push(
-      'The user has no active priorities right now. Extract tasks normally — omit `metadata.servesAnchorId` since there are no priorities to bind to. Unbound tasks still belong in the knowledge graph; the host scores them at lower priority.',
+      'This extraction context has no active priorities right now. Extract tasks normally — omit `metadata.servesAnchorId` since there are no priorities to bind to. Unbound tasks still belong in the knowledge graph; the host scores them at lower priority.',
     );
   }
 

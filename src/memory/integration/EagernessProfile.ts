@@ -45,7 +45,7 @@ export interface EagernessProfile {
    *  (`whyActionable`). `false` keeps the prompt and parser silent on this. */
   requireJustification: boolean;
 
-  /** Bind each emitted Task to a stated user priority (an "anchor"). Strict
+  /** Bind each emitted Task to a stated priority anchor. Strict
    *  drops items whose binding doesn't match an active anchor; soft renders
    *  anchors in the prompt but doesn't enforce. */
   requirePriorityBinding: EagernessLevel;
