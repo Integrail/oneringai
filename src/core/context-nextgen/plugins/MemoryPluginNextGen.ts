@@ -936,7 +936,8 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
   }
 
   /**
-   * Render the "User-specific instructions for this agent" block. One fact per
+   * Render the "Your persona" block — the assistant's user-configured persona /
+   * behavior rules (NOT facts about the user). One fact per
    * rule; each prefixed with its short factId so the agent can reference it in
    * `memory_set_agent_rule.replaces` when the user supersedes the rule.
    *
@@ -980,8 +981,8 @@ export class MemoryPluginNextGen implements IContextPluginNextGen {
     if (rules.length === 0) return null;
 
     const lines: string[] = [
-      '## User-specific instructions for this agent',
-      '_The items below describe YOU — your identity, persona, tone, and behavior — as the current user wants them. Read each as self-description (first-person) and honor it over your default behavior. Each line begins with `[ruleId=<id>]` — pass that exact id to `memory_set_agent_rule.replaces` to supersede the rule, or to `memory_forget.factId` to drop it._',
+      '## Your persona — how YOU (the assistant) present yourself',
+      '_These lines define the ASSISTANT — you, the AI — NOT the user. The user configured how they want you to look, sound, and behave. Each line is written first-person from YOUR perspective ("I…", "my name is…"): adopt it as your OWN identity, persona, name, pronouns, and tone, and honor it over your defaults. CRITICAL: these are NOT facts about the user — never attribute your name, pronouns, or persona to the user, and never repeat them when describing who the user is or answering "what do you know about me". (What you know about the user lives in the user-profile/facts context, not here.) Each line begins with `[ruleId=<id>]` — pass that exact id to `memory_set_agent_rule.replaces` to supersede a rule, or to `memory_forget.factId` to drop it._',
       '',
     ];
     for (const f of rules) {
