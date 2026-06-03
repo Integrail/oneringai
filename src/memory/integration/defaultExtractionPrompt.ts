@@ -879,7 +879,10 @@ ${blocks}
 function renderPreResolvedBindings(bindings?: PreResolvedBinding[]): string {
   if (!bindings || bindings.length === 0) return '';
   const lines = bindings.map((b) => {
-    const idStr = b.entity.identifiers
+    // `identifiers` is absent on entity types that carry none (event / topic /
+    // project) — guard so an identifier-less binding doesn't crash the whole
+    // prompt build.
+    const idStr = (b.entity.identifiers ?? [])
       .slice(0, 2)
       .map((i) => `${i.kind}=${i.value}`)
       .join(', ');
@@ -932,7 +935,9 @@ function renderKnownEntities(entities?: IEntity[]): string {
 }
 
 function formatKnownEntity(e: IEntity): string {
-  const idStr = e.identifiers
+  // `identifiers` is absent on entity types that carry none (event / topic /
+  // project) — guard so such a known entity doesn't crash the prompt build.
+  const idStr = (e.identifiers ?? [])
     .slice(0, 2)
     .map((i) => `${i.kind}=${i.value}`)
     .join(', ');
