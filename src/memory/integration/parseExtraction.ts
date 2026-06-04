@@ -20,7 +20,12 @@
  *     callers should prefer the rich form.
  */
 
-import type { ExtractionOutput, ReconciliationOp } from './ExtractionResolver.js';
+import type {
+  ExtractionOutput,
+  ReconciliationOp,
+  SignalReconciliationOp,
+  TaskReconciliationOp,
+} from './ExtractionResolver.js';
 import { parseJsonPermissive } from '../../utils/jsonRepair.js';
 
 /** Outcome of a parse attempt. `ok` is the only shape callers can trust the
@@ -201,51 +206,104 @@ function sanitizeMentions(
  * The dispatcher does the real factId-validity check against the priorFacts
  * set.
  */
+function parseOneFactOp(o: Record<string, unknown>): ReconciliationOp | null {
+  const op = o.op;
+  if (op === 'create') {
+    if (typeof o.subject !== 'string' || typeof o.predicate !== 'string') return null;
+    const kind = o.kind === 'document' ? 'document' : 'atomic';
+    return {
+      op: 'create',
+      subject: o.subject,
+      predicate: o.predicate,
+      kind,
+      object: typeof o.object === 'string' ? o.object : undefined,
+      objectId: typeof o.objectId === 'string' ? o.objectId : undefined,
+      value: 'value' in o ? o.value : undefined,
+      details: typeof o.details === 'string' ? o.details : undefined,
+      contextIds: Array.isArray(o.contextIds)
+        ? o.contextIds.filter((x): x is string => typeof x === 'string')
+        : undefined,
+      evidenceQuote: typeof o.evidenceQuote === 'string' ? o.evidenceQuote : undefined,
+      importance: typeof o.importance === 'number' ? o.importance : undefined,
+      confidence: typeof o.confidence === 'number' ? o.confidence : undefined,
+    };
+  }
+  if (op === 'update') {
+    if (typeof o.factId !== 'string') return null;
+    if (!('newValue' in o) && typeof o.details !== 'string') return null;
+    return {
+      op: 'update',
+      factId: o.factId,
+      newValue: 'newValue' in o ? o.newValue : undefined,
+      details: typeof o.details === 'string' ? o.details : undefined,
+      evidenceQuote: typeof o.evidenceQuote === 'string' ? o.evidenceQuote : undefined,
+      reason: typeof o.reason === 'string' ? o.reason : undefined,
+    };
+  }
+  if (op === 'archive') {
+    if (typeof o.factId !== 'string') return null;
+    return {
+      op: 'archive',
+      factId: o.factId,
+      evidenceQuote: typeof o.evidenceQuote === 'string' ? o.evidenceQuote : undefined,
+      reason: typeof o.reason === 'string' ? o.reason : undefined,
+    };
+  }
+  return null;
+}
+
+/**
+ * Validate a `task_update` op (signal-reconciliation pass). Requires a string
+ * `taskId` AND at least one mutating field (`newState` / `narrative` / `dueAt` /
+ * `assigneeId`) — an op that changes nothing is dropped. `reason` and
+ * `evidenceQuote` pass through opaquely; the dispatcher enforces the
+ * "reason required when newState is set" provenance rule.
+ */
+function parseOneTaskOp(o: Record<string, unknown>): TaskReconciliationOp | null {
+  if (o.op !== 'task_update') return null;
+  if (typeof o.taskId !== 'string' || o.taskId.length === 0) return null;
+  const newState = typeof o.newState === 'string' && o.newState.trim().length > 0 ? o.newState : undefined;
+  const narrative = typeof o.narrative === 'string' ? o.narrative : undefined;
+  const dueAt = typeof o.dueAt === 'string' ? o.dueAt : undefined;
+  const assigneeId = typeof o.assigneeId === 'string' ? o.assigneeId : undefined;
+  if (newState === undefined && narrative === undefined && dueAt === undefined && assigneeId === undefined) {
+    return null;
+  }
+  return {
+    op: 'task_update',
+    taskId: o.taskId,
+    ...(newState !== undefined ? { newState } : {}),
+    ...(narrative !== undefined ? { narrative } : {}),
+    ...(dueAt !== undefined ? { dueAt } : {}),
+    ...(assigneeId !== undefined ? { assigneeId } : {}),
+    evidenceQuote: typeof o.evidenceQuote === 'string' ? o.evidenceQuote : undefined,
+    reason: typeof o.reason === 'string' ? o.reason : undefined,
+  };
+}
+
 function filterValidOperations(raw: unknown[]): ReconciliationOp[] {
   const out: ReconciliationOp[] = [];
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
+    const parsed = parseOneFactOp(item as Record<string, unknown>);
+    if (parsed) out.push(parsed);
+  }
+  return out;
+}
+
+/**
+ * Validate the signal-reconciliation pass output — both fact ops
+ * (`create`/`update`/`archive`) AND `task_update` ops. Unknown ops are dropped.
+ */
+function filterValidSignalOperations(raw: unknown[]): SignalReconciliationOp[] {
+  const out: SignalReconciliationOp[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
     const o = item as Record<string, unknown>;
-    const op = o.op;
-    if (op === 'create') {
-      if (typeof o.subject !== 'string' || typeof o.predicate !== 'string') continue;
-      const kind = o.kind === 'document' ? 'document' : 'atomic';
-      out.push({
-        op: 'create',
-        subject: o.subject,
-        predicate: o.predicate,
-        kind,
-        object: typeof o.object === 'string' ? o.object : undefined,
-        objectId: typeof o.objectId === 'string' ? o.objectId : undefined,
-        value: 'value' in o ? o.value : undefined,
-        details: typeof o.details === 'string' ? o.details : undefined,
-        contextIds: Array.isArray(o.contextIds)
-          ? o.contextIds.filter((x): x is string => typeof x === 'string')
-          : undefined,
-        evidenceQuote: typeof o.evidenceQuote === 'string' ? o.evidenceQuote : undefined,
-        importance: typeof o.importance === 'number' ? o.importance : undefined,
-        confidence: typeof o.confidence === 'number' ? o.confidence : undefined,
-      });
-    } else if (op === 'update') {
-      if (typeof o.factId !== 'string') continue;
-      if (!('newValue' in o) && typeof o.details !== 'string') continue;
-      out.push({
-        op: 'update',
-        factId: o.factId,
-        newValue: 'newValue' in o ? o.newValue : undefined,
-        details: typeof o.details === 'string' ? o.details : undefined,
-        evidenceQuote: typeof o.evidenceQuote === 'string' ? o.evidenceQuote : undefined,
-        reason: typeof o.reason === 'string' ? o.reason : undefined,
-      });
-    } else if (op === 'archive') {
-      if (typeof o.factId !== 'string') continue;
-      out.push({
-        op: 'archive',
-        factId: o.factId,
-        evidenceQuote: typeof o.evidenceQuote === 'string' ? o.evidenceQuote : undefined,
-        reason: typeof o.reason === 'string' ? o.reason : undefined,
-      });
-    }
+    const parsed: SignalReconciliationOp | null = o.op === 'task_update'
+      ? parseOneTaskOp(o)
+      : parseOneFactOp(o);
+    if (parsed) out.push(parsed);
   }
   return out;
 }
@@ -323,6 +381,57 @@ export function parseReconciliationOpsWithStatus(raw: string): ParseReconciliati
   }
 
   const operations = Array.isArray(operationsRaw) ? filterValidOperations(operationsRaw) : [];
+  return { status: 'ok', operations };
+}
+
+/** Outcome of a signal-reconciliation parse — fact ops + `task_update` ops. */
+export interface ParseSignalReconciliationOpsResult {
+  status: ParseStatus;
+  operations: SignalReconciliationOp[];
+  reason?: string;
+  rawExcerpt?: string;
+}
+
+/**
+ * Parser for the signal-reconciliation pass (`signalReconciliationPrompt`). The
+ * pass returns ONLY `{"operations": [...]}` — no `mentions`, no `facts` — but
+ * the ops may be fact ops (`archive`/`update`/`create`) AND `task_update` ops.
+ *
+ * - `status: 'parse_error'` — input wasn't valid JSON.
+ * - `status: 'shape_error'` — JSON parsed but `operations` wasn't an array.
+ * - `status: 'ok'` — `operations` parsed; may be empty (silence is valid).
+ */
+export function parseSignalReconciliationOpsWithStatus(
+  raw: string,
+): ParseSignalReconciliationOpsResult {
+  const rawExcerpt = raw.length > RAW_EXCERPT_MAX ? raw.slice(0, RAW_EXCERPT_MAX) + '…' : raw;
+
+  if (!raw || raw.trim().length === 0) {
+    return { status: 'parse_error', operations: [], reason: 'LLM returned empty output', rawExcerpt };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseJsonPermissive(raw);
+  } catch {
+    parsed = null;
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return {
+      status: 'parse_error',
+      operations: [],
+      reason: 'could not parse JSON from LLM output',
+      rawExcerpt,
+    };
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  const operationsRaw = obj.operations;
+  if (operationsRaw !== undefined && !Array.isArray(operationsRaw)) {
+    return { status: 'shape_error', operations: [], reason: 'operations is not an array', rawExcerpt };
+  }
+
+  const operations = Array.isArray(operationsRaw) ? filterValidSignalOperations(operationsRaw) : [];
   return { status: 'ok', operations };
 }
 

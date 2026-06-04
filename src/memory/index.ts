@@ -52,6 +52,7 @@ export {
   parseExtractionResponse,
   parseExtractionWithStatus,
   parseReconciliationOpsWithStatus,
+  parseSignalReconciliationOpsWithStatus,
   PlainTextAdapter,
   EmailSignalAdapter,
   CalendarSignalAdapter,
@@ -69,6 +70,9 @@ export {
   // Pillar 2 — entity-anchored cross-source reconciliation
   entityReconciliationPrompt,
   ENTITY_RECONCILIATION_PROMPT_VERSION,
+  // Signal-anchored reconciliation — the SECOND pass (facts + tasks)
+  signalReconciliationPrompt,
+  SIGNAL_RECONCILIATION_PROMPT_VERSION,
 } from './integration/index.js';
 export type {
   ConnectorEmbedderConfig,
@@ -88,7 +92,14 @@ export type {
   ExtractionResolverOptions,
   ReconciliationOp,
   OperationOutcome,
+  TaskReconciliationOp,
+  SignalReconciliationOp,
+  SignalReconciliationOutcome,
+  AIResolutionProvenance,
   EntityReconciliationPromptContext,
+  SignalReconciliationPromptContext,
+  NewFactSummary,
+  NewTaskSummary,
   SignalIngestorConfig,
   ContextHintsConfig,
   IngestSignalInput,
@@ -109,6 +120,7 @@ export type {
   CalendarSignalAdapterOptions,
   ParseExtractionResult,
   ParseReconciliationOpsResult,
+  ParseSignalReconciliationOpsResult,
   ParseStatus,
   // v5+ restraint posture types
   EagernessLevel,

@@ -39,6 +39,10 @@ export type {
   ExtractionResolverOptions,
   ReconciliationOp,
   OperationOutcome,
+  TaskReconciliationOp,
+  SignalReconciliationOp,
+  SignalReconciliationOutcome,
+  AIResolutionProvenance,
 } from './ExtractionResolver.js';
 
 // Entity-anchored cross-source reconciliation (Pillar 2).
@@ -48,11 +52,27 @@ export {
 } from './entityReconciliationPrompt.js';
 export type { EntityReconciliationPromptContext } from './entityReconciliationPrompt.js';
 
+// Signal-anchored reconciliation — the SECOND pass (facts + tasks).
+export {
+  signalReconciliationPrompt,
+  SIGNAL_RECONCILIATION_PROMPT_VERSION,
+} from './signalReconciliationPrompt.js';
+export type {
+  SignalReconciliationPromptContext,
+  NewFactSummary,
+  NewTaskSummary,
+} from './signalReconciliationPrompt.js';
+
 // Extraction-output parser (rich + back-compat forms).
-export { parseExtractionWithStatus, parseReconciliationOpsWithStatus } from './parseExtraction.js';
+export {
+  parseExtractionWithStatus,
+  parseReconciliationOpsWithStatus,
+  parseSignalReconciliationOpsWithStatus,
+} from './parseExtraction.js';
 export type {
   ParseExtractionResult,
   ParseReconciliationOpsResult,
+  ParseSignalReconciliationOpsResult,
   ParseStatus,
 } from './parseExtraction.js';
 

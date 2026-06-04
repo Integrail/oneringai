@@ -136,6 +136,70 @@ export interface OperationOutcome {
   rejectedSkeptic: number;
 }
 
+/**
+ * Task reconciliation operation — the signal-reconciliation pass (a SECOND LLM
+ * pass that runs after extraction). Distinct from the fact ops above: tasks are
+ * MUTABLE entities, so reconciliation UPDATES them in place (state, narrative,
+ * dueAt, assignee) instead of the archive+create supersession used for
+ * immutable facts.
+ *
+ * `taskId` MUST be one of the prior task ids passed to
+ * `MemorySystem.applyReconciliationOps`; hallucinated ids are rejected.
+ *
+ * When `newState` moves the task into a TERMINAL state, the dispatcher stamps
+ * AI-resolution provenance onto the task metadata (see `AIResolutionProvenance`)
+ * so the host can distinguish "auto-resolved by AI reconciliation" from "closed
+ * by the user". `reason` is REQUIRED whenever `newState` is set.
+ */
+export interface TaskReconciliationOp {
+  op: 'task_update';
+  taskId: EntityId;
+  /** New task state, e.g. `'in_progress' | 'done' | 'cancelled'`. Optional. */
+  newState?: string;
+  /** Refreshed task narrative / card body. Optional. */
+  narrative?: string;
+  /** ISO date string for a (re)scheduled due date. Optional. */
+  dueAt?: string;
+  /** Reassigned owner entity id. Optional. */
+  assigneeId?: string;
+  /** Verbatim quote from the signal content justifying the change. */
+  evidenceQuote?: string;
+  /** Brief reasoning — REQUIRED when `newState` is set (the provenance trail). */
+  reason?: string;
+}
+
+/**
+ * Combined op type emitted by the signal-reconciliation pass: fact ops (reusing
+ * the existing `ReconciliationOp` shapes — `create` is rejected at dispatch, the
+ * pass only supersedes) plus task ops.
+ */
+export type SignalReconciliationOp = ReconciliationOp | TaskReconciliationOp;
+
+/**
+ * AI-resolution provenance stamped on a task's `metadata` when a reconciliation
+ * `task_update` op moves the task into a terminal state. Lets the host surface
+ * "marked done by AI — <reason>" and audit auto-resolutions. `aiResolved === true`
+ * with the task's terminal `state === 'done'` is the "was marked done by AI" flag.
+ */
+export interface AIResolutionProvenance {
+  /** True when AI reconciliation moved this task into a terminal state. */
+  aiResolved: true;
+  /** Brief reasoning for the auto-resolution (from the op's `reason`). */
+  aiResolutionReason: string;
+  /** Verbatim evidence quote from the signal, when the op supplied one. */
+  aiResolutionEvidenceQuote?: string;
+  /** When the AI resolution happened. */
+  aiResolvedAt: Date;
+}
+
+/** Outcome of `MemorySystem.applyReconciliationOps` — fact counts + task counts. */
+export interface SignalReconciliationOutcome extends OperationOutcome {
+  /** `task_update` ops applied (any field changed). */
+  taskUpdates: number;
+  /** Subset of `taskUpdates` that moved a task into a terminal (AI-resolved) state. */
+  taskResolves: number;
+}
+
 export interface ExtractionOutput {
   mentions: Record<string, ExtractionMention>;
   facts: ExtractionFactSpec[];

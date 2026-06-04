@@ -59,6 +59,9 @@ import type {
 import type {
   OperationOutcome,
   ReconciliationOp,
+  SignalReconciliationOp,
+  SignalReconciliationOutcome,
+  TaskReconciliationOp,
 } from './integration/ExtractionResolver.js';
 import type {
   ChangeEvent,
@@ -3180,6 +3183,150 @@ export class MemorySystem implements IDisposable {
     }
 
     return outcome;
+  }
+
+  /**
+   * Apply signal-reconciliation operations (the SECOND pass — see
+   * `signalReconciliationPrompt`). Generic over signal source: the caller has
+   * extracted NEW facts/tasks in pass 1, loaded the PRIOR facts/tasks
+   * (deterministic + semantic, de-duplicated), run `signalReconciliationPrompt`,
+   * and parsed the output via `parseSignalReconciliationOpsWithStatus`.
+   *
+   * Dispatch:
+   *   - FACT ops are delegated to {@link applyEntityReconciliationOps} — `archive`
+   *     supersedes, `update` mutates in place, `create` is rejected (the pass
+   *     reconciles, it does not create — pass 1 owns creation). Every fact op's
+   *     `factId` is validated against `context.priorFacts`.
+   *   - `task_update` ops mutate the task in place: `newState` routes through
+   *     {@link transitionTaskState} (state + `stateHistory` + `completedAt`),
+   *     and `narrative` / `dueAt` / `assigneeId` patch the metadata. Every
+   *     `taskId` is validated against `context.priorTasks`; hallucinated ids are
+   *     rejected. When `newState` moves the task into a TERMINAL state, the task
+   *     metadata is stamped with AI-resolution provenance (`aiResolved`,
+   *     `aiResolutionReason`, `aiResolutionEvidenceQuote`, `aiResolvedAt`) so the
+   *     host can distinguish AI auto-resolution from user action.
+   *
+   * Returns op-level counts (fact creates/updates/archives + task updates/resolves
+   * + rejections) so callers can log every decision per
+   * `feedback_log_every_decision`.
+   */
+  async applyReconciliationOps(
+    ops: SignalReconciliationOp[],
+    context: { priorFacts: IFact[]; priorTasks: IEntity[] },
+    scope: ScopeFilter,
+    opts?: {
+      /** Optional skeptic filter — return false to drop an op with logging. */
+      skepticFilter?: (op: SignalReconciliationOp) => boolean;
+      /** Source signal id stamped on fact-update patches + task state history. */
+      sourceSignalId?: string;
+      /** Transition timestamp. Defaults to now. */
+      at?: Date;
+    },
+  ): Promise<SignalReconciliationOutcome> {
+    assertNotDestroyed(this, 'applyReconciliationOps');
+
+    const taskOps = ops.filter((o): o is TaskReconciliationOp => o.op === 'task_update');
+    const factOps = ops.filter((o): o is ReconciliationOp => o.op !== 'task_update');
+
+    // Fact ops reuse the existing, well-tested entity-reconciliation dispatch
+    // (archive/update; create rejected). A `(SignalReconciliationOp) => boolean`
+    // filter is assignable where `(ReconciliationOp) => boolean` is expected
+    // (contravariant param — ReconciliationOp ⊆ SignalReconciliationOp).
+    const factOutcome = await this.applyEntityReconciliationOps(factOps, context.priorFacts, scope, {
+      ...(opts?.skepticFilter ? { skepticFilter: opts.skepticFilter } : {}),
+      ...(opts?.sourceSignalId ? { sourceSignalId: opts.sourceSignalId } : {}),
+    });
+
+    const outcome: SignalReconciliationOutcome = {
+      ...factOutcome,
+      taskUpdates: 0,
+      taskResolves: 0,
+    };
+
+    const priorTaskIds = new Set(context.priorTasks.map((t) => t.id));
+    const at = opts?.at ?? new Date();
+
+    for (const op of taskOps) {
+      if (opts?.skepticFilter && !opts.skepticFilter(op)) {
+        outcome.rejectedSkeptic++;
+        continue;
+      }
+      if (!priorTaskIds.has(op.taskId)) {
+        outcome.rejectedHallucinated++;
+        this.emit({
+          type: 'fact.reconcile.rejected',
+          factId: op.taskId,
+          reason: 'task_update: taskId not in priorTasks (hallucinated)',
+        });
+        continue;
+      }
+      try {
+        const resolved = await this.applyTaskUpdateOp(op, scope, at, opts?.sourceSignalId);
+        outcome.taskUpdates++;
+        if (resolved) outcome.taskResolves++;
+      } catch (err) {
+        outcome.rejectedHallucinated++;
+        this.emit({
+          type: 'fact.reconcile.rejected',
+          factId: op.taskId,
+          reason: `task_update failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+
+    return outcome;
+  }
+
+  /**
+   * Apply a single `task_update` reconciliation op. Returns `true` when the op
+   * moved the task into a TERMINAL state (AI-resolved), `false` otherwise.
+   *
+   * Sequencing: state transition first (so `stateHistory`/`completedAt` are
+   * written by the canonical path), then a single metadata patch for the
+   * remaining fields plus AI-resolution provenance when terminal.
+   */
+  private async applyTaskUpdateOp(
+    op: TaskReconciliationOp,
+    scope: ScopeFilter,
+    at: Date,
+    sourceSignalId: string | undefined,
+  ): Promise<boolean> {
+    const task = await this.store.getEntity(op.taskId, scope);
+    if (!task) {
+      throw new Error(`applyTaskUpdateOp: task ${op.taskId} not found or not visible`);
+    }
+    if (task.type !== 'task') {
+      throw new Error(`applyTaskUpdateOp: entity ${op.taskId} is type '${task.type}', expected 'task'`);
+    }
+
+    let movedToTerminal = false;
+    if (typeof op.newState === 'string' && op.newState.trim().length > 0) {
+      const before = (task.metadata as Record<string, unknown> | undefined)?.state;
+      await this.transitionTaskState(
+        op.taskId,
+        op.newState,
+        { reason: op.reason, signalId: sourceSignalId, at },
+        scope,
+      );
+      movedToTerminal = this._taskStates.terminal.includes(op.newState) && before !== op.newState;
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (typeof op.narrative === 'string') patch.narrative = op.narrative;
+    if (typeof op.dueAt === 'string') patch.dueAt = op.dueAt; // coerced to Date by updateEntityMetadata
+    if (typeof op.assigneeId === 'string') patch.assigneeId = op.assigneeId;
+    if (movedToTerminal) {
+      patch.aiResolved = true;
+      patch.aiResolutionReason = op.reason ?? '';
+      if (typeof op.evidenceQuote === 'string') patch.aiResolutionEvidenceQuote = op.evidenceQuote;
+      patch.aiResolvedAt = at;
+    }
+    if (Object.keys(patch).length > 0) {
+      if (!('refreshedAt' in patch)) patch.refreshedAt = at;
+      await this.updateEntityMetadata(op.taskId, patch, scope);
+    }
+
+    return movedToTerminal;
   }
 
   /**
