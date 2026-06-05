@@ -76,15 +76,51 @@ When the user ties a priority to specific work ("this priority is about the NA L
 
 Visibility (who can read the record) is decided by the host — do not try to set it.`;
 
+/**
+ * Build the tool description, honoring `forbiddenEntityTypes`. When the host
+ * forbids one or more types, we (a) prepend a hard prohibition and (b) strip
+ * those types' conventional-type bullet (and its example line) so the model is
+ * never shown that it CAN create them. With no forbidden types, returns the
+ * base description verbatim (backward compatible).
+ */
+export function buildUpsertEntityDescription(
+  forbiddenEntityTypes?: ReadonlyArray<string>,
+): string {
+  const forbidden = new Set((forbiddenEntityTypes ?? []).map(normalizeEntityType));
+  forbidden.delete('');
+  if (forbidden.size === 0) return DESCRIPTION;
+
+  // Drop the `• <type> — …` bullet AND any immediately-following indented
+  // JSON example line(s) for each forbidden type.
+  const lines = DESCRIPTION.split('\n');
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    const bulletType = line.match(/^\s*•\s*([A-Za-z_]+)\s*—/)?.[1];
+    if (bulletType && forbidden.has(bulletType)) {
+      while (i + 1 < lines.length && /^\s{2,}\{/.test(lines[i + 1] ?? '')) i++;
+      continue;
+    }
+    kept.push(line);
+  }
+  const prohibition =
+    `IMPORTANT — DO NOT create entities of these types: ${[...forbidden].join(', ')}. ` +
+    `They are populated deterministically by the host (not from your judgement); any ` +
+    `\`memory_upsert_entity\` call with one of these types is REJECTED.`;
+  return `${prohibition}\n\n${kept.join('\n')}`;
+}
+
 export function createUpsertEntityTool(
   deps: MemoryToolDeps,
 ): ToolFunction<UpsertEntityArgs> {
+  const forbiddenTypes = new Set((deps.forbiddenEntityTypes ?? []).map(normalizeEntityType));
+  forbiddenTypes.delete('');
   return {
     definition: {
       type: 'function',
       function: {
         name: 'memory_upsert_entity',
-        description: DESCRIPTION,
+        description: buildUpsertEntityDescription(deps.forbiddenEntityTypes),
         parameters: {
           type: 'object',
           properties: {
@@ -125,6 +161,13 @@ export function createUpsertEntityTool(
       try {
         if (!args.type) return { error: 'upsert: type is required' };
         if (!args.displayName) return { error: 'upsert: displayName is required' };
+        if (forbiddenTypes.has(normalizeEntityType(args.type))) {
+          return {
+            error:
+              `memory_upsert_entity: creating '${args.type}' entities is not permitted — ` +
+              `they are populated deterministically by the host, not by the agent. This call was rejected.`,
+          };
+        }
 
         // Explicit visibility (programmatic callers) → map to permissions and
         // pass through. Absent → pass `permissions: undefined` so the host's
@@ -161,4 +204,8 @@ export function createUpsertEntityTool(
       }
     },
   };
+}
+
+function normalizeEntityType(type: string): string {
+  return type.trim().toLowerCase();
 }

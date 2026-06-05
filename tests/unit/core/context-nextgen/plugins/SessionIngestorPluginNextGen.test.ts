@@ -7,7 +7,7 @@
  * against a real in-memory MemorySystem.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Agent } from '@/core/Agent.js';
 import {
   SessionIngestorPluginNextGen,
@@ -1143,5 +1143,143 @@ describe('buildSessionExtractionPrompt — imperative-request rule', () => {
     expect(out).toMatch(/has_task|assigned_to|due_date|has_reminder|needs_to/);
     // Exception for fact-form statements is still allowed.
     expect(out).toMatch(/Exception.*fact.*extractable|calendar fact.*not asking the agent/i);
+  });
+
+  it('keeps host-managed types referenceable in the type enum and adds creation guidance', () => {
+    const out = buildSessionExtractionPrompt({
+      transcript: 'x',
+      agentId: 'a',
+      userId: 'u',
+      diligence: 'normal',
+      referenceDate: new Date(),
+      forbiddenEntityTypes: ['event'],
+    });
+    // `event` remains in the mention type enum because existing events may be referenced.
+    expect(out).toMatch(/person\|organization\|project\|task\|event\|topic\|cluster/);
+    // Explicit host-managed section present.
+    expect(out).toMatch(/Host-managed entity types/i);
+    expect(out).toMatch(/Do NOT create or invent entities whose `type` is one of: event/);
+    expect(out).toMatch(/MAY reference an existing host-managed entity/);
+  });
+
+  it('is byte-identical to the unrestricted prompt when no types are forbidden', () => {
+    const base = {
+      transcript: 'x',
+      agentId: 'a',
+      userId: 'u',
+      diligence: 'normal' as const,
+      referenceDate: new Date('2026-01-01T00:00:00Z'),
+      nonce: 'fixed',
+    };
+    expect(buildSessionExtractionPrompt({ ...base, forbiddenEntityTypes: [] })).toBe(
+      buildSessionExtractionPrompt(base),
+    );
+  });
+});
+
+describe('SessionIngestorPluginNextGen — forbiddenEntityTypes enforcement', () => {
+  let restore: (() => void) | undefined;
+  beforeEach(() => {
+    restore = undefined;
+  });
+  afterEach(() => {
+    restore?.();
+  });
+
+  it('never upserts a forbidden-type mention, but still resolves allowed ones', async () => {
+    const mem = makeMem();
+    const upsertSpy = vi.spyOn(mem, 'upsertEntity');
+    const extraction = JSON.stringify({
+      mentions: {
+        m1: { surface: 'Standup', type: 'event' },
+        m2: { surface: 'Acme', type: 'organization' },
+      },
+      facts: [
+        { subject: 'm1', predicate: 'has_location', value: 'Zoom', kind: 'atomic' },
+        { subject: 'm_user', predicate: 'works_at', object: 'm2', kind: 'atomic' },
+      ],
+    });
+    const stub = stubAgent([extraction]);
+    restore = stub.restore;
+
+    const plugin = new SessionIngestorPluginNextGen({
+      memory: mem,
+      agentId: AGENT,
+      userId: USER,
+      connectorName: 'c',
+      model: 'm',
+      minBatchMessages: 1,
+      forbiddenEntityTypes: ['event'],
+    });
+    plugin.onBeforePrepare({
+      messages: [{ id: 'z1', role: 'user', content: 'Standup is on Zoom; I work at Acme.' }],
+      currentInput: [],
+    });
+    await plugin.waitForIngest();
+
+    const upsertedTypes = upsertSpy.mock.calls.map(
+      (c) => (c[0] as { type?: string }).type,
+    );
+    // The forbidden `event` mention is never upserted...
+    expect(upsertedTypes).not.toContain('event');
+    // ...while the allowed `organization` mention still resolves.
+    expect(upsertedTypes).toContain('organization');
+  });
+
+  it('resolves an existing forbidden-type mention read-only and preserves it as fact context', async () => {
+    const mem = makeMem();
+    const event = await mem.upsertEntity(
+      {
+        type: 'event',
+        displayName: 'Standup',
+        identifiers: [],
+      },
+      { userId: USER },
+    );
+    const upsertSpy = vi.spyOn(mem, 'upsertEntity');
+    const extraction = JSON.stringify({
+      mentions: {
+        m1: { surface: 'Standup', type: 'Event' },
+      },
+      facts: [
+        {
+          subject: 'm_user',
+          predicate: 'expressed_concern',
+          value: 'agenda unclear',
+          kind: 'atomic',
+          contextIds: ['m1'],
+        },
+      ],
+    });
+    const stub = stubAgent([extraction]);
+    restore = stub.restore;
+
+    const plugin = new SessionIngestorPluginNextGen({
+      memory: mem,
+      agentId: AGENT,
+      userId: USER,
+      connectorName: 'c',
+      model: 'm',
+      minBatchMessages: 1,
+      forbiddenEntityTypes: ['event'],
+    });
+    plugin.onBeforePrepare({
+      messages: [{ id: 'z1', role: 'user', content: 'The Standup agenda is unclear.' }],
+      currentInput: [],
+    });
+    await plugin.waitForIngest();
+
+    const upsertedTypes = upsertSpy.mock.calls.map(
+      (c) => (c[0] as { type?: string }).type,
+    );
+    expect(upsertedTypes).not.toContain('event');
+
+    const facts = await mem.findFacts(
+      { predicate: 'expressed_concern' },
+      {},
+      { userId: USER },
+    );
+    expect(facts.items.length).toBe(1);
+    expect(facts.items[0]!.contextIds).toEqual([event.entity.id]);
   });
 });

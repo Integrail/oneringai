@@ -1701,3 +1701,70 @@ describe('memory_link — defers to host policy when visibility absent', () => {
     expect(r.visibility).toBe('group');
   });
 });
+
+describe('memory_upsert_entity — forbiddenEntityTypes', () => {
+  function forbiddenTools(mem: MemorySystem) {
+    return createMemoryTools({
+      memory: mem,
+      agentId: AGENT_ID,
+      defaultUserId: USER_ID,
+      getOwnSubjectIds: () => ({}),
+      forbiddenEntityTypes: ['event'],
+    });
+  }
+
+  it('rejects an upsert whose type is forbidden', async () => {
+    const mem = makeMem();
+    const upsert = toolByName<{ error?: string; entity?: unknown }>(
+      forbiddenTools(mem),
+      'memory_upsert_entity',
+    );
+    const r = await upsert.execute(
+      { type: 'event', displayName: 'Standup' },
+      { userId: USER_ID },
+    );
+    expect(r.error).toMatch(/not permitted|rejected/i);
+    expect(r.entity).toBeUndefined();
+  });
+
+  it('rejects forbidden types case- and whitespace-insensitively', async () => {
+    const mem = makeMem();
+    const upsert = toolByName<{ error?: string; entity?: unknown }>(
+      forbiddenTools(mem),
+      'memory_upsert_entity',
+    );
+    const r = await upsert.execute(
+      { type: ' Event ', displayName: 'Standup' },
+      { userId: USER_ID },
+    );
+    expect(r.error).toMatch(/not permitted|rejected/i);
+    expect(r.entity).toBeUndefined();
+  });
+
+  it('still allows non-forbidden types', async () => {
+    const mem = makeMem();
+    const upsert = toolByName<{ error?: string; entity?: { type?: string } }>(
+      forbiddenTools(mem),
+      'memory_upsert_entity',
+    );
+    const r = await upsert.execute(
+      { type: 'task', displayName: 'Send budget' },
+      { userId: USER_ID },
+    );
+    expect(r.error).toBeUndefined();
+    expect(r.entity?.type).toBe('task');
+  });
+
+  it('drops the forbidden type from the tool description and adds a prohibition', () => {
+    const mem = makeMem();
+    const upsert = forbiddenTools(mem).find(
+      (t) => t.definition.function.name === 'memory_upsert_entity',
+    );
+    const desc = upsert?.definition.function.description ?? '';
+    expect(desc).toMatch(/DO NOT create entities of these types: event/);
+    // The `• event — …` conventional bullet is gone.
+    expect(desc).not.toMatch(/•\s*event\s*—/);
+    // Allowed-type bullets remain.
+    expect(desc).toMatch(/•\s*person\s*—/);
+  });
+});

@@ -107,6 +107,13 @@ export interface CreateMemoryToolsArgs {
    * quota without also raising the destructive `memory_forget` quota.
    */
   setAgentRuleRateLimit?: { maxCallsPerWindow?: number; windowMs?: number };
+  /**
+   * Entity types the agent must NOT create via `memory_upsert_entity` (see
+   * `MemoryToolDeps.forbiddenEntityTypes`). Threaded to the write tools so the
+   * host can forbid LLM-authored types it populates deterministically (e.g.
+   * `event`). Omit for no restriction.
+   */
+  forbiddenEntityTypes?: ReadonlyArray<string>;
 }
 
 function buildDeps(args: CreateMemoryToolsArgs): MemoryToolDeps {
@@ -131,6 +138,7 @@ function buildDeps(args: CreateMemoryToolsArgs): MemoryToolDeps {
     },
     forgetRateLimit: args.forgetRateLimit,
     setAgentRuleRateLimit: args.setAgentRuleRateLimit,
+    forbiddenEntityTypes: args.forbiddenEntityTypes,
   };
 }
 

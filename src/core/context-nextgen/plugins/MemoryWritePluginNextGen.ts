@@ -64,6 +64,13 @@ export interface MemoryWritePluginConfig {
    *  `forgetRateLimit` when omitted; allows hosts to give rule-writes a
    *  larger budget than destructive forgets without sharing one knob. */
   setAgentRuleRateLimit?: { maxCallsPerWindow?: number; windowMs?: number };
+  /**
+   * Entity types the agent must NOT create via `memory_upsert_entity`. When
+   * set, such upserts are rejected and the tool description drops those types'
+   * guidance (see `MemoryToolDeps.forbiddenEntityTypes`). For host-deterministic
+   * types (e.g. `event` from a calendar pipeline). Omit for no restriction.
+   */
+  forbiddenEntityTypes?: ReadonlyArray<string>;
 }
 
 /**
@@ -267,6 +274,7 @@ export class MemoryWritePluginNextGen implements IContextPluginNextGen {
   };
   private readonly forgetRateLimit: MemoryWritePluginConfig['forgetRateLimit'];
   private readonly setAgentRuleRateLimit: MemoryWritePluginConfig['setAgentRuleRateLimit'];
+  private readonly forbiddenEntityTypes: ReadonlyArray<string> | undefined;
   /**
    * Pre-rendered write-instructions block — built once at construction time
    * from the configured (or `memory`-derived) predicate registry. Storing
@@ -307,6 +315,7 @@ export class MemoryWritePluginNextGen implements IContextPluginNextGen {
     this.getOwnSubjectIds = config.getOwnSubjectIds ?? (() => ({}));
     this.forgetRateLimit = config.forgetRateLimit;
     this.setAgentRuleRateLimit = config.setAgentRuleRateLimit;
+    this.forbiddenEntityTypes = config.forbiddenEntityTypes;
     // Derive predicate vocabulary from the live MemorySystem's registry by
     // default — keeps the LLM-facing list in lockstep with what `addFact`
     // actually canonicalizes, validates, and ranks. Hand-maintained lists
@@ -363,6 +372,7 @@ export class MemoryWritePluginNextGen implements IContextPluginNextGen {
         getOwnSubjectIds: this.getOwnSubjectIds,
         forgetRateLimit: this.forgetRateLimit,
         setAgentRuleRateLimit: this.setAgentRuleRateLimit,
+        forbiddenEntityTypes: this.forbiddenEntityTypes,
       });
     }
     return this.cachedTools;

@@ -108,6 +108,17 @@ export interface SessionIngestorPluginConfig {
    * before \`plugin.destroy()\` — \`flush\` ignores this threshold.
    */
   minBatchMessages?: number;
+
+  /**
+   * Entity types this ambient extractor must NEVER mint. When set, the
+   * extraction prompt marks those types as host-managed, and mentions of those
+   * types are resolved read-only at write time. If no existing entity resolves,
+   * the mention stays unresolved and no entity is created. For host-
+   * deterministic types — e.g. ICOS populates `event` exclusively from the
+   * calendar pipeline, so chat extraction may reference existing events but
+   * must not create them. Omit for no restriction.
+   */
+  forbiddenEntityTypes?: ReadonlyArray<string>;
 }
 
 // ===========================================================================
@@ -116,6 +127,7 @@ export interface SessionIngestorPluginConfig {
 
 const USER_IDENTIFIER_KIND = 'system_user_id';
 const AGENT_IDENTIFIER_KIND = 'system_agent_id';
+const HOST_MANAGED_ENTITY_RESOLVE_THRESHOLD = 0.9;
 
 // ===========================================================================
 // Plugin
@@ -135,6 +147,7 @@ export class SessionIngestorPluginNextGen implements IContextPluginNextGen {
   private readonly maxOutputTokens: number | undefined;
   private readonly maxTranscriptChars: number;
   private readonly minBatchMessages: number;
+  private readonly forbiddenEntityTypes: ReadonlySet<string>;
 
   private userEntityId: EntityId | undefined;
   private agentEntityId: EntityId | undefined;
@@ -181,6 +194,11 @@ export class SessionIngestorPluginNextGen implements IContextPluginNextGen {
     this.maxTranscriptChars = config.maxTranscriptChars ?? 1_000_000;
     // Clamp to at least 1 — below 1 makes no sense and breaks threshold checks.
     this.minBatchMessages = Math.max(1, config.minBatchMessages ?? 6);
+    this.forbiddenEntityTypes = new Set(
+      (config.forbiddenEntityTypes ?? [])
+        .map(normalizeEntityType)
+        .filter((t) => t.length > 0),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -513,6 +531,14 @@ export class SessionIngestorPluginNextGen implements IContextPluginNextGen {
     for (const [label, mention] of Object.entries(output.mentions)) {
       if (this.destroyed) return;
       if (labelToId.has(label)) continue;
+      // Host-managed type (e.g. `event` when the host populates events
+      // deterministically): resolve read-only so facts can reference existing
+      // records, but never mint a new entity from conversation.
+      if (this.forbiddenEntityTypes.has(normalizeEntityType(mention.type))) {
+        const resolved = await this.resolveHostManagedMention(label, mention, labelToId, scope);
+        if (resolved) labelToId.set(label, resolved);
+        continue;
+      }
       try {
         const r = await this.memory.upsertEntity(
           {
@@ -712,6 +738,59 @@ export class SessionIngestorPluginNextGen implements IContextPluginNextGen {
     );
   }
 
+  private async resolveHostManagedMention(
+    label: string,
+    mention: ExtractionOutput['mentions'][string],
+    labelToId: Map<string, EntityId>,
+    scope: ScopeFilter,
+  ): Promise<EntityId | null> {
+    try {
+      const type = normalizeEntityType(mention.type);
+      const candidates = await this.memory.resolveEntity(
+        {
+          surface: mention.surface,
+          type,
+          identifiers: mention.identifiers,
+          disambiguationEntityIds: [...labelToId.values()],
+        },
+        scope,
+        { limit: 5, threshold: HOST_MANAGED_ENTITY_RESOLVE_THRESHOLD },
+      );
+      const top = candidates[0];
+      if (!top || top.confidence < HOST_MANAGED_ENTITY_RESOLVE_THRESHOLD) {
+        logger.warn(
+          {
+            component: 'SessionIngestorPluginNextGen',
+            label,
+            type: mention.type,
+            surface: mention.surface,
+          },
+          'host-managed mention did not resolve — skipping entity creation',
+        );
+        return null;
+      }
+      if (top.entity.ownerId !== this.userId) {
+        logger.warn(
+          {
+            component: 'SessionIngestorPluginNextGen',
+            label,
+            entityId: top.entity.id,
+            foreignOwnerId: top.entity.ownerId,
+          },
+          'host-managed mention resolved to a foreign-owned entity — dropping',
+        );
+        return null;
+      }
+      return top.entity.id;
+    } catch (err) {
+      logger.warn(
+        { component: 'SessionIngestorPluginNextGen', label, error: String(err) },
+        'host-managed mention resolve failed — skipping',
+      );
+      return null;
+    }
+  }
+
   private async extract(transcript: string): Promise<ExtractionOutput> {
     const prompt = buildSessionExtractionPrompt({
       transcript,
@@ -719,6 +798,7 @@ export class SessionIngestorPluginNextGen implements IContextPluginNextGen {
       userId: this.userId,
       diligence: this.diligence,
       referenceDate: new Date(),
+      forbiddenEntityTypes: [...this.forbiddenEntityTypes],
     });
     const agent = await this.ensureLlmAgent();
     const response = await agent.runDirect(prompt, {
@@ -810,6 +890,10 @@ function toDate(v: string | Date | undefined): Date | undefined {
   if (v instanceof Date) return v;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+function normalizeEntityType(type: string): string {
+  return type.trim().toLowerCase();
 }
 
 /** Extract `id` from a conversation item shape-safely. */
@@ -952,7 +1036,25 @@ interface SessionExtractionPromptContext {
   referenceDate: Date;
   /** Random nonce used in delimiters to prevent prompt-injection collisions. */
   nonce?: string;
+  /**
+   * Entity types the host forbids this extractor from creating. Kept in the
+   * `mentions[].type` enum because references to existing host-managed records
+   * are allowed; the prompt section and runtime enforce read-only resolution.
+   * Omit/empty → no host-managed restriction.
+   */
+  forbiddenEntityTypes?: ReadonlyArray<string>;
 }
+
+/** The full mention type vocabulary the session extractor can emit. */
+const SESSION_EXTRACTION_ENTITY_TYPES = [
+  'person',
+  'organization',
+  'project',
+  'task',
+  'event',
+  'topic',
+  'cluster',
+] as const;
 
 export function buildSessionExtractionPrompt(ctx: SessionExtractionPromptContext): string {
   const diligenceSection = renderDiligenceDirectives(ctx.diligence);
@@ -960,6 +1062,24 @@ export function buildSessionExtractionPrompt(ctx: SessionExtractionPromptContext
   const nonce = ctx.nonce ?? makeNonce();
   const openTag = `conversation_${nonce}`;
   const closeTag = `/conversation_${nonce}`;
+
+  // Host-managed types stay in the type enum because references to existing
+  // records are allowed. The section below forbids creation, and runtime uses
+  // read-only resolution for these mentions.
+  const forbidden = new Set(
+    (ctx.forbiddenEntityTypes ?? [])
+      .map(normalizeEntityType)
+      .filter((t) => t.length > 0),
+  );
+  const typeEnum = SESSION_EXTRACTION_ENTITY_TYPES.join('|');
+  const forbiddenSection =
+    forbidden.size > 0
+      ? `\n## Host-managed entity types (creation forbidden)\nDo NOT create or invent entities whose \`type\` is one of: ${[...forbidden].join(', ')}. These entities are created deterministically by the host from trusted sources, NOT from conversation. You MAY reference an existing host-managed entity by declaring a mention ONLY when the transcript provides enough identifying evidence to resolve it (for example a stable identifier, exact title, or calendar/tool-result fields). If you are not confident it already exists, do not declare that mention and do not use it as a subject/object/context entity. Runtime will resolve host-managed mentions read-only; unresolved mentions are not created.\n`
+      : '';
+  const hostManagedInlineReminder =
+    forbidden.size > 0
+      ? ' Host-managed types listed above may be declared only as references to existing records, never as newly inferred entities.'
+      : '';
 
   return `You are analyzing a recent agent-user conversation turn and extracting memory updates. Your output populates a knowledge graph.
 
@@ -973,7 +1093,7 @@ ${ctx.transcript}
 - \`m_user\` — the user (id=${ctx.userId})
 - \`m_agent\` — the agent (id=${ctx.agentId})
 
-When introducing NEW entities (other people, orgs, projects, events, tasks, topics), use labels \`m1\`, \`m2\`, etc.
+When introducing NEW entities (other people, orgs, projects, events, tasks, topics), use labels \`m1\`, \`m2\`, etc.${hostManagedInlineReminder}
 
 ## Output format
 Return JSON with exactly two top-level keys:
@@ -982,7 +1102,7 @@ Return JSON with exactly two top-level keys:
   "mentions": {
     "<local_label>": {
       "surface": "<verbatim text>",
-      "type": "<person|organization|project|task|event|topic|cluster>",
+      "type": "<${typeEnum}>",
       "identifiers": [{ "kind": "<email|domain|slack_id|github|...>", "value": "..." }],
       "aliases": ["<alternate form>"]
     }
@@ -1002,13 +1122,13 @@ Return JSON with exactly two top-level keys:
     }
   ]
 }
-
+${forbiddenSection}
 ## What to extract
 
 **USER facts (subject: \`m_user\`).** Preferences, identity claims, roles, relationships, commitments the user stated or revealed.
 - Good examples: \`{subject:"m_user", predicate:"prefers", value:"concise responses"}\`, \`{subject:"m_user", predicate:"works_at", object:"m1"}\`, \`{subject:"m_user", predicate:"full_name", value:"Anton Antich"}\`.
 
-**OTHER entities.** People, organizations, projects, events, tasks mentioned in the conversation that aren't the user or agent. Declare them as new mentions and write facts about THEIR attributes / relationships. Use \`contextIds\` to bind observations to parent entities (a concern raised during a project discussion should have the project in \`contextIds\`).
+**OTHER entities.** People, organizations, projects, events, tasks mentioned in the conversation that aren't the user or agent. Declare them as mentions and write facts about THEIR attributes / relationships.${hostManagedInlineReminder} Use \`contextIds\` to bind observations to parent entities (a concern raised during a project discussion should have the project in \`contextIds\`).
 
 **DO NOT extract facts with subject \`m_agent\`.** Agent behavior and personality are NOT a concern of this ambient extractor. User-owned behavior rules are captured exclusively when the user explicitly instructs the agent ("be terse", "reply in Russian") — the agent itself writes those via its own \`memory_set_agent_rule\` tool. Global agent instructions are admin-controlled. Any fact you would have put on \`m_agent\` is noise here — skip it.
 

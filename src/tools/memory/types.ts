@@ -112,6 +112,17 @@ export interface MemoryToolDeps {
   /** Current agent id (used for "this_agent" resolution and logging). */
   agentId: string;
   /**
+   * Entity types the AGENT must NOT create via `memory_upsert_entity`. When set,
+   * an upsert whose `type` is in this list is REJECTED (a clear error is
+   * returned to the model), and the tool DESCRIPTION drops those types' guidance
+   * so the model is never told it can create them. Use this for types a host
+   * populates DETERMINISTICALLY from a trusted source rather than from LLM
+   * judgement — e.g. ICOS populates `event` exclusively from the calendar
+   * pipeline, so agents are forbidden from minting events. Omitted → no
+   * restriction (backward compatible).
+   */
+  forbiddenEntityTypes?: ReadonlyArray<string>;
+  /**
    * Explicit user id from plugin config — overrides `ToolContext.userId` only
    * if the context doesn't carry one. If both are unset, scope.userId stays
    * undefined and the tool handles it as "no user scope".
