@@ -11,6 +11,12 @@ import type { IEmbedder } from '../types.js';
 import type { IEmbeddingProvider } from '../../domain/interfaces/IEmbeddingProvider.js';
 import { Connector } from '../../core/Connector.js';
 import { createEmbeddingProvider } from '../../core/createEmbeddingProvider.js';
+import { getEmbeddingModelInfo } from '../../domain/entities/EmbeddingModel.js';
+
+const FALLBACK_EMBEDDING_MAX_TOKENS = 8191;
+const EMBEDDING_TOKEN_MARGIN = 512;
+const EMBEDDING_CHARS_PER_TOKEN = 3;
+const EMBEDDING_TAIL_FRACTION = 0.3;
 
 export interface ConnectorEmbedderConfig {
   /** Connector name — must already be registered via Connector.create(). */
@@ -63,9 +69,10 @@ export class ConnectorEmbedder implements IEmbedder {
   }
 
   async embed(text: string): Promise<number[]> {
+    const input = this.limitInput(text);
     const res = await this.provider.embed({
       model: this.model,
-      input: text,
+      input,
       dimensions: this.requestedDimensions,
     });
     const vec = res.embeddings[0];
@@ -78,9 +85,10 @@ export class ConnectorEmbedder implements IEmbedder {
 
   async embedBatch(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
+    const input = texts.map((text) => this.limitInput(text));
     const res = await this.provider.embed({
       model: this.model,
-      input: texts,
+      input,
       dimensions: this.requestedDimensions,
     });
     if (res.embeddings.length !== texts.length) {
@@ -90,6 +98,22 @@ export class ConnectorEmbedder implements IEmbedder {
     }
     for (const vec of res.embeddings) this.assertVectorShape(vec);
     return res.embeddings;
+  }
+
+  private limitInput(text: string): string {
+    const maxTokens =
+      getEmbeddingModelInfo(this.model)?.capabilities.maxTokens ?? FALLBACK_EMBEDDING_MAX_TOKENS;
+    const reserveTokens = Math.min(EMBEDDING_TOKEN_MARGIN, Math.floor(maxTokens / 4));
+    const usableTokens = Math.max(1, maxTokens - reserveTokens);
+    const maxChars = Math.floor(usableTokens * EMBEDDING_CHARS_PER_TOKEN);
+    if (text.length <= maxChars) return text;
+
+    const tailChars = Math.floor(maxChars * EMBEDDING_TAIL_FRACTION);
+    const separator = '\n\n';
+    const headChars = Math.max(0, maxChars - tailChars - separator.length);
+    if (headChars <= 0) return text.slice(0, maxChars);
+
+    return `${text.slice(0, headChars)}${separator}${text.slice(text.length - tailChars)}`;
   }
 
   /**

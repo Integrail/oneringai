@@ -56,6 +56,26 @@ describe('ConnectorEmbedder', () => {
       );
     });
 
+    it('embed() trims oversized input before calling the provider', async () => {
+      const provider = makeMockProvider();
+      const emb = ConnectorEmbedder.withProvider({
+        provider,
+        model: 'text-embedding-3-small',
+        dimensions: 3,
+      });
+      const input = `start ${'x'.repeat(40_000)} finish`;
+
+      await emb.embed(input);
+
+      const call = provider.embed.mock.calls[0]?.[0] as EmbeddingOptions;
+      expect(typeof call.input).toBe('string');
+      const trimmed = call.input as string;
+      expect(trimmed.length).toBeLessThan(input.length);
+      expect(trimmed.length).toBeLessThanOrEqual(24_000);
+      expect(trimmed.startsWith('start ')).toBe(true);
+      expect(trimmed.endsWith(' finish')).toBe(true);
+    });
+
     it('embedBatch() forwards arrays', async () => {
       const provider = makeMockProvider();
       const emb = ConnectorEmbedder.withProvider({ provider, model: 'm1', dimensions: 3 });
@@ -64,6 +84,28 @@ describe('ConnectorEmbedder', () => {
       expect(provider.embed).toHaveBeenCalledWith(
         expect.objectContaining({ input: ['a', 'b', 'c'] }),
       );
+    });
+
+    it('embedBatch() trims only oversized inputs before calling the provider', async () => {
+      const provider = makeMockProvider();
+      const emb = ConnectorEmbedder.withProvider({
+        provider,
+        model: 'text-embedding-3-small',
+        dimensions: 3,
+      });
+      const short = 'short';
+      const long = `alpha ${'y'.repeat(40_000)} omega`;
+
+      await emb.embedBatch!([short, long]);
+
+      const call = provider.embed.mock.calls[0]?.[0] as EmbeddingOptions;
+      expect(Array.isArray(call.input)).toBe(true);
+      const inputs = call.input as string[];
+      expect(inputs[0]).toBe(short);
+      expect(inputs[1]!.length).toBeLessThan(long.length);
+      expect(inputs[1]!.length).toBeLessThanOrEqual(24_000);
+      expect(inputs[1]!.startsWith('alpha ')).toBe(true);
+      expect(inputs[1]!.endsWith(' omega')).toBe(true);
     });
 
     it('embedBatch([]) returns empty without calling provider', async () => {
