@@ -76,6 +76,8 @@ export {
 } from './integration/index.js';
 export type {
   ConnectorEmbedderConfig,
+  OversizeEmbeddingInput,
+  OversizeEmbeddingReducer,
   ConnectorProfileGeneratorConfig,
   PromptContext,
   MemoryConnectorsConfig,

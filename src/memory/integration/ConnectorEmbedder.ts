@@ -12,11 +12,23 @@ import type { IEmbeddingProvider } from '../../domain/interfaces/IEmbeddingProvi
 import { Connector } from '../../core/Connector.js';
 import { createEmbeddingProvider } from '../../core/createEmbeddingProvider.js';
 import { getEmbeddingModelInfo } from '../../domain/entities/EmbeddingModel.js';
+import { ProviderContextLengthError } from '../../domain/errors/AIErrors.js';
 
-const FALLBACK_EMBEDDING_MAX_TOKENS = 8191;
-const EMBEDDING_TOKEN_MARGIN = 512;
-const EMBEDDING_CHARS_PER_TOKEN = 3;
-const EMBEDDING_TAIL_FRACTION = 0.3;
+const EMBEDDING_CHARS_PER_TOKEN = 3.5;
+
+function estimateEmbeddingTokens(text: string): number {
+  if (text.length === 0) return 0;
+  return Math.ceil(text.length / EMBEDDING_CHARS_PER_TOKEN);
+}
+
+export interface OversizeEmbeddingInput {
+  text: string;
+  model: string;
+  maxTokens: number;
+  estimatedTokens: number;
+}
+
+export type OversizeEmbeddingReducer = (input: OversizeEmbeddingInput) => Promise<string>;
 
 export interface ConnectorEmbedderConfig {
   /** Connector name — must already be registered via Connector.create(). */
@@ -27,6 +39,15 @@ export interface ConnectorEmbedderConfig {
   dimensions: number;
   /** Optional dimension override passed to the provider (for MRL models). */
   requestedDimensions?: number;
+  /** Optional model input-token override for custom/unknown embedding models. */
+  maxInputTokens?: number;
+  /**
+   * Optional host-provided reducer for inputs that exceed the embedding model's
+   * declared token limit. Hosts can summarize or otherwise compress text using
+   * their own connector/model choices; ConnectorEmbedder validates the reduced
+   * text before sending it to the embedding provider.
+   */
+  oversizeInputReducer?: OversizeEmbeddingReducer;
 }
 
 export class ConnectorEmbedder implements IEmbedder {
@@ -34,6 +55,8 @@ export class ConnectorEmbedder implements IEmbedder {
   private readonly provider: IEmbeddingProvider;
   private readonly model: string;
   private readonly requestedDimensions?: number;
+  private readonly maxInputTokens?: number;
+  private readonly oversizeInputReducer?: OversizeEmbeddingReducer;
 
   constructor(config: ConnectorEmbedderConfig) {
     const connector = Connector.get(config.connector);
@@ -41,6 +64,8 @@ export class ConnectorEmbedder implements IEmbedder {
     this.model = config.model;
     this.dimensions = config.dimensions;
     this.requestedDimensions = config.requestedDimensions;
+    this.maxInputTokens = config.maxInputTokens;
+    this.oversizeInputReducer = config.oversizeInputReducer;
   }
 
   /**
@@ -53,6 +78,8 @@ export class ConnectorEmbedder implements IEmbedder {
     model: string;
     dimensions: number;
     requestedDimensions?: number;
+    maxInputTokens?: number;
+    oversizeInputReducer?: OversizeEmbeddingReducer;
   }): ConnectorEmbedder {
     const instance = Object.create(ConnectorEmbedder.prototype) as ConnectorEmbedder;
     const bag = instance as unknown as {
@@ -60,16 +87,20 @@ export class ConnectorEmbedder implements IEmbedder {
       model: string;
       dimensions: number;
       requestedDimensions?: number;
+      maxInputTokens?: number;
+      oversizeInputReducer?: OversizeEmbeddingReducer;
     };
     bag.provider = args.provider;
     bag.model = args.model;
     bag.dimensions = args.dimensions;
     bag.requestedDimensions = args.requestedDimensions;
+    bag.maxInputTokens = args.maxInputTokens;
+    bag.oversizeInputReducer = args.oversizeInputReducer;
     return instance;
   }
 
   async embed(text: string): Promise<number[]> {
-    const input = this.limitInput(text);
+    const input = await this.prepareInput(text);
     const res = await this.provider.embed({
       model: this.model,
       input,
@@ -85,7 +116,7 @@ export class ConnectorEmbedder implements IEmbedder {
 
   async embedBatch(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
-    const input = texts.map((text) => this.limitInput(text));
+    const input = await Promise.all(texts.map((text) => this.prepareInput(text)));
     const res = await this.provider.embed({
       model: this.model,
       input,
@@ -100,20 +131,32 @@ export class ConnectorEmbedder implements IEmbedder {
     return res.embeddings;
   }
 
-  private limitInput(text: string): string {
-    const maxTokens =
-      getEmbeddingModelInfo(this.model)?.capabilities.maxTokens ?? FALLBACK_EMBEDDING_MAX_TOKENS;
-    const reserveTokens = Math.min(EMBEDDING_TOKEN_MARGIN, Math.floor(maxTokens / 4));
-    const usableTokens = Math.max(1, maxTokens - reserveTokens);
-    const maxChars = Math.floor(usableTokens * EMBEDDING_CHARS_PER_TOKEN);
-    if (text.length <= maxChars) return text;
+  private async prepareInput(text: string): Promise<string> {
+    const maxTokens = this.getMaxInputTokens();
+    if (!maxTokens) return text;
 
-    const tailChars = Math.floor(maxChars * EMBEDDING_TAIL_FRACTION);
-    const separator = '\n\n';
-    const headChars = Math.max(0, maxChars - tailChars - separator.length);
-    if (headChars <= 0) return text.slice(0, maxChars);
+    const estimatedTokens = estimateEmbeddingTokens(text);
+    if (estimatedTokens <= maxTokens) return text;
 
-    return `${text.slice(0, headChars)}${separator}${text.slice(text.length - tailChars)}`;
+    if (!this.oversizeInputReducer) {
+      throw new ProviderContextLengthError('ConnectorEmbedder', maxTokens, estimatedTokens);
+    }
+
+    const reduced = await this.oversizeInputReducer({
+      text,
+      model: this.model,
+      maxTokens,
+      estimatedTokens,
+    });
+    const reducedEstimatedTokens = estimateEmbeddingTokens(reduced);
+    if (reducedEstimatedTokens > maxTokens) {
+      throw new ProviderContextLengthError('ConnectorEmbedder', maxTokens, reducedEstimatedTokens);
+    }
+    return reduced;
+  }
+
+  private getMaxInputTokens(): number | undefined {
+    return this.maxInputTokens ?? getEmbeddingModelInfo(this.model)?.capabilities.maxTokens;
   }
 
   /**

@@ -56,7 +56,7 @@ describe('ConnectorEmbedder', () => {
       );
     });
 
-    it('embed() trims oversized input before calling the provider', async () => {
+    it('embed() rejects oversized known-model input when no reducer is configured', async () => {
       const provider = makeMockProvider();
       const emb = ConnectorEmbedder.withProvider({
         provider,
@@ -65,15 +65,48 @@ describe('ConnectorEmbedder', () => {
       });
       const input = `start ${'x'.repeat(40_000)} finish`;
 
+      await expect(emb.embed(input)).rejects.toThrow(/Context length exceeded/);
+      expect(provider.embed).not.toHaveBeenCalled();
+    });
+
+    it('embed() reduces oversized input before calling the provider when configured', async () => {
+      const provider = makeMockProvider();
+      const reducer = vi.fn(async () => 'summary');
+      const emb = ConnectorEmbedder.withProvider({
+        provider,
+        model: 'm1',
+        dimensions: 3,
+        maxInputTokens: 5,
+        oversizeInputReducer: reducer,
+      });
+      const input = 'x'.repeat(100);
+
       await emb.embed(input);
 
+      expect(reducer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: input,
+          model: 'm1',
+          maxTokens: 5,
+          estimatedTokens: expect.any(Number),
+        }),
+      );
       const call = provider.embed.mock.calls[0]?.[0] as EmbeddingOptions;
-      expect(typeof call.input).toBe('string');
-      const trimmed = call.input as string;
-      expect(trimmed.length).toBeLessThan(input.length);
-      expect(trimmed.length).toBeLessThanOrEqual(24_000);
-      expect(trimmed.startsWith('start ')).toBe(true);
-      expect(trimmed.endsWith(' finish')).toBe(true);
+      expect(call.input).toBe('summary');
+    });
+
+    it('embed() rejects when reducer output still exceeds the model limit', async () => {
+      const provider = makeMockProvider();
+      const emb = ConnectorEmbedder.withProvider({
+        provider,
+        model: 'm1',
+        dimensions: 3,
+        maxInputTokens: 5,
+        oversizeInputReducer: async () => 'y'.repeat(100),
+      });
+
+      await expect(emb.embed('x'.repeat(100))).rejects.toThrow(/Context length exceeded/);
+      expect(provider.embed).not.toHaveBeenCalled();
     });
 
     it('embedBatch() forwards arrays', async () => {
@@ -86,26 +119,27 @@ describe('ConnectorEmbedder', () => {
       );
     });
 
-    it('embedBatch() trims only oversized inputs before calling the provider', async () => {
+    it('embedBatch() reduces only oversized inputs before calling the provider', async () => {
       const provider = makeMockProvider();
+      const reducer = vi.fn(async () => 'summary');
       const emb = ConnectorEmbedder.withProvider({
         provider,
-        model: 'text-embedding-3-small',
+        model: 'm1',
         dimensions: 3,
+        maxInputTokens: 5,
+        oversizeInputReducer: reducer,
       });
       const short = 'short';
-      const long = `alpha ${'y'.repeat(40_000)} omega`;
+      const long = 'y'.repeat(100);
 
       await emb.embedBatch!([short, long]);
 
+      expect(reducer).toHaveBeenCalledTimes(1);
       const call = provider.embed.mock.calls[0]?.[0] as EmbeddingOptions;
       expect(Array.isArray(call.input)).toBe(true);
       const inputs = call.input as string[];
       expect(inputs[0]).toBe(short);
-      expect(inputs[1]!.length).toBeLessThan(long.length);
-      expect(inputs[1]!.length).toBeLessThanOrEqual(24_000);
-      expect(inputs[1]!.startsWith('alpha ')).toBe(true);
-      expect(inputs[1]!.endsWith(' omega')).toBe(true);
+      expect(inputs[1]).toBe('summary');
     });
 
     it('embedBatch([]) returns empty without calling provider', async () => {

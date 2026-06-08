@@ -1639,6 +1639,8 @@ export type {
   ObjectIdCtor,
   // Integration config
   ConnectorEmbedderConfig,
+  OversizeEmbeddingInput,
+  OversizeEmbeddingReducer,
   ConnectorProfileGeneratorConfig,
   PromptContext as MemoryPromptContext,
   MemoryConnectorsConfig,
@@ -1820,4 +1822,3 @@ export type {
   TestParam,
   RunSuiteOptions,
 } from './testing/integration/types.js';
-

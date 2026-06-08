@@ -1,5 +1,9 @@
 export { ConnectorEmbedder } from './ConnectorEmbedder.js';
-export type { ConnectorEmbedderConfig } from './ConnectorEmbedder.js';
+export type {
+  ConnectorEmbedderConfig,
+  OversizeEmbeddingInput,
+  OversizeEmbeddingReducer,
+} from './ConnectorEmbedder.js';
 
 export {
   ConnectorProfileGenerator,
