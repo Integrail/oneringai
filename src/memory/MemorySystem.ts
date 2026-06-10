@@ -4833,14 +4833,44 @@ export class MemorySystem implements IDisposable {
     const entity = await this.store.getEntity(entityId, readScope);
     if (!entity) throw new Error(`regenerateProfile: entity ${entityId} not found`);
 
-    // Prior profile at this exact target scope (not merely visible — same groupId/ownerId).
-    const priorPage = await this.store.findFacts(
-      { subjectId: entityId, predicate: 'profile', kind: 'document' },
-      { limit: 10, orderBy: { field: 'createdAt', direction: 'desc' } },
-      readScope,
-    );
-    const priorProfile = priorPage.items.find(
-      (f) => sameScope(f, targetScope) && !f.archived,
+    // Collect EVERY live profile at this exact target scope (not merely
+    // visible — same groupId/ownerId), draining all pages. We need the full
+    // set — not just the latest — to enforce the single-live-profile invariant
+    // below.
+    //
+    // Why drain instead of `limit: 10`: a `profile` fact is the only thing this
+    // method writes, and an in-memory single-flight (`regenInFlight`) collapses
+    // duplicate regen WITHIN a process. But across processes/pods two regens
+    // can read the same prior `P`, both write a new profile `supersedes: P`,
+    // and `addFact` only archives `P` once — the OTHER new profile becomes an
+    // orphan that the single-supersede logic never revisits (it's no longer
+    // "the latest"), so it stays live forever. These orphans accumulate without
+    // bound (one hot shared entity reached 390 live profiles for a single owner
+    // in prod, all dragging a 1536-d embedding). See the collapse step after
+    // the write below.
+    const liveProfilesAtScope: IFact[] = [];
+    let profileCursor: string | undefined;
+    do {
+      const page = await this.store.findFacts(
+        { subjectId: entityId, predicate: 'profile', kind: 'document', archived: false },
+        // `_id` is a total order with no ties — safe for offset pagination over
+        // this read-only pass (we archive only AFTER collecting). See
+        // FactOrderBy doc-comment.
+        { limit: 200, orderBy: { field: '_id', direction: 'asc' }, cursor: profileCursor },
+        readScope,
+      );
+      for (const f of page.items) {
+        if (sameScope(f, targetScope)) liveProfilesAtScope.push(f);
+      }
+      profileCursor = page.nextCursor;
+    } while (profileCursor);
+
+    // The latest live profile at scope: incremental-input anchor + supersede
+    // target (unchanged semantics from the previous `limit: 10` lookup, which
+    // already saw the true latest within its first page).
+    const priorProfile = liveProfilesAtScope.reduce<IFact | undefined>(
+      (latest, f) => (!latest || f.createdAt > latest.createdAt ? f : latest),
+      undefined,
     );
 
     // Incremental input: pass the prior profile as the authoritative starting
@@ -4948,6 +4978,47 @@ export class MemorySystem implements IDisposable {
       },
       readScope,
     );
+
+    // Enforce the invariant "at most one live profile per (subjectId, ownerId,
+    // groupId)": archive every OTHER live profile at this scope. `priorProfile`
+    // was already archived by the `supersedes` above; the rest are orphaned
+    // forks from prior cross-process races. This is self-healing — even if a
+    // concurrent regen forks a new profile through, the next regen collapses
+    // the set back to one. `newProfile` cannot be in `liveProfilesAtScope`
+    // (that snapshot was taken before this write), so it is never archived; a
+    // concurrently-written NEWER profile is likewise absent from the snapshot,
+    // so the globally-newest profile always survives. Best-effort per fact — a
+    // single failed archive must not abort the regen, whose survivor is already
+    // correct.
+    let collapsedForks = 0;
+    for (const stale of liveProfilesAtScope) {
+      if (stale.id === priorProfile?.id) continue; // already archived via supersedes
+      try {
+        await this.store.updateFact(stale.id, { archived: true }, readScope);
+        this.emit({ type: 'fact.archive', factId: stale.id });
+        collapsedForks += 1;
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[MemorySystem.regenerateProfile] orphan profile fork collapse failed',
+          {
+            factId: stale.id,
+            entityId,
+            scope: regenKey(entityId, targetScope),
+            error: err instanceof Error ? err.message : String(err),
+          },
+        );
+      }
+    }
+    if (collapsedForks > 0) {
+      // Surfacing >0 is a signal a cross-process race had previously forked the
+      // profile — worth noticing, not an error (the data is now correct).
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[MemorySystem.regenerateProfile] collapsed ${collapsedForks} orphaned profile fork(s) ` +
+          `for entity=${entityId} scope=${regenKey(entityId, targetScope)}`,
+      );
+    }
 
     this.emit({
       type: 'profile.regenerate',

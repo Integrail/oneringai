@@ -18,6 +18,7 @@ import { InMemoryAdapter } from '@/memory/adapters/inmemory/InMemoryAdapter.js';
 import type {
   ChangeEvent,
   IEmbedder,
+  IFact,
   IMemoryStore,
   IProfileGenerator,
   IRuleEngine,
@@ -1250,6 +1251,54 @@ describe('MemorySystem', () => {
       const ok = await m.regenerateProfile(subj, TEST_SCOPE_FIELDS);
       expect(ok.details).toBe('second');
       expect(generate).toHaveBeenCalledTimes(2);
+      await m.shutdown();
+    });
+
+    it('collapses orphaned profile forks at scope to a single live profile', async () => {
+      // Reproduce the cross-process fork: concurrent regens on different pods
+      // each read the same prior, each write a new profile, and only one prior
+      // gets archived — leaving multiple LIVE profiles at the same scope that
+      // the single-supersede logic never revisits. Here we seed three such
+      // live profiles directly (no supersedes chain between them), then assert
+      // the next regen collapses the set back to exactly one.
+      const generate = vi.fn(async () => ({
+        details: 'merged',
+        summaryForEmbedding: 'merged',
+      }));
+      const m = new MemorySystem({ store, profileGenerator: { generate } });
+      const subj = await seedEntity(m, {
+        identifiers: [{ kind: 'email', value: 'fork@x.com' }],
+      });
+
+      const forks: IFact[] = [];
+      for (const tag of ['fork1', 'fork2', 'fork3']) {
+        forks.push(
+          await m.addFact(
+            { subjectId: subj, predicate: 'profile', kind: 'document', details: tag },
+            TEST_SCOPE,
+          ),
+        );
+      }
+      const liveBefore = await store.findFacts(
+        { subjectId: subj, predicate: 'profile', kind: 'document', archived: false },
+        { limit: 100, orderBy: { field: '_id', direction: 'asc' } },
+        TEST_SCOPE,
+      );
+      expect(liveBefore.items.length).toBe(3);
+
+      const fresh = await m.regenerateProfile(subj, TEST_SCOPE_FIELDS);
+
+      const liveAfter = await store.findFacts(
+        { subjectId: subj, predicate: 'profile', kind: 'document', archived: false },
+        { limit: 100, orderBy: { field: '_id', direction: 'asc' } },
+        TEST_SCOPE,
+      );
+      expect(liveAfter.items.length).toBe(1);
+      expect(liveAfter.items[0]!.id).toBe(fresh.id);
+      for (const f of forks) {
+        const after = await store.getFact(f.id, TEST_SCOPE);
+        expect(after!.archived).toBe(true);
+      }
       await m.shutdown();
     });
   });
