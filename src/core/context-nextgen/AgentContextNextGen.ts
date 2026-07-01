@@ -217,6 +217,9 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    */
   private _historyBuffer: HistoryEntry[] = [];
 
+  /** Serializes fire-and-forget journal writes so same-turn replacements cannot race appends. */
+  private _journalWriteQueue: Promise<void> = Promise.resolve();
+
   /** Filter for journal entry types. When set, only matching types are journaled. */
   private readonly _journalFilter: HistoryEntryType[] | undefined;
 
@@ -975,6 +978,37 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
     // Build assistant message
     const id = this.generateId();
+    const { content: contentArray, thinkingText } = this.buildAssistantContent(output);
+
+    // Always update lastThinking (available for inspection via property)
+    this._lastThinking = thinkingText;
+
+    // Only add if there's content
+    if (contentArray.length > 0) {
+      const message: Message = {
+        type: 'message',
+        id,
+        role: MessageRole.ASSISTANT,
+        content: contentArray,
+      };
+
+      this._conversation.push(message);
+
+      // Journal: append assistant message (same turn as the user message)
+      this._journalAppend('assistant', [message]);
+
+      this.emit('message:added', { role: 'assistant', index: this._conversation.length - 1 });
+    }
+
+    return id;
+  }
+
+  /**
+   * Rebuild assistant message content (text + tool_use, plus thinking when the
+   * vendor requires persistence) from raw provider output items. Shared by
+   * {@link addAssistantResponse} and {@link replaceLastAssistantResponse}.
+   */
+  private buildAssistantContent(output: OutputItem[]): { content: Content[]; thinkingText: string | null } {
     const contentArray: Content[] = [];
     let thinkingText: string | null = null;
 
@@ -1006,27 +1040,35 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       }
     }
 
-    // Always update lastThinking (available for inspection via property)
-    this._lastThinking = thinkingText;
+    return { content: contentArray, thinkingText };
+  }
 
-    // Only add if there's content
-    if (contentArray.length > 0) {
-      const message: Message = {
-        type: 'message',
-        id,
-        role: MessageRole.ASSISTANT,
-        content: contentArray,
-      };
+  /**
+   * Replace the content of the most recent assistant message in the conversation
+   * with `output` (rebuilt the same way as {@link addAssistantResponse}). Used
+   * when the final answer is transformed after it was already committed — e.g.
+   * the structured-output reformat pass in `Agent.run()` — so the persisted
+   * history, session save/load, continuation, and the history journal all
+   * reflect the same answer the caller received rather than the pre-reformat
+   * text.
+   */
+  replaceLastAssistantResponse(output: OutputItem[]): boolean {
+    this.assertNotDestroyed();
 
-      this._conversation.push(message);
+    const { content, thinkingText } = this.buildAssistantContent(output);
+    if (content.length === 0) return false;
 
-      // Journal: append assistant message (same turn as the user message)
-      this._journalAppend('assistant', [message]);
-
-      this.emit('message:added', { role: 'assistant', index: this._conversation.length - 1 });
+    for (let i = this._conversation.length - 1; i >= 0; i--) {
+      const item = this._conversation[i];
+      if (item && item.type === 'message' && (item as Message).role === MessageRole.ASSISTANT) {
+        const updated: Message = { ...(item as Message), content };
+        this._conversation[i] = updated;
+        this._lastThinking = thinkingText;
+        this._journalReplaceLast('assistant', updated);
+        return true;
+      }
     }
-
-    return id;
+    return false;
   }
 
   /**
@@ -2451,6 +2493,20 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    *
    * No extra memory cost for the buffer — items are already in _conversation.
    */
+  private buildHistoryEntries(type: HistoryEntryType, items: InputItem[]): HistoryEntry[] {
+    // Apply journal filter — skip entry types not in the allowlist
+    if (this._journalFilter && !this._journalFilter.includes(type)) {
+      return [];
+    }
+
+    return items.map(item => ({
+      timestamp: Date.now(),
+      type,
+      item,
+      turnIndex: this._turnIndex,
+    }));
+  }
+
   private _journalAppend(type: HistoryEntryType, items: InputItem[]): void {
     const journal = this._storage?.journal;
     if (!journal && !this._storage) {
@@ -2458,28 +2514,62 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       return;
     }
 
-    // Apply journal filter — skip entry types not in the allowlist
-    if (this._journalFilter && !this._journalFilter.includes(type)) {
-      return;
-    }
-
-    const entries: HistoryEntry[] = items.map(item => ({
-      timestamp: Date.now(),
-      type,
-      item,
-      turnIndex: this._turnIndex,
-    }));
+    const entries = this.buildHistoryEntries(type, items);
+    if (entries.length === 0) return;
 
     if (this._sessionId && journal) {
       // Session established and journal available — append directly
-      journal.append(this._sessionId, entries).catch(err => {
-        logger.warn({ err: (err as Error).message }, 'History journal append failed');
-      });
+      const sessionId = this._sessionId;
+      this.enqueueJournalWrite(() => journal.append(sessionId, entries));
     } else {
       // No session yet, or storage doesn't support journal — buffer
       // Buffer will be flushed on first save() if journal is available
       this._historyBuffer.push(...entries);
     }
+  }
+
+  private _journalReplaceLast(type: HistoryEntryType, item: InputItem): void {
+    const journal = this._storage?.journal;
+    if (!journal && !this._storage) {
+      return;
+    }
+
+    const [entry] = this.buildHistoryEntries(type, [item]);
+    if (!entry) return;
+
+    const sessionId = this._sessionId;
+    const turnIndex = this._turnIndex;
+    if (sessionId && journal?.replaceLast) {
+      this.enqueueJournalWrite(async () => {
+        const replaced = await journal.replaceLast!(sessionId, type, turnIndex, entry);
+        if (!replaced) {
+          await journal.append(sessionId, [entry]);
+        }
+      });
+      return;
+    }
+
+    if (sessionId && journal) {
+      this.enqueueJournalWrite(() => journal.append(sessionId, [entry]));
+      return;
+    }
+
+    for (let i = this._historyBuffer.length - 1; i >= 0; i--) {
+      const current = this._historyBuffer[i];
+      if (current?.type === type && current.turnIndex === this._turnIndex) {
+        this._historyBuffer[i] = entry;
+        return;
+      }
+    }
+    this._historyBuffer.push(entry);
+  }
+
+  private enqueueJournalWrite(work: () => Promise<void>): void {
+    this._journalWriteQueue = this._journalWriteQueue
+      .then(work)
+      .catch(err => {
+        logger.warn({ err: (err as Error).message }, 'History journal write failed');
+      });
   }
 
   private generateId(): string {

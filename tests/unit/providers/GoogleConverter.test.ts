@@ -102,6 +102,42 @@ describe('GoogleConverter', () => {
       expect(request.tools![0].functionDeclarations![0].name).toBe('get_weather');
       expect(request.tools![0].functionDeclarations![0].description).toBe('Get weather');
     });
+
+    it('forwards json_schema via responseMimeType + responseJsonSchema', async () => {
+      const schema = {
+        type: 'object',
+        properties: { name: { type: 'string' } },
+        required: ['name'],
+        additionalProperties: false,
+      };
+      const request = await converter.convertRequest({
+        model: 'gemini-2.5-pro',
+        input: [{
+          type: 'message',
+          role: MessageRole.USER,
+          content: [{ type: ContentType.INPUT_TEXT, text: 'x' }],
+        }],
+        response_format: { type: 'json_schema', json_schema: { name: 'contact', schema, strict: true } },
+      });
+
+      expect(request.generationConfig!.responseMimeType).toBe('application/json');
+      expect(request.generationConfig!.responseJsonSchema).toEqual(schema);
+    });
+
+    it('sets json_object mode (mime type only, no schema)', async () => {
+      const request = await converter.convertRequest({
+        model: 'gemini-2.5-pro',
+        input: [{
+          type: 'message',
+          role: MessageRole.USER,
+          content: [{ type: ContentType.INPUT_TEXT, text: 'x' }],
+        }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(request.generationConfig!.responseMimeType).toBe('application/json');
+      expect(request.generationConfig!.responseJsonSchema).toBeUndefined();
+    });
   });
 
   describe('convertResponse() - Google API → Our format', () => {

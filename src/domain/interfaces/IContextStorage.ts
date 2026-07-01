@@ -181,7 +181,7 @@ export interface IContextStorage {
    * History journal companion for full conversation logging.
    *
    * When present, AgentContextNextGen automatically appends every message
-   * to the journal (append-only, fire-and-forget). The journal is never
+   * to the journal (append-oriented, fire-and-forget). The journal is never
    * affected by compaction, preserving full conversation history.
    *
    * Storage implementations create the appropriate journal for their backend:

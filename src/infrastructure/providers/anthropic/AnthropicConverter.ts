@@ -107,6 +107,16 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
       params.temperature = options.temperature;
     }
 
+    // NOTE: structured output (`options.response_format`) is intentionally NOT
+    // mapped to Anthropic's native `output_config.format` here. That native path
+    // only works on a subset of Claude models, but the registry's
+    // `features.structuredOutput` flag (which drives model capabilities) is set
+    // `true` for older models too (e.g. claude-3-7-sonnet) that would 400 on it.
+    // Without a precise per-model signal, `AnthropicTextProvider` reports
+    // `supportsJSONSchema: false`, so `resolveStructuredStrategy` routes Anthropic
+    // to the vendor-agnostic prompt fallback (see StructuredOutput.ts). Re-enable
+    // native here only alongside an accurate capability gate.
+
     return params;
   }
 

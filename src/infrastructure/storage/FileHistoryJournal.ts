@@ -1,5 +1,5 @@
 /**
- * FileHistoryJournal - JSONL-based append-only conversation history journal
+ * FileHistoryJournal - JSONL-based conversation history journal
  *
  * Stores history entries as newline-delimited JSON (JSONL) files alongside
  * session state files. Each line is a self-contained JSON object representing
@@ -8,7 +8,8 @@
  * Path: <sessionsDirectory>/<sessionId>.history.jsonl
  *
  * Design:
- * - Append-only writes (fast, no rewrite of existing data)
+ * - Append-oriented writes (fast for the normal path)
+ * - Narrow same-turn assistant replacement for post-processing corrections
  * - Line-based reads with filtering (no need to parse entire file for counts)
  * - Streaming support via async iteration
  * - Automatic directory creation on first write
@@ -17,7 +18,7 @@
  * ```typescript
  * const journal = new FileHistoryJournal('/path/to/sessions');
  *
- * // Append (fast, append-only)
+ * // Append (fast normal path)
  * await journal.append('session-1', [{ timestamp: Date.now(), type: 'user', item: msg, turnIndex: 0 }]);
  *
  * // Read with filtering
@@ -35,7 +36,12 @@ import { createReadStream } from 'fs';
 import { sanitizeId } from './utils.js';
 import { join } from 'path';
 import { createInterface } from 'readline';
-import type { IHistoryJournal, HistoryEntry, HistoryReadOptions } from '../../domain/interfaces/IHistoryJournal.js';
+import type {
+  IHistoryJournal,
+  HistoryEntry,
+  HistoryEntryType,
+  HistoryReadOptions,
+} from '../../domain/interfaces/IHistoryJournal.js';
 
 /**
  * Sanitize ID for use as a filename.
@@ -83,6 +89,49 @@ export class FileHistoryJournal implements IHistoryJournal {
 
     const lines = entries.map(e => JSON.stringify(e)).join('\n') + '\n';
     await fs.appendFile(this.journalPath(sessionId), lines, 'utf-8');
+  }
+
+  /**
+   * Replace the most recent entry with the same type + turn index.
+   *
+   * JSONL is append-friendly rather than update-friendly, so this rewrites the
+   * session journal file only for the narrow correction path used by
+   * structured-output post-processing.
+   */
+  async replaceLast(
+    sessionId: string,
+    type: HistoryEntryType,
+    turnIndex: number,
+    entry: HistoryEntry,
+  ): Promise<boolean> {
+    await this.ensureDirectory();
+
+    const filePath = this.journalPath(sessionId);
+    let content: string;
+    try {
+      content = await fs.readFile(filePath, 'utf-8');
+    } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return false;
+      }
+      throw error;
+    }
+
+    const lines = content.trimEnd().split('\n').filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const current = JSON.parse(lines[i]!) as HistoryEntry;
+        if (current.type === type && current.turnIndex === turnIndex) {
+          lines[i] = JSON.stringify(entry);
+          await fs.writeFile(filePath, lines.length > 0 ? `${lines.join('\n')}\n` : '', 'utf-8');
+          return true;
+        }
+      } catch {
+        // Skip malformed lines defensively, matching read()/stream() behavior.
+      }
+    }
+
+    return false;
   }
 
   /**

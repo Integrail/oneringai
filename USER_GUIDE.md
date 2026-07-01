@@ -12,6 +12,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 1. [Getting Started](#getting-started)
 2. [Core Concepts](#core-concepts)
 3. [Basic Text Generation](#basic-text-generation)
+   - [Structured Output (JSON)](#structured-output-json) — vendor-agnostic `responseFormat`, native or prompt fallback
 4. [Connectors & Authentication](#connectors--authentication)
 5. [Agent Features](#agent-features)
    - [Instruction Templates](#instruction-templates) — `{{DATE}}`, `{{AGENT_ID}}`, custom `{{COMMAND:arg}}` with extensible registry
@@ -295,6 +296,66 @@ agent.setTemperature(0.9);
 // Get current settings
 console.log(agent.getTemperature()); // 0.9
 ```
+
+### Structured Output (JSON)
+
+Request JSON output with one vendor-agnostic option, `responseFormat`. The library translates it to each vendor's **native** structured-output mechanism where the model supports it — OpenAI (`text.format`), Google/Vertex (`responseJsonSchema`) — and falls back to a strict prompt instruction otherwise. It then parses (and, on parse failure, re-asks once for) the output and attaches the result to `response.output_parsed`. The raw JSON string is still available on `response.output_text`.
+
+> **Validation contract:** on the *native* path the vendor enforces the schema server-side. On the *prompt-fallback* path the library guarantees **valid, parseable JSON** but does **not** itself validate schema conformance — it instructs the model to conform and trusts it. Validate `output_parsed` yourself if you need a hard guarantee. (This is a deliberate choice to avoid a JSON-schema-validator dependency.)
+
+Two modes:
+
+- **`{ type: 'json_object' }`** — any valid JSON value.
+- **`{ type: 'json_schema', schema, name?, description?, strict? }`** — JSON constrained to a JSON Schema.
+
+```typescript
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4.1' });
+
+// Schema-constrained
+const res = await agent.run('Extract: Jane Doe, jane@acme.com, Enterprise plan', {
+  responseFormat: {
+    type: 'json_schema',
+    name: 'contact',
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        email: { type: 'string' },
+        plan: { type: 'string' },
+      },
+      required: ['name', 'email'],
+      additionalProperties: false,
+    },
+  },
+});
+console.log(res.output_parsed); // { name: 'Jane Doe', email: 'jane@acme.com', plan: 'Enterprise' }
+
+// Any-JSON mode
+const summary = await agent.run('Summarize this note as JSON with `title` and `tags`', {
+  responseFormat: { type: 'json_object' },
+});
+
+// Single-shot, no context management
+const direct = await agent.runDirect('Return 3 primary colors as a JSON array of strings', {
+  responseFormat: { type: 'json_object' },
+});
+console.log(direct.output_parsed); // ['red', 'green', 'blue']
+```
+
+**The API is identical across vendors** — swap the connector (`anthropic`, `google`, `grok`, …) and the same `responseFormat` works; the library selects the native mechanism or prompt fallback per model.
+
+**Behavior & limits:**
+
+| Aspect | Behavior |
+|--------|----------|
+| Scope | JSON only (`json_object`, `json_schema`) |
+| Schema validation | Native path: enforced server-side by the vendor. Prompt-fallback path: **parseability only** — schema conformance is requested but not validated by the library (validate `output_parsed` yourself if required) |
+| `run()` tool loops | Constrains the **final** answer. OpenAI composes native JSON with tool calls directly; otherwise the constraint is applied on a final tool-free pass so tool use isn't suppressed mid-loop |
+| Streaming | `stream()` / `streamDirect()` stream raw text and don't attach `output_parsed` (parse the accumulated text yourself). Enforced only where it applies inline (native, or prompt fallback with no tools); `stream()` has no final reformat pass, so **with tools on a prompt-fallback vendor the output isn't guaranteed to be JSON** (a warning is logged) — use `run()` for that case |
+| Parse failure | After **one** tool-free re-ask, throws `StructuredOutputError` (carrying raw output + schema) and logs it — never a silent failure |
+| Where to set it | `RunOptions.responseFormat` (`run`/`stream`) and `DirectCallOptions.responseFormat` (`runDirect`/`streamDirect`); the `ResponseFormat` type is exported from the package root |
+
+> **Per-vendor:** OpenAI and Google/Vertex use native schema output for models the registry marks as structured-output capable; unregistered models fall back to the prompt path. **Anthropic uses the prompt fallback** — the registry can't reliably distinguish which Claude models support native `output_config.format` (it flags older models too), so the fallback, which works uniformly on every Claude model, is used. Native schema output can't be combined with tool calls on Google/Vertex, hence the final tool-free pass in `run()`.
 
 ---
 

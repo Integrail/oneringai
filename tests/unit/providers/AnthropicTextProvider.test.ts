@@ -471,6 +471,14 @@ describe('AnthropicTextProvider', () => {
       expect(caps.supportsTools).toBe(true);
       expect(caps.supportsVision).toBe(true);
     });
+
+    it('reports supportsJSONSchema: false (structured output uses the prompt fallback)', () => {
+      // Intentional: the registry over-flags structuredOutput for older Claude
+      // models, so Anthropic routes JSON output through the prompt fallback
+      // rather than native output_config.format. See AnthropicTextProvider.
+      expect(provider.getModelCapabilities('claude-opus-4-8').supportsJSONSchema).toBe(false);
+      expect(provider.getModelCapabilities('claude-3-7-sonnet-20250219').supportsJSONSchema).toBe(false);
+    });
   });
 
   describe('converter cleanup', () => {

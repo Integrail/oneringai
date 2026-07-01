@@ -1,7 +1,7 @@
 /**
- * IHistoryJournal - Interface for append-only conversation history logging
+ * IHistoryJournal - Interface for conversation history logging
  *
- * Provides a durable, append-only log of all conversation messages,
+ * Provides a durable log of all conversation messages,
  * independent of context compaction. While the agent's working window
  * (_conversation) may be compacted to fit the LLM context, the journal
  * preserves the full conversation history on disk/database.
@@ -12,7 +12,7 @@
  * it comes for free with the storage backend.
  *
  * Access patterns:
- * - **Write**: append-only, per-message, fire-and-forget (non-blocking)
+ * - **Write**: append-oriented, per-message, fire-and-forget (non-blocking)
  * - **Read**: on-demand, explicit (never loaded automatically)
  *
  * @example
@@ -102,7 +102,7 @@ export interface HistoryReadOptions {
 // ============================================================================
 
 /**
- * Append-only history journal for conversation persistence.
+ * History journal for conversation persistence.
  *
  * Implementations:
  * - FileHistoryJournal: JSONL files at ~/.oneringai/agents/<agentId>/sessions/<sessionId>.history.jsonl
@@ -114,12 +114,28 @@ export interface IHistoryJournal {
    * Append entries to the journal.
    *
    * This is the primary write operation, called on every addUserMessage(),
-   * addAssistantResponse(), and addToolResults(). Should be fast (append-only).
+   * addAssistantResponse(), and addToolResults(). Should be fast and
+   * append-oriented.
    *
    * @param sessionId - Session to append to
    * @param entries - One or more history entries to append
    */
   append(sessionId: string, entries: HistoryEntry[]): Promise<void>;
+
+  /**
+   * Replace the most recent entry matching `type` + `turnIndex`.
+   *
+   * Normal history writes remain append-oriented, but post-processing may need
+   * to correct the assistant message that was just committed (for example,
+   * structured-output reformatting). Returning `false` lets callers fall back to
+   * `append()` if they still want to preserve the corrected entry.
+   */
+  replaceLast?(
+    sessionId: string,
+    type: HistoryEntryType,
+    turnIndex: number,
+    entry: HistoryEntry,
+  ): Promise<boolean>;
 
   /**
    * Read history entries with optional filtering and pagination.

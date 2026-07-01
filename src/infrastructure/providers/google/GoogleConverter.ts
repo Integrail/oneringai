@@ -121,13 +121,20 @@ export class GoogleConverter {
       request.generationConfig.allowCodeExecution = false;
     }
 
-    // Handle JSON output
+    // Handle JSON output. Gemini's `responseJsonSchema` accepts a standard JSON
+    // Schema (superset of the older OpenAPI-subset `responseSchema`), so we pass
+    // the caller's schema straight through for schema-constrained output.
     if (options.response_format) {
       if (options.response_format.type === 'json_object') {
         request.generationConfig.responseMimeType = 'application/json';
       } else if (options.response_format.type === 'json_schema') {
         request.generationConfig.responseMimeType = 'application/json';
-        // Google doesn't support full JSON schema - would need to add to system instruction
+        const js = options.response_format.json_schema;
+        const schema =
+          js && typeof js === 'object' && 'schema' in js ? (js as { schema?: unknown }).schema : js;
+        if (schema && typeof schema === 'object') {
+          request.generationConfig.responseJsonSchema = schema;
+        }
       }
     }
 

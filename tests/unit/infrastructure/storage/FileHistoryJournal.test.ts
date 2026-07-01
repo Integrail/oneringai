@@ -1,5 +1,5 @@
 /**
- * Tests for FileHistoryJournal - JSONL-based append-only conversation history
+ * Tests for FileHistoryJournal - JSONL-based conversation history
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -99,6 +99,42 @@ describe('FileHistoryJournal', () => {
       const entries2 = await journal.read('session-2');
       expect(entries1).toHaveLength(1);
       expect(entries2).toHaveLength(1);
+    });
+  });
+
+  describe('replaceLast', () => {
+    it('should replace the most recent matching type + turn index', async () => {
+      await journal.append('session-1', [
+        makeEntry('user', 'Question', 1),
+        makeEntry('assistant', 'Old answer', 1),
+        makeEntry('assistant', 'Different turn', 2),
+      ]);
+
+      const replacement = makeEntry('assistant', 'Corrected answer', 1);
+      const replaced = await journal.replaceLast('session-1', 'assistant', 1, replacement);
+
+      expect(replaced).toBe(true);
+      const entries = await journal.read('session-1');
+      expect(entries).toHaveLength(3);
+      expect(JSON.stringify(entries)).toContain('Corrected answer');
+      expect(JSON.stringify(entries)).not.toContain('Old answer');
+      expect(JSON.stringify(entries)).toContain('Different turn');
+    });
+
+    it('should return false when no matching entry exists', async () => {
+      await journal.append('session-1', [makeEntry('user', 'Question', 1)]);
+
+      const replaced = await journal.replaceLast(
+        'session-1',
+        'assistant',
+        1,
+        makeEntry('assistant', 'Corrected answer', 1),
+      );
+
+      expect(replaced).toBe(false);
+      const entries = await journal.read('session-1');
+      expect(entries).toHaveLength(1);
+      expect(JSON.stringify(entries)).not.toContain('Corrected answer');
     });
   });
 

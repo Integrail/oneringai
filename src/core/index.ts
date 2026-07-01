@@ -35,6 +35,24 @@ export { ToolCatalogRegistry } from './ToolCatalogRegistry.js';
 export type { ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope, ConnectorCategoryInfo, ParsedConnectorCategory, ToolRegistryEntry as CatalogRegistryEntry } from './ToolCatalogRegistry.js';
 export { Agent } from './Agent.js';
 export type { AgentConfig, AgentSessionConfig, RunOptions } from './Agent.js';
+
+// Structured (JSON) output — vendor-agnostic
+export {
+  StructuredOutputError,
+  resolveStructuredStrategy,
+  toProviderResponseFormat,
+  buildStructuredInstructionSuffix,
+  buildStructuredRepairInstruction,
+  parseStructuredOutput,
+  STRUCTURED_OUTPUT_MAX_REPAIR_ATTEMPTS,
+} from './StructuredOutput.js';
+export type {
+  ResponseFormat,
+  JSONSchema,
+  ProviderResponseFormat,
+  StructuredStrategy,
+  StructuredParseResult,
+} from './StructuredOutput.js';
 export { AgentRegistry } from './AgentRegistry.js';
 export type {
   AgentStatus,

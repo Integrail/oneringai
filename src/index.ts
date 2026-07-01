@@ -33,6 +33,17 @@ export type { StorageConfig, StorageContext, ToolCategoryDefinition, CatalogTool
 export type { AgentStatus as RegistryAgentStatus } from './core/index.js';
 export type { AgentConfig, AgentSessionConfig, RunOptions } from './core/index.js';
 
+// Structured (JSON) output — vendor-agnostic
+export {
+  StructuredOutputError,
+  parseStructuredOutput,
+  STRUCTURED_OUTPUT_MAX_REPAIR_ATTEMPTS,
+} from './core/index.js';
+export type {
+  ResponseFormat,
+  StructuredParseResult,
+} from './core/index.js';
+
 // AgentContextNextGen - Clean, Simple Context Management
 export {
   AgentContextNextGen,

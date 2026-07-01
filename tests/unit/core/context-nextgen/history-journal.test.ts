@@ -27,6 +27,17 @@ function makeAssistantOutput(text: string): OutputItem[] {
   } as Message];
 }
 
+function makeAssistantOutputWithThinking(text: string, thinking: string): OutputItem[] {
+  return [{
+    type: 'message',
+    role: MessageRole.ASSISTANT,
+    content: [
+      { type: ContentType.THINKING, thinking, signature: 'sig', persistInHistory: false },
+      { type: ContentType.OUTPUT_TEXT, text },
+    ],
+  } as Message];
+}
+
 describe('AgentContextNextGen - History Journal Integration', () => {
   let testDir: string;
   let storage: FileContextStorage;
@@ -121,6 +132,54 @@ describe('AgentContextNextGen - History Journal Integration', () => {
 
     const entries = await ctx.journal!.read('test-session-2');
     expect(entries).toHaveLength(2);
+
+    ctx.destroy();
+  });
+
+  it('should replace buffered assistant journal entry before first save', async () => {
+    const ctx = AgentContextNextGen.create({
+      model: 'gpt-4',
+      storage,
+      features: { workingMemory: false, inContextMemory: false },
+    });
+
+    ctx.addUserMessage('Extract contact');
+    ctx.addAssistantResponse(makeAssistantOutput('The contact is Jane.'));
+    expect(ctx.replaceLastAssistantResponse(makeAssistantOutput('{"name":"Jane"}'))).toBe(true);
+
+    await ctx.save('test-session-replace-buffered');
+    const entries = await ctx.journal!.read('test-session-replace-buffered');
+
+    expect(entries).toHaveLength(2);
+    expect(JSON.stringify(entries)).toContain('\\"name\\":\\"Jane\\"');
+    expect(JSON.stringify(entries)).not.toContain('The contact is Jane.');
+
+    ctx.destroy();
+  });
+
+  it('should replace established assistant journal entry and update lastThinking', async () => {
+    const ctx = AgentContextNextGen.create({
+      model: 'gpt-4',
+      storage,
+      features: { workingMemory: false, inContextMemory: false },
+    });
+
+    await ctx.save('test-session-replace-established');
+    ctx.addUserMessage('Extract contact');
+    ctx.addAssistantResponse(makeAssistantOutputWithThinking('The contact is Jane.', 'old thinking'));
+    expect(ctx.lastThinking).toBe('old thinking');
+
+    expect(ctx.replaceLastAssistantResponse(
+      makeAssistantOutputWithThinking('{"name":"Jane"}', 'new thinking'),
+    )).toBe(true);
+    expect(ctx.lastThinking).toBe('new thinking');
+
+    await new Promise(r => setTimeout(r, 50));
+    const entries = await ctx.journal!.read('test-session-replace-established');
+
+    expect(entries).toHaveLength(2);
+    expect(JSON.stringify(entries)).toContain('\\"name\\":\\"Jane\\"');
+    expect(JSON.stringify(entries)).not.toContain('The contact is Jane.');
 
     ctx.destroy();
   });

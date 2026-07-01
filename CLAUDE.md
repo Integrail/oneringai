@@ -64,9 +64,11 @@ interface ContextFeatures {
 
 ## Agent run() / stream()
 
-`RunOptions`: `thinking` (vendor-agnostic), `temperature`, `vendorOptions` — override per call.
+`RunOptions`: `thinking` (vendor-agnostic), `temperature`, `vendorOptions`, `responseFormat` — override per call.
 
 **Direct LLM access:** `agent.runDirect()` / `agent.streamDirect()` — bypasses context management. Options: `instructions`, `includeTools`, `temperature`, `maxOutputTokens`, `responseFormat`, `thinking`, `vendorOptions`
+
+**Structured (JSON) output (`src/core/StructuredOutput.ts`):** vendor-agnostic `responseFormat: ResponseFormat` = `{type:'json_object'}` | `{type:'json_schema', schema, name?, description?, strict?}`. `resolveStructuredStrategy(format, caps, vendor, hasTools)` picks `'native'` vs `'prompt'` from `provider.getModelCapabilities(model).supportsJSON/supportsJSONSchema`: native maps to OpenAI `text.format` / Google-Vertex `responseJsonSchema`. **Anthropic routes to prompt fallback** — `AnthropicTextProvider` forces `supportsJSONSchema:false` because the registry's `structuredOutput` flag over-flags older Claude models (e.g. claude-3-7-sonnet) that would 400 on `output_config.format`; re-enable native only behind an accurate per-model gate. **Validation contract: parse-only** — native path is vendor-enforced; prompt-fallback guarantees *parseable* JSON (via `parseJsonPermissive`) but does NOT validate schema conformance (deliberate: no validator dep). Result attached to `response.output_parsed`. Shared `BaseAgent.coerceStructuredOutput(candidate, format, reask)` drives both `runDirect()` (candidate = direct response) and `run()` (candidate = loop's final answer, `reask` = `_generateStructuredToolFree` tool-free pass) — one re-ask (`STRUCTURED_OUTPUT_MAX_REPAIR_ATTEMPTS=1`), mutates candidate in place + merges usage, then throws `StructuredOutputError` (logged, never silent). Inline native applied in the loop only when native+tool-compatible (OpenAI); Google/Vertex are format-vs-tools exclusive so they use the final tool-free pass. When the reformat pass changes the answer, `run()` calls `ctx.replaceLastAssistantResponse(output)` so persisted history / save-load / continuation match the returned JSON. **`stream()` enforces only inline** (native, or prompt-no-tools) — it has no reformat pass, so prompt-fallback + tools streaming is not guaranteed JSON (logs a warning; use `run()`), and `output_parsed` is not attached on streams. JSON only.
 
 ## Directory Structure
 

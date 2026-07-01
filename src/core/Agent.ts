@@ -44,6 +44,12 @@ import { SuspendSignal } from './SuspendSignal.js';
 import type { ICorrelationStorage, SessionRef } from '../domain/interfaces/ICorrelationStorage.js';
 import { FileCorrelationStorage } from '../infrastructure/storage/FileCorrelationStorage.js';
 import { ProviderErrorMapper } from '../infrastructure/providers/base/ProviderErrorMapper.js';
+import {
+  type ResponseFormat,
+  resolveStructuredStrategy,
+  toProviderResponseFormat,
+  buildStructuredInstructionSuffix,
+} from './StructuredOutput.js';
 
 /**
  * Session configuration for Agent (same as BaseSessionConfig)
@@ -150,6 +156,14 @@ export interface RunOptions {
 
   /** Vendor-specific options */
   vendorOptions?: Record<string, unknown>;
+
+  /**
+   * Vendor-agnostic structured (JSON) output. When set, the final answer is
+   * constrained to JSON — via the vendor's native mechanism where supported,
+   * otherwise a strict prompt instruction — and parsed into
+   * `response.output_parsed`. See `src/core/StructuredOutput.ts`.
+   */
+  responseFormat?: ResponseFormat;
 }
 
 /**
@@ -821,6 +835,23 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     try {
       const finalResponse = await this._runAgenticLoop(executionId, startTime, maxIterations);
 
+      // Coerce the final answer into the requested structured (JSON) shape and
+      // attach `output_parsed`. Fast-paths when the answer already parses (e.g.
+      // native was applied inline for OpenAI); otherwise re-asks tool-free.
+      if (options?.responseFormat) {
+        const format = options.responseFormat;
+        const beforeText = finalResponse.output_text;
+        await this.coerceStructuredOutput(finalResponse, format, (input) =>
+          this._generateStructuredToolFree(input, format),
+        );
+        // If coercion reformatted the answer (a tool-free reformat pass ran), the
+        // loop had already committed the pre-reformat text to context. Sync it so
+        // history, session save/load, and continuation match what we return.
+        if (finalResponse.output_text !== beforeText) {
+          this._agentContext.replaceLastAssistantResponse(finalResponse.output);
+        }
+      }
+
       await this._finalizeExecution(executionId, startTime, finalResponse, 'run');
       return finalResponse;
     } catch (error) {
@@ -1257,6 +1288,27 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     this._runOptions = options;
     const { executionId, startTime, maxIterations } = await this._prepareExecution(input, 'stream');
 
+    // Structured output on stream() can only be enforced when it applies inline:
+    // natively, or the prompt fallback when no tools are present. Unlike run(),
+    // stream() has no final tool-free reformat pass, so with tools present on a
+    // prompt-fallback vendor the streamed output is NOT guaranteed to be JSON.
+    // Warn loudly rather than silently returning prose.
+    if (options?.responseFormat) {
+      const caps = this._provider.getModelCapabilities(this.model);
+      const hasTools = this.getEnabledToolDefinitions().length > 0;
+      if (
+        hasTools &&
+        resolveStructuredStrategy(options.responseFormat, caps, this.connector.vendor, hasTools) === 'prompt'
+      ) {
+        this._logger.warn(
+          { model: this.model, vendor: this.connector.vendor },
+          'stream(): responseFormat cannot be enforced while tools are enabled for this vendor — ' +
+            'streamed output is not guaranteed to be valid JSON. Use run() for guaranteed structured ' +
+            'output, or call stream() without tools.',
+        );
+      }
+    }
+
     // Create a single StreamState for the entire execution (tracks usage across iterations)
     const globalStreamState = new StreamState(executionId, this.model);
     let iteration = 0;
@@ -1530,15 +1582,22 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         const prepared = await this._agentContext.prepare();
         const wrapUpStreamState = new StreamState(executionId, this.model);
 
-        // Stream the wrap-up response
-        for await (const event of this._provider.streamGenerate({
+        const wrapUpOptions: TextGenerateOptions = {
           model: this.model,
           input: prepared.input,
           instructions: this._config.instructions,
           tools: [], // No tools - force text-only response
-          temperature: this._config.temperature,
-          vendorOptions: this._config.vendorOptions,
-        })) {
+          temperature: this._runOptions?.temperature ?? this._config.temperature,
+          thinking: this._runOptions?.thinking ?? this._config.thinking,
+          vendorOptions: this._runOptions?.vendorOptions
+            ? { ...this._config.vendorOptions, ...this._runOptions.vendorOptions }
+            : this._config.vendorOptions,
+          skipContextLimitCheck: true,
+        };
+        this._applyInlineResponseFormat(wrapUpOptions);
+
+        // Stream the wrap-up response
+        for await (const event of this._provider.streamGenerate(wrapUpOptions)) {
           // Update stream state
           if (event.type === StreamEventType.OUTPUT_TEXT_DELTA) {
             wrapUpStreamState.accumulateTextDelta(event.item_id, event.delta);
@@ -1605,6 +1664,74 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     }
   }
 
+  // ===== Structured Output =====
+
+  /**
+   * Apply the requested structured-output constraint to per-iteration generate
+   * options, in-place. Uses the vendor's native mechanism when it composes with
+   * the current turn; otherwise, when no tool can be requested this turn, injects
+   * the strict JSON prompt fallback. When tools ARE present and the vendor can't
+   * combine native format with tools, this is a no-op here — the constraint is
+   * instead applied post-loop to the final tool-free answer (see the
+   * `coerceStructuredOutput` call in `run()`) so tool use is never suppressed
+   * mid-loop.
+   */
+  private _applyInlineResponseFormat(generateOptions: TextGenerateOptions): void {
+    const format = this._runOptions?.responseFormat;
+    if (!format) return;
+
+    const caps = this._provider.getModelCapabilities(this.model);
+    const hasTools = (generateOptions.tools?.length ?? 0) > 0;
+    const strategy = resolveStructuredStrategy(format, caps, this.connector.vendor, hasTools);
+
+    if (strategy === 'native') {
+      generateOptions.response_format = toProviderResponseFormat(
+        format,
+      ) as TextGenerateOptions['response_format'];
+    } else if (!hasTools) {
+      generateOptions.instructions =
+        (generateOptions.instructions ?? '') + buildStructuredInstructionSuffix(format);
+    }
+  }
+
+  /**
+   * Single tool-free constrained generation used as the `reask` callback when
+   * `run()` coerces the final answer into JSON (see the `coerceStructuredOutput`
+   * call in `run()`). Because no tools are offered, the native structured-output
+   * path is available for every vendor that supports it; otherwise the strict
+   * JSON prompt fallback is used.
+   */
+  private async _generateStructuredToolFree(
+    input: string,
+    format: ResponseFormat,
+  ): Promise<AgentResponse> {
+    const caps = this._provider.getModelCapabilities(this.model);
+    const strategy = resolveStructuredStrategy(format, caps, this.connector.vendor, false);
+    const baseInstructions = this._config.instructions ?? '';
+
+    const generateOptions: TextGenerateOptions = {
+      model: this.model,
+      input,
+      instructions:
+        strategy === 'native'
+          ? baseInstructions
+          : baseInstructions + buildStructuredInstructionSuffix(format),
+      temperature: this._runOptions?.temperature ?? this._config.temperature,
+      thinking: this._runOptions?.thinking ?? this._config.thinking,
+      vendorOptions: this._runOptions?.vendorOptions
+        ? { ...this._config.vendorOptions, ...this._runOptions.vendorOptions }
+        : this._config.vendorOptions,
+      skipContextLimitCheck: true,
+    };
+    if (strategy === 'native') {
+      generateOptions.response_format = toProviderResponseFormat(
+        format,
+      ) as TextGenerateOptions['response_format'];
+    }
+
+    return this._provider.generate(generateOptions);
+  }
+
   // ===== LLM Generation with Hooks =====
 
   /**
@@ -1633,6 +1760,10 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       // Context is already managed by AgentContextNextGen.prepare() — skip provider-level check
       skipContextLimitCheck: true,
     };
+
+    // Apply structured-output constraint inline where safe (native, or prompt
+    // fallback when no tools are in play). See _applyInlineResponseFormat.
+    this._applyInlineResponseFormat(generateOptions);
 
     // Execute before:llm hook
     const beforeLLM = await this.hookManager.executeHooks('before:llm', {
@@ -1733,6 +1864,10 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       // Context is already managed by AgentContextNextGen.prepare() — skip provider-level check
       skipContextLimitCheck: true,
     };
+
+    // Apply structured-output constraint inline where safe (native, or prompt
+    // fallback when no tools are in play). See _applyInlineResponseFormat.
+    this._applyInlineResponseFormat(generateOptions);
 
     // Execute before:llm hook
     await this.hookManager.executeHooks('before:llm', {

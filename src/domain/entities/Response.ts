@@ -38,6 +38,13 @@ export interface LLMResponse {
   output: OutputItem[];
   output_text?: string; // Aggregated text output (SDK convenience)
   thinking?: string;   // Aggregated thinking/reasoning text (convenience, parallel to output_text)
+  /**
+   * Parsed structured output — populated when the request specified a
+   * `responseFormat` (JSON). The library parses/repairs `output_text` into a
+   * JSON value and attaches it here. Undefined when no format was requested.
+   * See `src/core/StructuredOutput.ts`.
+   */
+  output_parsed?: unknown;
   usage: TokenUsage;
   error?: {
     type: string;

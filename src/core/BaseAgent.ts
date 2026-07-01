@@ -25,8 +25,18 @@ import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.
 import { AgentContextNextGen } from './context-nextgen/AgentContextNextGen.js';
 import type { AgentContextNextGenConfig, AuthIdentity, SerializedContextState } from './context-nextgen/types.js';
 import { createProvider } from './createProvider.js';
-import type { ITextProvider } from '../domain/interfaces/ITextProvider.js';
+import type { ITextProvider, TextGenerateOptions } from '../domain/interfaces/ITextProvider.js';
 import type { LLMResponse } from '../domain/entities/Response.js';
+import {
+  type ResponseFormat,
+  resolveStructuredStrategy,
+  toProviderResponseFormat,
+  buildStructuredInstructionSuffix,
+  buildStructuredRepairInstruction,
+  parseStructuredOutput,
+  StructuredOutputError,
+  STRUCTURED_OUTPUT_MAX_REPAIR_ATTEMPTS,
+} from './StructuredOutput.js';
 import type { InputItem } from '../domain/entities/Message.js';
 import type { StreamEvent } from '../domain/entities/StreamEvent.js';
 import type { IContextStorage, ContextSessionMetadata } from '../domain/interfaces/IContextStorage.js';
@@ -270,11 +280,13 @@ export interface DirectCallOptions {
   /** Maximum output tokens */
   maxOutputTokens?: number;
 
-  /** Response format (text, json_object, json_schema) */
-  responseFormat?: {
-    type: 'text' | 'json_object' | 'json_schema';
-    json_schema?: unknown;
-  };
+  /**
+   * Vendor-agnostic structured (JSON) output. When set, the response is
+   * constrained to JSON — via the vendor's native mechanism where supported,
+   * otherwise a strict prompt instruction — and parsed into
+   * `response.output_parsed`. See `src/core/StructuredOutput.ts`.
+   */
+  responseFormat?: ResponseFormat;
 
   /** Vendor-agnostic thinking/reasoning configuration */
   thinking?: {
@@ -978,23 +990,37 @@ export abstract class BaseAgent<
 
     const provider = this.getProvider();
 
-    const generateOptions = {
+    const generateOptions: TextGenerateOptions = {
       model: this.model,
       input,
       instructions: options.instructions,
       tools: options.includeTools ? this.getEnabledToolDefinitions() : undefined,
       temperature: options.temperature,
       max_output_tokens: options.maxOutputTokens,
-      response_format: options.responseFormat,
       thinking: options.thinking,
       vendorOptions: options.vendorOptions,
       skipContextLimitCheck: options.skipContextLimitCheck,
     };
 
+    // Apply structured-output constraint (native or prompt fallback).
+    this.applyDirectResponseFormat(generateOptions, options.responseFormat);
+
     this._logger.debug({ inputType: typeof input }, 'runDirect called');
 
     try {
       const response = await provider.generate(generateOptions);
+      if (options.responseFormat) {
+        // Re-ask tool-free, reusing the same (format-applied) options with a
+        // repair prompt as the input.
+        await this.coerceStructuredOutput(response, options.responseFormat, (repairInput) =>
+          provider.generate({
+            ...generateOptions,
+            input: repairInput,
+            tools: undefined,
+            tool_choice: undefined,
+          }),
+        );
+      }
       this._logger.debug({ outputLength: response.output_text?.length }, 'runDirect completed');
       return response;
     } catch (error) {
@@ -1032,18 +1058,22 @@ export abstract class BaseAgent<
 
     const provider = this.getProvider();
 
-    const generateOptions = {
+    const generateOptions: TextGenerateOptions = {
       model: this.model,
       input,
       instructions: options.instructions,
       tools: options.includeTools ? this.getEnabledToolDefinitions() : undefined,
       temperature: options.temperature,
       max_output_tokens: options.maxOutputTokens,
-      response_format: options.responseFormat,
       thinking: options.thinking,
       vendorOptions: options.vendorOptions,
       skipContextLimitCheck: options.skipContextLimitCheck,
     };
+
+    // Apply structured-output constraint (native or prompt fallback). The
+    // streamed text is JSON; callers parse the accumulated output themselves
+    // (`output_parsed` is only attached on the non-streaming runDirect).
+    this.applyDirectResponseFormat(generateOptions, options.responseFormat);
 
     this._logger.debug({ inputType: typeof input }, 'streamDirect called');
 
@@ -1054,6 +1084,99 @@ export abstract class BaseAgent<
       this._logger.error({ error: (error as Error).message }, 'streamDirect failed');
       throw error;
     }
+  }
+
+  // ===== Structured Output (direct calls) =====
+
+  /**
+   * Apply a structured-output constraint to direct-call generate options,
+   * in-place. Uses the vendor's native mechanism when supported; otherwise
+   * injects the strict JSON prompt fallback. For single-shot direct calls the
+   * fallback is safe to inject even alongside tools.
+   */
+  protected applyDirectResponseFormat(
+    generateOptions: TextGenerateOptions,
+    format: ResponseFormat | undefined,
+  ): void {
+    if (!format) return;
+    const caps = this.getProvider().getModelCapabilities(this.model);
+    const hasTools = (generateOptions.tools?.length ?? 0) > 0;
+    const strategy = resolveStructuredStrategy(format, caps, this.connector.vendor, hasTools);
+    if (strategy === 'native') {
+      generateOptions.response_format = toProviderResponseFormat(
+        format,
+      ) as TextGenerateOptions['response_format'];
+    } else {
+      generateOptions.instructions =
+        (generateOptions.instructions ?? '') + buildStructuredInstructionSuffix(format);
+    }
+  }
+
+  /**
+   * Coerce a candidate response into the requested JSON shape and attach
+   * `output_parsed`, mutating `candidate` in place. If its text doesn't parse,
+   * re-asks (tool-free) up to `STRUCTURED_OUTPUT_MAX_REPAIR_ATTEMPTS` times via
+   * the `reask` callback, folding each re-ask's output + usage into `candidate`.
+   * Throws {@link StructuredOutputError} (with full context, logged) if it still
+   * can't produce valid JSON — never a silent failure.
+   *
+   * Shared by `runDirect()` (candidate = the direct response) and `Agent.run()`
+   * (candidate = the agentic loop's final answer) so both paths have identical
+   * re-ask semantics and counts.
+   */
+  protected async coerceStructuredOutput(
+    candidate: LLMResponse,
+    format: ResponseFormat,
+    reask: (repairInput: string) => Promise<LLMResponse>,
+  ): Promise<LLMResponse> {
+    let reasks = 0;
+    for (;;) {
+      const parsed = parseStructuredOutput(candidate.output_text ?? '', format);
+      if (parsed.ok) {
+        candidate.output_parsed = parsed.value;
+        if (reasks > 0) {
+          this._logger.info({ reasks }, 'Structured output recovered after re-ask');
+        }
+        return candidate;
+      }
+
+      if (reasks >= STRUCTURED_OUTPUT_MAX_REPAIR_ATTEMPTS) {
+        this._logger.error(
+          { reasks, error: parsed.error.message, rawOutput: candidate.output_text },
+          'Structured output could not be parsed as valid JSON',
+        );
+        throw new StructuredOutputError(
+          `Model output could not be parsed as valid JSON after ${reasks} re-ask(s): ${parsed.error.message}`,
+          candidate.output_text ?? '',
+          format,
+          parsed.error,
+        );
+      }
+
+      reasks += 1;
+      this._logger.warn(
+        { reask: reasks, error: parsed.error.message },
+        'Structured output did not parse; re-asking',
+      );
+      const fresh = await reask(
+        buildStructuredRepairInstruction(format, candidate.output_text ?? '', parsed.error),
+      );
+      candidate.output = fresh.output;
+      candidate.output_text = fresh.output_text;
+      this.mergeStructuredUsage(candidate, fresh);
+    }
+  }
+
+  /** Fold the token usage of an auxiliary generation into the primary response. */
+  protected mergeStructuredUsage(target: LLMResponse, extra: LLMResponse): void {
+    if (!extra.usage) return;
+    if (!target.usage) {
+      target.usage = { ...extra.usage };
+      return;
+    }
+    target.usage.input_tokens += extra.usage.input_tokens ?? 0;
+    target.usage.output_tokens += extra.usage.output_tokens ?? 0;
+    target.usage.total_tokens += extra.usage.total_tokens ?? 0;
   }
 
   // ===== Lifecycle Hooks =====

@@ -22,7 +22,7 @@ export type { FilePersistentInstructionsStorageConfig } from './FilePersistentIn
 export { FileContextStorage, createFileContextStorage } from './FileContextStorage.js';
 export type { FileContextStorageConfig } from './FileContextStorage.js';
 
-// History journal (append-only conversation log)
+// History journal (append-oriented conversation log)
 export { FileHistoryJournal } from './FileHistoryJournal.js';
 
 // Agent definition storage (for agent configuration persistence)

@@ -175,7 +175,13 @@ export class AnthropicTextProvider extends BaseTextProvider {
       maxInputTokens: 200000,
       maxOutputTokens: 8192,
     });
-    // Anthropic doesn't support JSON schema mode even though registry has structuredOutput: true
+    // Structured output routes to the vendor-agnostic prompt fallback for
+    // Anthropic (see StructuredOutput.ts). The registry's `structuredOutput`
+    // flag conflates general JSON capability with native `output_config.format`
+    // support and is `true` even for older models (e.g. claude-3-7-sonnet) that
+    // would 400 on `output_config.format`. Until there's a precise per-model
+    // signal, force `supportsJSONSchema: false` so `resolveStructuredStrategy`
+    // uses the prompt fallback (which works uniformly on every Claude model).
     caps.supportsJSONSchema = false;
     return caps;
   }
