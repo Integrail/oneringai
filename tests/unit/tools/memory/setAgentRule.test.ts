@@ -150,12 +150,24 @@ describe('memory_set_agent_rule — tool', () => {
   });
 
   it('returns structured error when caller does not own the agent entity', async () => {
-    // Bootstrap the agent entity as USER_ID; call the tool as a DIFFERENT user.
-    // The memory layer enforces `fact.ownerId == subject.ownerId`, so the
-    // cross-scope write must be rejected. The tool surfaces that as a
-    // structured error (not a thrown exception).
+    // Bootstrap the agent entity as USER_ID ('u-rule'). Then run the tool as a
+    // DIFFERENT principal ('stranger') — but with deps *bound to* 'stranger'
+    // so the single-user resolveScope guard passes (ToolContext.userId ===
+    // deps.defaultUserId). The agent entity is world-readable, so the caller
+    // can see it, but its ownerId ('u-rule') ≠ caller ('stranger'). The tool's
+    // ghost-write guard must reject this with a STRUCTURED error (not a thrown
+    // exception) — writing the rule would inject it into u-rule's system
+    // message (addFact derives fact.ownerId from the subject, not the caller).
     const ids = await bootstrap(mem);
-    const deps = await buildDeps(mem, ids);
+    const deps: MemoryToolDeps = {
+      memory: mem,
+      resolve: createSubjectResolver({ memory: mem, getOwnSubjectIds: () => ids }),
+      agentId: AGENT_ID,
+      defaultUserId: 'stranger',
+      defaultGroupId: undefined,
+      getOwnSubjectIds: () => ids,
+      defaultVisibility: { forUser: 'private', forAgent: 'group', forOther: 'private' },
+    };
     const tool = createSetAgentRuleTool(deps);
 
     const result: any = await tool.execute(
@@ -164,7 +176,16 @@ describe('memory_set_agent_rule — tool', () => {
     );
     expect(result.error).toBeDefined();
     expect(typeof result.error).toBe('string');
+    expect(result.error).toMatch(/don't own|do not own|ownerId/);
     expect(result.ruleId).toBeUndefined();
+
+    // And no rule fact was written on the agent entity.
+    const page = await mem.findFacts(
+      { subjectId: ids.agentEntityId, predicate: 'agent_behavior_rule' },
+      { limit: 10, orderBy: { field: 'createdAt', direction: 'desc' } },
+      { userId: USER_ID },
+    );
+    expect(page.items.length).toBe(0);
   });
 
   it('enforces rate limit — honors deps.forgetRateLimit', async () => {

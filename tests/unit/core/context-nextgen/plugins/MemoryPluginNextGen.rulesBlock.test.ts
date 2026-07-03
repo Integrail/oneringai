@@ -63,7 +63,9 @@ describe('MemoryPluginNextGen — rules block', () => {
     const id2 = await seedRule(mem, agentEntityId!, 'Reply in Russian.');
 
     const out = (await plugin.getContent())!;
-    expect(out).toMatch(/## User-specific instructions for this agent/);
+    // Rules render under the assistant-persona heading (first-person "how YOU
+    // present yourself" framing).
+    expect(out).toMatch(/## Your persona — how YOU \(the assistant\) present yourself/);
     expect(out).toContain('Be terse in replies.');
     expect(out).toContain('Reply in Russian.');
     // Bracket renders as `[ruleId=<factId>]` — explicit field name spares
@@ -101,11 +103,13 @@ describe('MemoryPluginNextGen — rules block', () => {
     await seedRule(mem, agentEntityId!, long);
 
     const out = (await plugin.getContent())!;
-    // Block present AND the rule body is rendered verbatim — no ellipsis,
-    // no silent clip of user-authored behavior directives.
-    expect(out).toMatch(/User-specific instructions for this agent/);
+    // Block present AND the rule body is rendered verbatim — no silent clip
+    // of user-authored behavior directives. `toContain(long)` fully proves
+    // the 1000-char body survived intact (the persona block's own prose
+    // contains ellipses, so a blanket "no …" assertion can't be used here).
+    expect(out).toMatch(/## Your persona — how YOU \(the assistant\) present yourself/);
     expect(out).toContain(long);
-    expect(out).not.toContain('…');
+    expect(out).not.toContain(`${long}…`);
   });
 
   it('block appears BEFORE the user profile block (directives take priority)', async () => {
@@ -115,7 +119,7 @@ describe('MemoryPluginNextGen — rules block', () => {
     await seedRule(mem, agentEntityId!, 'Be terse.');
 
     const out = (await plugin.getContent())!;
-    const rulesIdx = out.indexOf('## User-specific instructions for this agent');
+    const rulesIdx = out.indexOf('## Your persona — how YOU (the assistant) present yourself');
     const profileIdx = out.indexOf('## About the User');
     expect(rulesIdx).toBeGreaterThan(-1);
     expect(profileIdx).toBeGreaterThan(-1);

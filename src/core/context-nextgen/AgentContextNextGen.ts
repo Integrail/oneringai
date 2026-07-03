@@ -258,6 +258,8 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       model: config.model,
       maxContextTokens: this._maxContextTokens,
       responseReserve: config.responseReserve ?? DEFAULT_CONFIG.responseReserve,
+      criticalCompactionThreshold:
+        config.criticalCompactionThreshold ?? DEFAULT_CONFIG.criticalCompactionThreshold,
       systemPrompt: config.systemPrompt,
       strategy: config.strategy ?? DEFAULT_CONFIG.strategy,
       features: { ...DEFAULT_FEATURES, ...config.features },
@@ -1285,11 +1287,39 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     let conversationTokens = this.calculateConversationTokens();
     let totalUsed = systemTokens + conversationTokens + currentInputTokens;
 
-    // Step 6: Check if compaction needed
+    // Step 6: Check if compaction needed.
+    //
+    // Compaction is gated on the CRITICAL threshold, not the strategy's own
+    // threshold. Below critical, nothing is compacted — every message,
+    // including all tool results, stays verbatim in the input array for the
+    // whole agentic loop. This is the guarantee tool-heavy agents rely on:
+    // file reads / API responses are never spilled to working memory (or
+    // dropped) mid-run just because we crossed 75%.
+    //
+    // The strategy's `threshold` is now only the reclaim FLOOR: once we're
+    // over critical, we free enough to bring utilization back down to
+    // (strategyThreshold - 0.1), giving hysteresis so we don't re-trigger
+    // every turn. We clamp that floor below critical so a misconfigured
+    // strategy threshold (>= critical) can never produce a no-op compaction.
     let compacted = false;
     const strategyThreshold = this._compactionStrategy.threshold;
-    if (totalUsed / availableForContent > strategyThreshold) {
-      const targetToFree = totalUsed - Math.floor(availableForContent * (strategyThreshold - 0.1));
+    const criticalThreshold = this._config.criticalCompactionThreshold;
+    const utilization = totalUsed / availableForContent;
+    if (utilization > criticalThreshold) {
+      const reclaimTo = Math.min(strategyThreshold - 0.1, criticalThreshold - 0.1);
+      const targetToFree = totalUsed - Math.floor(availableForContent * reclaimTo);
+
+      logger.info(
+        {
+          component: 'AgentContextNextGen',
+          utilizationPercent: Math.round(utilization * 100),
+          criticalPercent: Math.round(criticalThreshold * 100),
+          reclaimToPercent: Math.round(reclaimTo * 100),
+          targetToFree,
+          strategy: this._compactionStrategy.name,
+        },
+        'critical compaction threshold crossed — running compaction (tool results kept inline until now)',
+      );
 
       const freed = await this.runCompaction(targetToFree, compactionLog);
       compacted = freed > 0;
@@ -1661,8 +1691,59 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   async consolidate(): Promise<ConsolidationResult> {
     this.assertNotDestroyed();
 
+    // Post-cycle consolidation spills large tool results to working memory
+    // (and drops aged tool pairs). Gate it on the SAME critical threshold as
+    // in-loop compaction: while there's ample room, tool results stay verbatim
+    // in the conversation — never evicted between turns just because a run
+    // finished. Only once the persisted context is genuinely near-full do we
+    // let the strategy reclaim space.
+    const utilization = this.estimateUtilization();
+    const criticalThreshold = this._config.criticalCompactionThreshold;
+    if (utilization <= criticalThreshold) {
+      return {
+        performed: false,
+        tokensChanged: 0,
+        actions: [
+          `Consolidation skipped: utilization ${Math.round(utilization * 100)}% ` +
+            `is at or below critical threshold ${Math.round(criticalThreshold * 100)}% ` +
+            `— tool results kept inline.`,
+        ],
+      };
+    }
+
+    logger.info(
+      {
+        component: 'AgentContextNextGen',
+        utilizationPercent: Math.round(utilization * 100),
+        criticalPercent: Math.round(criticalThreshold * 100),
+        strategy: this._compactionStrategy.name,
+      },
+      'post-cycle consolidation running — over critical threshold, reclaiming space',
+    );
+
     const context = this.buildCompactionContext();
     return this._compactionStrategy.consolidate(context);
+  }
+
+  /**
+   * Estimate current context utilization as a ratio of the available content
+   * budget (0..1), consistent with the compaction gate in prepare(). Reuses
+   * the last computed system-message token count from the cached budget to
+   * avoid rebuilding the (async) system message; falls back to 0 for the
+   * system portion if prepare() hasn't run yet this session.
+   */
+  private estimateUtilization(): number {
+    const toolsTokens = this.calculateToolsTokens();
+    const availableForContent =
+      this._maxContextTokens - this._config.responseReserve - toolsTokens;
+    if (availableForContent <= 0) return 1;
+
+    const systemTokens = this._cachedBudget?.systemMessageTokens ?? 0;
+    const conversationTokens = this.calculateConversationTokens();
+    const currentInputTokens = this.calculateInputTokens(this._currentInput);
+    const totalUsed = systemTokens + conversationTokens + currentInputTokens;
+
+    return totalUsed / availableForContent;
   }
 
   /**

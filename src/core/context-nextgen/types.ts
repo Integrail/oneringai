@@ -833,6 +833,23 @@ export interface AgentContextNextGenConfig {
   /** Tokens to reserve for response (default: 4096) */
   responseReserve?: number;
 
+  /**
+   * Utilization ratio (of available content budget) at which compaction is
+   * allowed to run. Below this, NO compaction happens — every message,
+   * including all tool results, stays verbatim in the input array for the
+   * duration of the agentic loop. Compaction (and any strategy-driven spill of
+   * tool results to working memory) only kicks in once utilization crosses
+   * this "critical" line. Default: 0.9 (CONTEXT_DEFAULTS.HARD_LIMIT).
+   *
+   * This is intentionally decoupled from the compaction strategy's own
+   * `threshold` (which now only governs how far DOWN to reclaim once critical
+   * is hit), so tool-heavy agents keep their reads inline until the context is
+   * genuinely close to full. The emergency oversized-input path
+   * (handleOversizedInput) remains the true last-resort safety valve for a
+   * single batch that alone exceeds the window.
+   */
+  criticalCompactionThreshold?: number;
+
   /** System prompt provided by user */
   systemPrompt?: string;
 
@@ -911,6 +928,12 @@ export interface AgentContextNextGenConfig {
 export const DEFAULT_CONFIG = {
   responseReserve: 4096,
   strategy: 'algorithmic',
+  /**
+   * Compaction only triggers once utilization crosses this critical line.
+   * Below it, all tool results stay verbatim in the input array. 0.9 mirrors
+   * CONTEXT_DEFAULTS.HARD_LIMIT.
+   */
+  criticalCompactionThreshold: 0.9,
 };
 
 // ============================================================================

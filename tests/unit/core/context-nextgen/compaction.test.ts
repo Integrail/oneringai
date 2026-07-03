@@ -636,4 +636,140 @@ describe('Context Compaction Edge Cases', () => {
       ctx.destroy();
     });
   });
+
+  describe('Critical-threshold gating — tool results kept inline until critical', () => {
+    // Helper: add a big (>1KB) tool_use/tool_result pair so the algorithmic
+    // strategy would spill it to working memory IF it ran.
+    function addBigToolPair(ctx: AgentContextNextGen, id: string): void {
+      ctx.addUserMessage(`Read a file (${id})`);
+      const assistantWithTool: Message = {
+        type: 'message',
+        role: MessageRole.ASSISTANT,
+        content: [{ type: ContentType.TOOL_USE, id, name: 'read_file', input: { path: `/f/${id}` } }],
+      };
+      ctx.addInputItems([assistantWithTool]);
+      ctx.addToolResults([{ tool_use_id: id, content: 'FILE-CONTENT ' + 'x'.repeat(4000) }]);
+      ctx.addAssistantResponse([{
+        type: 'message',
+        role: MessageRole.ASSISTANT,
+        content: [{ type: ContentType.OUTPUT_TEXT, text: `read ${id}` }],
+      }]);
+    }
+
+    function toolResultTextPresent(input: InputItem[]): boolean {
+      for (const item of input) {
+        if (item.type !== 'message') continue;
+        for (const c of (item as Message).content) {
+          if (c.type === ContentType.TOOL_RESULT && String((c as any).content).includes('FILE-CONTENT')) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    it('below critical: prepare() keeps the large tool result inline and does NOT spill to working memory', async () => {
+      // Big window → low utilization → we're well under the 0.9 critical line.
+      const ctx = AgentContextNextGen.create({
+        model: 'gpt-4',
+        maxContextTokens: 128000,
+        responseReserve: 4096,
+        strategy: 'algorithmic',
+        features: { workingMemory: false, inContextMemory: false },
+      });
+      const wm = new WorkingMemoryPluginNextGen();
+      ctx.registerPlugin(wm);
+
+      addBigToolPair(ctx, 'tool_a');
+      ctx.addUserMessage('now answer');
+
+      const { input, compacted, budget } = await ctx.prepare();
+
+      expect(budget.utilizationPercent).toBeLessThan(90);
+      expect(compacted).toBe(false);
+      // The raw tool result must still be inline in the input array.
+      expect(toolResultTextPresent(input)).toBe(true);
+      // And nothing was spilled to working memory.
+      const entries = await wm.query({});
+      expect(entries.entries.length).toBe(0);
+
+      ctx.destroy();
+    });
+
+    it('at/above critical: prepare() compacts and spills the large tool result to working memory', async () => {
+      // criticalCompactionThreshold near-zero forces the gate open immediately.
+      const ctx = AgentContextNextGen.create({
+        model: 'gpt-4',
+        maxContextTokens: 128000,
+        responseReserve: 4096,
+        strategy: 'algorithmic',
+        criticalCompactionThreshold: 0.001,
+        features: { workingMemory: false, inContextMemory: false },
+      });
+      const wm = new WorkingMemoryPluginNextGen();
+      ctx.registerPlugin(wm);
+
+      addBigToolPair(ctx, 'tool_b');
+      ctx.addUserMessage('now answer');
+
+      const { compacted } = await ctx.prepare();
+
+      expect(compacted).toBe(true);
+      // The >1KB result was moved into working memory by the algorithmic strategy.
+      const entries = await wm.query({});
+      expect(entries.entries.length).toBeGreaterThan(0);
+
+      ctx.destroy();
+    });
+
+    it('post-cycle consolidate() is a no-op below critical (tool results stay inline between turns)', async () => {
+      const ctx = AgentContextNextGen.create({
+        model: 'gpt-4',
+        maxContextTokens: 128000,
+        responseReserve: 4096,
+        strategy: 'algorithmic',
+        features: { workingMemory: false, inContextMemory: false },
+      });
+      const wm = new WorkingMemoryPluginNextGen();
+      ctx.registerPlugin(wm);
+
+      addBigToolPair(ctx, 'tool_c');
+      await ctx.prepare(); // populate cached budget
+
+      const result = await ctx.consolidate();
+
+      expect(result.performed).toBe(false);
+      expect(result.actions.join(' ')).toMatch(/kept inline|below critical/i);
+      const entries = await wm.query({});
+      expect(entries.entries.length).toBe(0);
+
+      ctx.destroy();
+    });
+
+    it('post-cycle consolidate() runs once over critical', async () => {
+      const ctx = AgentContextNextGen.create({
+        model: 'gpt-4',
+        maxContextTokens: 128000,
+        responseReserve: 4096,
+        strategy: 'algorithmic',
+        criticalCompactionThreshold: 0.001,
+        features: { workingMemory: false, inContextMemory: false },
+      });
+      const wm = new WorkingMemoryPluginNextGen();
+      ctx.registerPlugin(wm);
+
+      addBigToolPair(ctx, 'tool_d');
+      // NOTE: no prepare() here — a prepare() with this near-zero critical
+      // threshold would already spill the pair, leaving consolidate() nothing
+      // to do. We call consolidate() directly to exercise the post-cycle path.
+
+      const result = await ctx.consolidate();
+
+      expect(result.performed).toBe(true);
+      const entries = await wm.query({});
+      expect(entries.entries.length).toBeGreaterThan(0);
+
+      ctx.destroy();
+    });
+  });
 });

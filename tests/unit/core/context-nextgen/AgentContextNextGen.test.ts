@@ -405,12 +405,16 @@ describe('AgentContextNextGen', () => {
     });
 
     it('should emit compaction event', async () => {
-      // Disable auto-plugins to allow small context for testing
+      // Disable auto-plugins to allow small context for testing.
+      // Compaction is gated on the critical threshold (default 0.9); lower it
+      // here so this small context reliably crosses the line and exercises the
+      // event-emission path.
       const smallCtx = AgentContextNextGen.create({
         model: 'gpt-4',
         maxContextTokens: 500,
         responseReserve: 100,
         strategy: 'default',
+        criticalCompactionThreshold: 0.5,
         features: { workingMemory: false, inContextMemory: false },
       });
 
