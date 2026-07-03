@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-07-03
+
 ### Security
 
 - **`MemorySystem.updateEntityMetadata` now enforces write authorization.** Previously the method read the entity through the caller's scope filter (which surfaces group/world-readable entities) and then called `store.updateEntity(next)` without checking `assertCanAccess(..., 'write', 'entity')`. Any caller who could READ an entity could mutate its metadata through this API — a real cross-tenant data-integrity hole. The check now matches `transitionTaskState`, `addEntityContextIds`, `archiveEntity`, `deleteEntity`, and `mergeEntities`.

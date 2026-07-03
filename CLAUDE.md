@@ -315,4 +315,4 @@ Brain-like knowledge store: **entities** (pure identity + metadata) + **facts** 
 
 ---
 
-**Version**: 0.9.2 | **Last Updated**: 2026-05-27 | **Architecture**: Connector-First + NextGen Context
+**Version**: 0.10.1 | **Last Updated**: 2026-07-03 | **Architecture**: Connector-First + NextGen Context
