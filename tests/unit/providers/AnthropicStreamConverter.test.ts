@@ -373,6 +373,52 @@ describe('AnthropicStreamConverter', () => {
       expect(complete.stop_reason).toBe('end_turn');
     });
 
+    it('should emit failed status and stop_details for a refusal', async () => {
+      const events: Anthropic.MessageStreamEvent[] = [
+        {
+          type: 'message_start',
+          message: {
+            id: 'msg_refusal',
+            type: 'message',
+            role: 'assistant',
+            content: [],
+            model: 'claude-sonnet-5',
+            stop_reason: null,
+            stop_sequence: null,
+            usage: { input_tokens: 10, output_tokens: 0 }
+          }
+        },
+        {
+          type: 'message_delta',
+          delta: {
+            stop_reason: 'refusal',
+            stop_sequence: null,
+            stop_details: { type: 'refusal', category: 'cyber', explanation: 'declined' },
+          },
+          usage: { input_tokens: 10, output_tokens: 0 }
+        } as any,
+        { type: 'message_stop' }
+      ];
+
+      const stream = converter.convertStream(createMockStream(events), 'claude-sonnet-5');
+      const results: any[] = [];
+
+      for await (const event of stream) {
+        results.push(event);
+      }
+
+      const complete = results.find(e => e.type === StreamEventType.RESPONSE_COMPLETE);
+
+      expect(complete).toBeDefined();
+      expect(complete.status).toBe('failed');
+      expect(complete.stop_reason).toBe('refusal');
+      expect(complete.stop_details).toEqual({
+        type: 'refusal',
+        category: 'cyber',
+        explanation: 'declined',
+      });
+    });
+
     it('should emit incomplete status when stop_reason is max_tokens', async () => {
       const events: Anthropic.MessageStreamEvent[] = [
         {

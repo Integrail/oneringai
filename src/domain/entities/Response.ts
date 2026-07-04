@@ -19,6 +19,21 @@ export interface TokenUsage {
   };
 }
 
+/**
+ * Structured stop detail from a provider. Currently populated for Anthropic
+ * refusals (`{ type: 'refusal', category, explanation }`) — `category` names
+ * which safety classifier fired (e.g. 'cyber', 'bio'). Surfaced so a refusal is
+ * diagnosable rather than an opaque empty/failed response.
+ */
+export interface ProviderStopDetails {
+  /** Discriminator, e.g. 'refusal'. */
+  type?: string;
+  /** Which classifier/category triggered the stop (e.g. 'cyber', 'bio'), or null. */
+  category?: string | null;
+  /** Human-readable explanation from the provider, when present. */
+  explanation?: string | null;
+}
+
 export interface LLMResponse {
   id: string;
   object: 'response';
@@ -51,6 +66,14 @@ export interface LLMResponse {
     message: string;
   };
   metadata?: Record<string, string>;
+  /** Raw provider stop reason (e.g. 'end_turn', 'max_tokens', 'refusal'), when known. */
+  stop_reason?: string;
+  /**
+   * Structured stop detail accompanying a terminal stop reason. Anthropic
+   * populates this for refusals — names which safety classifier fired. Undefined
+   * for ordinary completions.
+   */
+  stop_details?: ProviderStopDetails;
   /** Non-empty when async tools are still executing in the background */
   pendingAsyncTools?: Array<{ toolCallId: string; toolName: string; startTime: number; status: import('./Tool.js').PendingAsyncToolStatus }>;
 

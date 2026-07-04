@@ -188,7 +188,11 @@ export const LLM_MODELS = {
     GPT_OSS_20B: 'gpt-oss-20b',
   },
   [Vendor.Anthropic]: {
-    // Claude 4.7 Series (Current flagship Opus — April 2026)
+    // Claude 5 / Opus 4.8 Series (Current flagship)
+    CLAUDE_OPUS_4_8: 'claude-opus-4-8',
+    CLAUDE_SONNET_5: 'claude-sonnet-5',
+    CLAUDE_FABLE_5: 'claude-fable-5',
+    // Claude 4.7 Series (Legacy flagship Opus — April 2026)
     CLAUDE_OPUS_4_7: 'claude-opus-4-7',
     // Claude 4.6 Series (Current Sonnet, legacy Opus)
     CLAUDE_OPUS_4_6: 'claude-opus-4-6',
@@ -1796,13 +1800,134 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   // Source: https://platform.claude.com/docs/en/about-claude/models/overview
   // ============================================================================
 
-  // Claude 4.7 Series (Current flagship — released 2026-04-16)
+  // Claude 5 / Opus 4.8 Series (Current flagship)
+  // Adaptive-thinking only (no `budget_tokens`); sampling params (temperature/
+  // top_p/top_k) removed → parameters.temperature: false. 1M context, 128K output.
+  'claude-opus-4-8': {
+    name: 'claude-opus-4-8',
+    provider: Vendor.Anthropic,
+    description: 'Most capable Opus-tier model — highly autonomous, state-of-the-art long-horizon agentic work, knowledge work, and memory. 1M context, 128K output, adaptive thinking (low/medium/high/xhigh/max effort), high-resolution vision. Does not accept `temperature`.',
+    isActive: true,
+    preferred: true,
+    releaseDate: '2026-05-01',
+    knowledgeCutoff: '2026-01-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+      },
+      input: {
+        tokens: 1000000,
+        text: true,
+        image: true,
+        cpm: 5,
+        cpmCached: 0.5,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 25,
+      },
+    },
+  },
+
+  'claude-sonnet-5': {
+    name: 'claude-sonnet-5',
+    provider: Vendor.Anthropic,
+    description: 'Best combination of speed and intelligence; near-Opus quality on coding and agentic work. 1M context, 128K output, adaptive thinking on by default (low/medium/high/xhigh/max effort), high-resolution vision. New tokenizer. Does not accept `temperature`.',
+    isActive: true,
+    preferred: true,
+    releaseDate: '2026-05-01',
+    knowledgeCutoff: '2026-01-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+      },
+      input: {
+        tokens: 1000000,
+        text: true,
+        image: true,
+        cpm: 3,
+        cpmCached: 0.3,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 15,
+      },
+    },
+  },
+
+  'claude-fable-5': {
+    name: 'claude-fable-5',
+    provider: Vendor.Anthropic,
+    description: 'Anthropic\'s most capable widely released model, for the most demanding reasoning and long-horizon agentic work. 1M context, 128K output, thinking always on (raw chain of thought never returned). Does not accept `temperature`. Requires 30-day data retention.',
+    isActive: true,
+    releaseDate: '2026-06-01',
+    knowledgeCutoff: '2026-01-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+      },
+      input: {
+        tokens: 1000000,
+        text: true,
+        image: true,
+        cpm: 10,
+        cpmCached: 1,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 50,
+      },
+    },
+  },
+
+  // Claude 4.7 Series (Legacy flagship — released 2026-04-16)
   'claude-opus-4-7': {
     name: 'claude-opus-4-7',
     provider: Vendor.Anthropic,
-    description: 'Most capable model for complex reasoning and agentic coding. 1M context, 128K output, adaptive thinking with new xhigh effort level, high-resolution vision (2576px). New tokenizer. Does not accept `temperature`.',
+    description: 'Legacy Opus 4.7. Superseded by Opus 4.8. Complex reasoning and agentic coding. 1M context, 128K output, adaptive thinking with xhigh effort level, high-resolution vision (2576px). New tokenizer. Does not accept `temperature`.',
     isActive: true,
-    preferred: true,
     releaseDate: '2026-04-16',
     knowledgeCutoff: '2026-01-01',
     features: {
@@ -1877,9 +2002,8 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   'claude-sonnet-4-6': {
     name: 'claude-sonnet-4-6',
     provider: Vendor.Anthropic,
-    description: 'Best combination of speed and intelligence. Adaptive thinking, 1M context',
+    description: 'Legacy Sonnet 4.6. Superseded by Sonnet 5. Adaptive thinking, 1M context',
     isActive: true,
-    preferred: true,
     releaseDate: '2026-02-01',
     knowledgeCutoff: '2025-08-01',
     features: {

@@ -200,6 +200,12 @@ export function mapAnthropicStatus(stopReason: string | null): ResponseStatus {
       return 'completed';
     case 'max_tokens':
       return 'incomplete';
+    // `refusal` is a terminal, non-recoverable decision by the model's safety
+    // classifiers (HTTP 200 with empty/partial content). It is NOT retryable —
+    // an identical request deterministically refuses again. Map it to `failed`
+    // so the empty-response retry loop skips it (mirrors Google's SAFETY path).
+    case 'refusal':
+      return 'failed';
     default:
       return 'incomplete';
   }

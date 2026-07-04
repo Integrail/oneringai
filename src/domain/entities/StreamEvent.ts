@@ -3,7 +3,9 @@
  * Based on OpenAI Responses API event format as the internal standard
  */
 
-import { TokenUsage } from './Response.js';
+import { TokenUsage, ProviderStopDetails } from './Response.js';
+
+export type { ProviderStopDetails };
 
 /**
  * Stream event type enum
@@ -155,6 +157,14 @@ export interface ResponseCompleteEvent extends BaseStreamEvent {
   duration_ms?: number;
   /** Raw provider stop reason for diagnostics (e.g., 'end_turn', 'max_tokens', 'SAFETY') */
   stop_reason?: string;
+  /**
+   * Structured detail accompanying a terminal stop reason, when the provider
+   * supplies one. Anthropic populates this only for `stop_reason: 'refusal'`
+   * (`{ type: 'refusal', category, explanation }`) — the `category` names which
+   * safety classifier fired (e.g. 'cyber', 'bio'). Surfaced in logs so a refusal
+   * is diagnosable rather than an opaque empty response.
+   */
+  stop_details?: ProviderStopDetails;
 }
 
 /**

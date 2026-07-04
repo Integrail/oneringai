@@ -976,8 +976,35 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       // If no tool calls, check for empty response retry before committing to context
       if (toolCalls.length === 0) {
         const hasText = !!(response.output_text?.trim());
+        const isRefusal = response.stop_reason === 'refusal';
+
+        // Terminal safety refusal — surface the classifier + explanation clearly
+        // and skip the (futile) empty-response retry. See stream() for rationale.
+        if (isRefusal) {
+          const details = response.stop_details;
+          const category = details?.category ?? 'unknown';
+          const explanation = details?.explanation ? ` — "${details.explanation}"` : '';
+          this._logger.warn(
+            {
+              agentName: this.name,
+              model: this.model,
+              connector: this.connector.name,
+              stopReason: response.stop_reason,
+              refusalCategory: details?.category ?? null,
+              refusalExplanation: details?.explanation ?? null,
+              stopDetails: details,
+              status: response.status,
+            },
+            `LLM REFUSED the request: safety classifier "${category}" fired${explanation}. ` +
+              `Not retrying (an identical refused request deterministically refuses again); ` +
+              `returning the empty refusal to the caller. ` +
+              `Adjust the prompt/content for the "${category}" category to proceed.`,
+          );
+        }
+
         const shouldRetry = !hasText &&
           response.status !== 'failed' &&
+          !isRefusal &&
           retryConfig.enabled &&
           emptyRetryCount < retryConfig.maxRetries;
 
@@ -1397,10 +1424,45 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
           const hasText = iterationStreamState.hasText();
           const hasReasoning = iterationStreamState.hasReasoning();
           const providerStatus = iterationStreamState.providerStatus;
+          const isRefusal = iterationStreamState.stopReason === 'refusal';
 
-          // Retry logic: empty response (no text, no reasoning) that isn't a hard failure
+          // A `refusal` stop_reason is the model's safety classifiers declining
+          // the request — terminal and deterministic. Retrying an identical
+          // refused request is futile (it just burns attempts and latency, as
+          // the empty content trips the empty-response heuristic below), so we
+          // surface it loudly and skip the retry rather than fail silently.
+          if (isRefusal) {
+            const details = iterationStreamState.stopDetails;
+            // Put the classifier category + explanation directly in the message
+            // text — this is the actionable part and must be readable at a glance,
+            // not buried in a structured field the log formatter might drop.
+            const category = details?.category ?? 'unknown';
+            const explanation = details?.explanation
+              ? ` — "${details.explanation}"`
+              : '';
+            this._logger.warn(
+              {
+                agentName: this.name,
+                model: this.model,
+                connector: this.connector.name,
+                stopReason: iterationStreamState.stopReason,
+                refusalCategory: details?.category ?? null,
+                refusalExplanation: details?.explanation ?? null,
+                stopDetails: details,
+                providerStatus,
+              },
+              `LLM REFUSED the request: safety classifier "${category}" fired${explanation}. ` +
+                `Not retrying (an identical refused request deterministically refuses again); ` +
+                `returning the empty refusal to the caller. ` +
+                `Adjust the prompt/content for the "${category}" category to proceed.`,
+            );
+          }
+
+          // Retry logic: empty response (no text, no reasoning) that isn't a hard
+          // failure and isn't a terminal refusal.
           const shouldRetry = !hasText && !hasReasoning &&
             providerStatus !== 'failed' &&
+            !isRefusal &&
             retryConfig.enabled &&
             emptyRetryCount < retryConfig.maxRetries;
 
@@ -1446,6 +1508,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
           // Update global status from the final iteration
           globalStreamState.providerStatus = providerStatus;
           globalStreamState.stopReason = iterationStreamState.stopReason;
+          globalStreamState.stopDetails = iterationStreamState.stopDetails;
 
           // Add the final assistant response to conversation history
           this._addStreamingAssistantMessage(iterationStreamState, []);
@@ -1466,6 +1529,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
             iterations: iteration,
             duration_ms: Date.now() - startTime,
             stop_reason: iterationStreamState.stopReason,
+            stop_details: iterationStreamState.stopDetails,
           };
 
           break;
@@ -1914,6 +1978,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
           streamState.updateUsage(completeEvent.usage);
           streamState.providerStatus = completeEvent.status;
           streamState.stopReason = completeEvent.stop_reason;
+          streamState.stopDetails = completeEvent.stop_details;
           // Don't yield provider's RESPONSE_COMPLETE - we emit our own at the end
           continue;
         }

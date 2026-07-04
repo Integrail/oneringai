@@ -4,6 +4,7 @@
 
 import { TokenUsage } from './Response.js';
 import { ToolCall } from './Tool.js';
+import { ProviderStopDetails } from './StreamEvent.js';
 
 /**
  * Buffer for accumulating tool call arguments
@@ -47,6 +48,8 @@ export class StreamState {
   public providerStatus: 'completed' | 'incomplete' | 'failed' = 'incomplete';
   /** Raw stop reason from provider (e.g., 'end_turn', 'max_tokens', 'SAFETY') */
   public stopReason?: string;
+  /** Structured stop detail (Anthropic refusals: which classifier fired + why). */
+  public stopDetails?: ProviderStopDetails;
   public startTime: Date;
   public endTime?: Date;
 
@@ -289,6 +292,9 @@ export class StreamState {
     if (other.stopReason) {
       this.stopReason = other.stopReason;
     }
+    if (other.stopDetails) {
+      this.stopDetails = other.stopDetails;
+    }
   }
 
   /**
@@ -351,6 +357,7 @@ export class StreamState {
       usage: { ...this.usage },
       providerStatus: this.providerStatus,
       stopReason: this.stopReason,
+      stopDetails: this.stopDetails,
     };
   }
 
@@ -379,6 +386,7 @@ export class StreamState {
     this.toolResults.clear();
     this.providerStatus = 'incomplete';
     this.stopReason = undefined;
+    this.stopDetails = undefined;
   }
 
   /**
@@ -399,6 +407,7 @@ export class StreamState {
       status: this.status,
       providerStatus: this.providerStatus,
       stopReason: this.stopReason,
+      stopDetails: this.stopDetails,
       startTime: this.startTime,
       endTime: this.endTime,
     };

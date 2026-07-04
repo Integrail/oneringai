@@ -659,7 +659,7 @@ export type {
 } from './domain/entities/Tool.js';
 
 // Response
-export type { LLMResponse, AgentResponse } from './domain/entities/Response.js';
+export type { LLMResponse, AgentResponse, ProviderStopDetails } from './domain/entities/Response.js';
 
 // Connector types
 export type {

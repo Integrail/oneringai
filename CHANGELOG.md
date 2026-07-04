@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `refusal` stop_reason no longer triggers the empty-response retry loop, and the refusal is now clearly diagnosable.** When Anthropic's safety classifiers decline a request, the Messages API returns HTTP 200 with `stop_reason: "refusal"` and empty content. The agent's streaming loop treated that empty content as a transient empty response and retried it up to `maxRetries` times — futile, since an identical refused request deterministically refuses again, and it burned latency/tokens before silently accepting the empty result. Changes:
+  - `mapAnthropicStatus('refusal')` now returns `'failed'` (terminal, non-recoverable — mirrors Google's `SAFETY`/`RECITATION` handling) instead of `'incomplete'`.
+  - Both `Agent.stream()` and `Agent.run()` explicitly detect a refusal, **skip the retry**, and emit a `warn` whose **message text names the classifier category and explanation** (e.g. `LLM REFUSED the request: safety classifier "cyber" fired — "…". … Adjust the prompt/content for the "cyber" category to proceed.`) — not just structured fields a log formatter might drop.
+  - Anthropic's `stop_details` (`{ type, category, explanation }`) is now captured from the streaming `message_delta` and the non-streaming response, threaded through `StreamState` → the `RESPONSE_COMPLETE` stream event and `LLMResponse.stop_details`, so callers can inspect *which* classifier fired programmatically. New exported type `ProviderStopDetails`; `LLMResponse` gains optional `stop_reason` / `stop_details`.
+
+### Added
+
+- **Current-generation Anthropic models registered.** Added `claude-opus-4-8`, `claude-sonnet-5`, and `claude-fable-5` to the model registry (1M input / 128K output, adaptive thinking, `temperature` unsupported). `claude-opus-4-8` and `claude-sonnet-5` are now the `preferred` Opus/Sonnet flagships (superseding `claude-opus-4-7` / `claude-sonnet-4-6`, which are demoted but remain active). This suppresses the "Anthropic model not in registry; defaulted max_tokens to library fallback" warning and gives these models their correct 128K `max_tokens` capability instead of the 64K last-resort fallback. Exposed as `LLM_MODELS[Vendor.Anthropic].{CLAUDE_OPUS_4_8, CLAUDE_SONNET_5, CLAUDE_FABLE_5}`.
+
 ## [0.10.1] — 2026-07-03
 
 ### Security

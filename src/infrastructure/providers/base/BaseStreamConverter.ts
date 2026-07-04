@@ -10,7 +10,7 @@
  * Provider-specific stream converters extend this and implement abstract methods.
  */
 
-import { StreamEvent, StreamEventType } from '../../../domain/entities/StreamEvent.js';
+import { StreamEvent, StreamEventType, ProviderStopDetails } from '../../../domain/entities/StreamEvent.js';
 
 /**
  * Buffer for accumulating tool call arguments during streaming
@@ -282,7 +282,8 @@ export abstract class BaseStreamConverter<TEvent = unknown> {
    */
   protected emitResponseComplete(
     status: 'completed' | 'failed' | 'incomplete' = 'completed',
-    stopReason?: string
+    stopReason?: string,
+    stopDetails?: ProviderStopDetails
   ): StreamEvent {
     return {
       type: StreamEventType.RESPONSE_COMPLETE,
@@ -295,6 +296,7 @@ export abstract class BaseStreamConverter<TEvent = unknown> {
       },
       iterations: 1,
       stop_reason: stopReason,
+      stop_details: stopDetails,
     };
   }
 

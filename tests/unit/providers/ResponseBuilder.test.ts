@@ -183,6 +183,10 @@ describe('ResponseBuilder', () => {
       expect(mapAnthropicStatus('max_tokens')).toBe('incomplete');
     });
 
+    it('should map refusal to failed (terminal, non-retryable)', () => {
+      expect(mapAnthropicStatus('refusal')).toBe('failed');
+    });
+
     it('should default to incomplete for unknown', () => {
       expect(mapAnthropicStatus(null)).toBe('incomplete');
       expect(mapAnthropicStatus('unknown')).toBe('incomplete');

@@ -124,7 +124,7 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
    * Convert Anthropic response -> our LLMResponse format
    */
   convertResponse(response: Anthropic.Message): LLMResponse {
-    return this.buildResponse({
+    const built = this.buildResponse({
       rawId: response.id,
       model: response.model,
       status: this.mapProviderStatus(response.stop_reason),
@@ -135,6 +135,25 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
         outputTokens: response.usage.output_tokens,
       },
     });
+
+    // Surface stop_reason + stop_details for diagnostics. `stop_details` is
+    // populated by Anthropic only for refusals and names the classifier that
+    // fired; cast defensively since older SDK typings may omit it.
+    if (response.stop_reason) {
+      built.stop_reason = response.stop_reason;
+    }
+    const rawDetails = (response as {
+      stop_details?: { type?: string; category?: string | null; explanation?: string | null } | null;
+    }).stop_details;
+    if (rawDetails) {
+      built.stop_details = {
+        type: rawDetails.type,
+        category: rawDetails.category ?? null,
+        explanation: rawDetails.explanation ?? null,
+      };
+    }
+
+    return built;
   }
 
   // ==========================================================================

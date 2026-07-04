@@ -9,7 +9,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
+import { StreamEvent, ProviderStopDetails } from '../../../domain/entities/StreamEvent.js';
 import { BaseStreamConverter } from '../base/BaseStreamConverter.js';
 import { mapAnthropicStatus } from '../shared/ResponseBuilder.js';
 
@@ -33,6 +33,13 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
 
   /** Captured stop_reason from message_delta event */
   private stopReason: string | null = null;
+
+  /**
+   * Captured stop_details from message_delta event. Anthropic populates this
+   * only for refusals (`{ type: 'refusal', category, explanation }`) — the
+   * `category` names which safety classifier fired. Kept for diagnostics.
+   */
+  private stopDetails: ProviderStopDetails | undefined = undefined;
 
   /**
    * Convert a single Anthropic event to our StreamEvent(s)
@@ -72,6 +79,7 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
     super.clear();
     this.contentBlockIndex.clear();
     this.stopReason = null;
+    this.stopDetails = undefined;
   }
 
   // ==========================================================================
@@ -182,10 +190,23 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
       this.updateUsage(undefined, event.usage.output_tokens);
     }
 
-    // Capture stop_reason (available in event.delta.stop_reason)
-    const delta = event.delta as { stop_reason?: string | null; stop_sequence?: string | null };
+    // Capture stop_reason and stop_details (available in event.delta).
+    // stop_details is populated by Anthropic only for refusals and names the
+    // classifier that fired — cast defensively since older SDK typings may omit it.
+    const delta = event.delta as {
+      stop_reason?: string | null;
+      stop_sequence?: string | null;
+      stop_details?: { type?: string; category?: string | null; explanation?: string | null } | null;
+    };
     if (delta.stop_reason) {
       this.stopReason = delta.stop_reason;
+    }
+    if (delta.stop_details) {
+      this.stopDetails = {
+        type: delta.stop_details.type,
+        category: delta.stop_details.category ?? null,
+        explanation: delta.stop_details.explanation ?? null,
+      };
     }
 
     // No events to emit - we'll include usage and status in message_stop
@@ -199,6 +220,6 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
     const rawStatus = mapAnthropicStatus(this.stopReason);
     const status: 'completed' | 'failed' | 'incomplete' =
       rawStatus === 'completed' ? 'completed' : rawStatus === 'failed' ? 'failed' : 'incomplete';
-    return [this.emitResponseComplete(status, this.stopReason || undefined)];
+    return [this.emitResponseComplete(status, this.stopReason || undefined, this.stopDetails)];
   }
 }
