@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-07-04
+
 ### Fixed
 
 - **A `refusal` stop_reason no longer triggers the empty-response retry loop, and the refusal is now clearly diagnosable.** When Anthropic's safety classifiers decline a request, the Messages API returns HTTP 200 with `stop_reason: "refusal"` and empty content. The agent's streaming loop treated that empty content as a transient empty response and retried it up to `maxRetries` times — futile, since an identical refused request deterministically refuses again, and it burned latency/tokens before silently accepting the empty result. Changes:
