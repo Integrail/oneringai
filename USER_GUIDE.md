@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 0.6.0
-**Last Updated:** 2026-04-25
+**Version:** 0.10.3
+**Last Updated:** 2026-07-06
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -71,7 +71,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Storage backends (InMemoryAdapter, MongoMemoryAdapter — raw + Meteor)
     - What gets injected into the system message (rules, user profile, optional org profile)
     - Plugin config (incl. `groupBootstrap`, `recentActivity`, `defaultVisibility`)
-    - The 11 `memory_*` tools (5 read + 6 write incl. `memory_set_agent_rule`)
+    - The 12 `memory_*` tools (6 read + 6 write incl. `memory_set_agent_rule`)
     - Behavior rules — `memory_set_agent_rule`
     - Background ingestion via `SessionIngestorPluginNextGen`
     - Permissions and scope (three-principal model)
@@ -117,7 +117,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 27. [Streaming](#streaming)
 28. [External API Integration](#external-api-integration)
 29. [Vendor Templates](#vendor-templates)
-    - Quick Setup for 43+ Services
+    - Quick Setup for 45+ Services
     - Authentication Methods
     - Complete Vendor Reference
 30. [OAuth for External APIs](#oauth-for-external-apis)
@@ -288,7 +288,7 @@ const agent = Agent.create({
 });
 
 // Change model
-agent.setModel('gpt-4-turbo');
+agent.setModel('gpt-4o');
 
 // Change temperature
 agent.setTemperature(0.9);
@@ -387,9 +387,7 @@ Connector.create({
   vendor: Vendor.Anthropic,
   auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! },
   options: {
-    defaultHeaders: {
-      'anthropic-dangerous-direct-browser-access': 'true'
-    }
+    anthropicVersion: '2023-06-01'
   },
 });
 ```
@@ -703,14 +701,14 @@ await agent.run('Hello!');
 
 // Get execution metrics
 const metrics = agent.getMetrics();
-console.log(metrics.totalCalls);        // 1
+console.log(metrics.iterationCount);    // 1
 console.log(metrics.totalTokens);       // 150
-console.log(metrics.averageLatency);    // 1200ms
+console.log(metrics.totalDuration);     // 1200 (ms)
 
 // Get audit trail
 const audit = agent.getAuditTrail();
 audit.forEach(entry => {
-  console.log(`${entry.timestamp}: ${entry.type} - ${entry.message}`);
+  console.log(`${entry.timestamp}: ${entry.type} - ${JSON.stringify(entry.details)}`);
 });
 ```
 
@@ -897,7 +895,7 @@ class DatabaseContextStorage implements IContextStorage {
 
 ### Centralized Storage Registry
 
-Instead of configuring each subsystem separately, use `StorageRegistry` to set all storage backends in one call. Every subsystem (custom tools, media, sessions, persistent instructions, working memory, OAuth tokens) resolves its storage lazily from the registry at execution time, falling back to file-based defaults.
+Instead of configuring each subsystem separately, use `StorageRegistry` to set all storage backends in one call. Every subsystem (custom tools, media, sessions, persistent instructions, working memory, OAuth tokens) resolves its storage lazily from the registry at execution time, falling back to built-in defaults (file-based for custom tools/media/persistent instructions, in-memory for OAuth tokens/working memory, and none — must be configured explicitly — for sessions; see the table below).
 
 ```typescript
 import { StorageRegistry } from '@everworker/oneringai';
@@ -977,7 +975,7 @@ StorageRegistry.setContext({ userId: 'alice', tenantId: 'acme-corp' });
 const agent = Agent.create({ connector: 'openai', model: 'gpt-4.1', userId: 'alice' });
 ```
 
-If no global context is set, `AgentContextNextGen` auto-derives one from its `userId` config (i.e., `{ userId }`) and passes it to the factories. This means `Agent.create({ userId: 'alice' })` automatically partitions storage by user — no `setContext()` needed for simple single-user cases.
+If no global context is set, `AgentContextNextGen` auto-derives one from its `userId` config (i.e., `{ userId }`) — but only for the `sessions` factory. The `workingMemory` and `persistentInstructions` factories only ever receive `StorageRegistry.getContext()` (the explicitly-set global context), with no per-instance `userId` fallback. So `Agent.create({ userId: 'alice' })` alone partitions **session** storage by user but does **not** automatically partition working-memory or persistent-instructions storage — call `StorageRegistry.setContext({ userId })` for those too.
 
 ### Session Management APIs
 
@@ -1034,7 +1032,7 @@ await agent.run('What is my favorite color?');
 | Conversation history | ✅ | All messages with timestamps |
 | WorkingMemory entries | ✅ | Full values, not just index |
 | InContextMemory entries | ✅ | Via plugin state |
-| Tool enable/disable state | ✅ | Per-tool settings |
+| Tool enable/disable state | ❌ | `ToolManager.getState()/loadState()` exist but are not wired into `ctx.save()`/`ctx.load()` — persist/restore separately if needed |
 | System prompt | ✅ | |
 
 
@@ -1063,6 +1061,11 @@ await ctx.memory?.store('user_name', 'User name', 'Alice');
 await ctx.memory?.store('user_pref', 'User preferences', { theme: 'dark' });
 
 // Save session with metadata
+// Note: this metadata is merged into the serialized state's internal
+// `metadata` field, NOT into StoredContextSession.metadata (the field
+// storage.list() uses for s.metadata?.title / tags filtering below).
+// To make title/tags queryable via storage.list(), call
+// storage.updateMetadata(sessionId, { title, tags }) as well.
 await ctx.save('session-001', {
   title: 'Alice Support Chat',
   tags: ['support', 'vip'],
@@ -1102,8 +1105,8 @@ if (loaded) {
 |-----------|------------|-------|
 | Conversation history | ✅ | All messages with timestamps |
 | WorkingMemory entries | ✅ | **Full values**, not just index |
-| Tool enable/disable state | ✅ | Per-tool settings |
-| Permission approvals | ✅ | Session approvals |
+| Tool enable/disable state | ❌ | `ToolManager.getState()/loadState()` exist but are not wired into `ctx.save()`/`ctx.load()` — persist/restore separately if needed |
+| Permission approvals | ❌ | `ToolPermissionManager.getState()/loadState()` exist but are not wired into `ctx.save()`/`ctx.load()` — persist/restore separately if needed |
 | InContextMemory entries | ✅ | Via plugin state |
 | System prompt | ✅ | |
 | Instructions | ✅ | |
@@ -1156,7 +1159,7 @@ const storage = new FileContextStorage({
 import type { IContextStorage, StoredContextSession } from '@everworker/oneringai';
 
 class RedisContextStorage implements IContextStorage {
-  async save(sessionId: string, state: SerializedAgentContextState, metadata?) { /* ... */ }
+  async save(sessionId: string, state: SerializedContextState, metadata?) { /* ... */ }
   async load(sessionId: string): Promise<StoredContextSession | null> { /* ... */ }
   async delete(sessionId: string) { /* ... */ }
   async exists(sessionId: string) { /* ... */ }
@@ -1278,7 +1281,7 @@ const { input, budget, compacted } = await ctx.prepare();
 ctx.addAssistantResponse(response.output);
 
 // Add tool results
-ctx.addToolResults([{ tool_use_id: '...', content: '...' }]);
+ctx.addToolResults([{ tool_use_id: '...', content: '...', state: ToolCallState.COMPLETED }]);
 
 // Access plugins
 const memory = ctx.memory;  // WorkingMemoryPluginNextGen | null
@@ -1319,9 +1322,9 @@ AgentContextNextGen uses a plugin architecture with these core components:
 | Component | Access | Purpose |
 |-----------|--------|---------|
 | **ToolManager** | `ctx.tools` | Tool registration, execution, circuit breakers |
-| **WorkingMemoryPluginNextGen** | `ctx.getPlugin('working-memory')` | Tiered memory (raw/summary/findings) |
-| **InContextMemoryPluginNextGen** | `ctx.getPlugin('in-context-memory')` | Live key-value storage in context |
-| **PersistentInstructionsPluginNextGen** | `ctx.getPlugin('persistent-instructions')` | Disk-persisted agent instructions |
+| **WorkingMemoryPluginNextGen** | `ctx.getPlugin('working_memory')` | Tiered memory (raw/summary/findings) |
+| **InContextMemoryPluginNextGen** | `ctx.getPlugin('in_context_memory')` | Live key-value storage in context |
+| **PersistentInstructionsPluginNextGen** | `ctx.getPlugin('persistent_instructions')` | Disk-persisted agent instructions |
 | **UserInfoPluginNextGen** | `ctx.getPlugin('user_info')` | User-scoped preferences + TODO tracking, auto-injected into context |
 | **Conversation** | `ctx.getConversation()` | Built-in conversation tracking (Message[]) |
 
@@ -1361,7 +1364,7 @@ await agent.run('What is the weather?');
 const ctx = agent.context;
 const conversation = ctx.getConversation(); // Message[] - NextGen API
 const { budget } = await ctx.prepare();
-console.log(`Used: ${budget.used}/${budget.total} tokens`);
+console.log(`Used: ${budget.totalUsed}/${budget.maxTokens} tokens`);
 
 // Option 2: Pass existing AgentContextNextGen instance
 const sharedContext = AgentContextNextGen.create({ model: 'gpt-4.1' });
@@ -1374,8 +1377,8 @@ const agent2 = Agent.create({ connector: 'anthropic', model: 'claude', context: 
 
 ```typescript
 interface AgentContextNextGenConfig {
-  /** Model name (used for token limits) */
-  model?: string;
+  /** Model name (used for token limits) — REQUIRED */
+  model: string;
 
   /** Max context tokens (overrides model default) */
   maxContextTokens?: number;
@@ -1398,9 +1401,6 @@ interface AgentContextNextGenConfig {
   /** Compaction strategy */
   strategy?: string;  // 'algorithmic' (default, 75%) or custom registered strategy name
 
-  /** Token estimator (default: simpleTokenEstimator) */
-  tokenEstimator?: ITokenEstimator;
-
   /** Context storage for session persistence */
   storage?: IContextStorage;
 
@@ -1412,7 +1412,7 @@ interface ContextFeatures {
   /** Enable WorkingMemoryPluginNextGen (default: true) */
   workingMemory?: boolean;
 
-  /** Enable InContextMemoryPluginNextGen (default: false) */
+  /** Enable InContextMemoryPluginNextGen (default: true) */
   inContextMemory?: boolean;
 
   /** Enable PersistentInstructionsPluginNextGen (default: false) */
@@ -1435,7 +1435,7 @@ import { AgentContextNextGen, DEFAULT_FEATURES } from '@everworker/oneringai';
 
 // View default feature settings
 console.log(DEFAULT_FEATURES);
-// { workingMemory: true, inContextMemory: true, persistentInstructions: false, userInfo: false, toolCatalog: false, sharedWorkspace: false }
+// { workingMemory: true, inContextMemory: true, persistentInstructions: false, userInfo: false, toolCatalog: false, sharedWorkspace: false, memory: false, memoryWrite: false }
 ```
 
 **Available Features:**
@@ -1512,13 +1512,13 @@ ctx.features; // { workingMemory, inContextMemory, persistentInstructions, userI
 ctx.memory;  // WorkingMemoryPluginNextGen | null
 
 // Access plugins by name
-ctx.getPlugin('working-memory');            // WorkingMemoryPluginNextGen | undefined
-ctx.getPlugin('in-context-memory');         // InContextMemoryPluginNextGen | undefined
-ctx.getPlugin('persistent-instructions');   // PersistentInstructionsPluginNextGen | undefined
-ctx.getPlugin('user_info');                 // UserInfoPluginNextGen | undefined
+ctx.getPlugin('working_memory');            // WorkingMemoryPluginNextGen | null
+ctx.getPlugin('in_context_memory');         // InContextMemoryPluginNextGen | null
+ctx.getPlugin('persistent_instructions');   // PersistentInstructionsPluginNextGen | null
+ctx.getPlugin('user_info');                 // UserInfoPluginNextGen | null
 
 // Check if plugin exists
-ctx.hasPlugin('working-memory');  // boolean
+ctx.hasPlugin('working_memory');  // boolean
 ```
 
 **Tool Auto-Registration:**
@@ -1579,7 +1579,7 @@ ctx.addAssistantResponse(response.output);
 
 // Add tool results
 ctx.addToolResults([
-  { call_id: 'call_123', output: JSON.stringify({ result: 'success' }) }
+  { tool_use_id: 'call_123', content: JSON.stringify({ result: 'success' }), state: ToolCallState.COMPLETED }
 ]);
 
 // Get conversation history
@@ -1647,43 +1647,57 @@ import { IContextPluginNextGen, BasePluginNextGen, AgentContextNextGen } from '@
 
 // Create a custom plugin by extending BasePluginNextGen
 class MyPlugin extends BasePluginNextGen {
-  readonly name = 'my-plugin';
+  readonly name = 'my_plugin';
 
   private data: string[] = [];
 
-  // Return content to be included in context
-  getContent(): string {
-    if (this.data.length === 0) return '';
-    return `## My Plugin Data\n${this.data.join('\n')}`;
+  // Static usage instructions for the LLM (never compacted)
+  getInstructions(): string | null {
+    return null;
   }
 
-  // Return estimated token count
-  getTokens(): number {
-    return this.estimateTokens(this.getContent());
+  // Return content to be included in context (must update the token cache)
+  async getContent(): Promise<string | null> {
+    if (this.data.length === 0) return null;
+    const content = `## My Plugin Data\n${this.data.join('\n')}`;
+    this.updateTokenCache(this.estimator.estimateTokens(content));
+    return content;
+  }
+
+  // Raw data for programmatic inspection
+  getContents(): unknown {
+    return this.data;
   }
 
   addData(item: string) {
     this.data.push(item);
+    this.invalidateTokenCache();
   }
 
-  // Compact: reduce content to fit within targetTokens
-  async compact(targetTokens: number): Promise<number> {
-    const before = this.getTokens();
-    // Keep only recent data to fit target
-    while (this.getTokens() > targetTokens && this.data.length > 1) {
+  // Opt in to compaction (base class defaults to false)
+  isCompactable(): boolean {
+    return this.data.length > 0;
+  }
+
+  // Compact: reduce content to fit within targetTokensToFree
+  async compact(targetTokensToFree: number): Promise<number> {
+    const before = this.getTokenSize();
+    while (this.getTokenSize() > targetTokensToFree && this.data.length > 1) {
       this.data.shift();
+      await this.getContent(); // refreshes the token cache
     }
-    return before - this.getTokens();
+    return before - this.getTokenSize();
   }
 
   // Serialize state for persistence
-  serialize(): Record<string, unknown> {
+  getState(): unknown {
     return { data: this.data };
   }
 
-  // Deserialize state
-  deserialize(state: Record<string, unknown>): void {
-    this.data = (state.data as string[]) || [];
+  // Restore state
+  restoreState(state: unknown): void {
+    this.data = ((state as { data?: string[] }).data) || [];
+    this.invalidateTokenCache();
   }
 }
 
@@ -1702,23 +1716,23 @@ Monitor AgentContextNextGen activity:
 const ctx = AgentContextNextGen.create({ model: 'gpt-4.1' });
 
 // Message events
-ctx.on('message:added', ({ message }) => {
-  console.log(`New ${message.role} message`);
+ctx.on('message:added', ({ role }) => {
+  console.log(`New ${role} message`);
 });
 
 // Compaction events
-ctx.on('compacted', ({ tokensFreed }) => {
+ctx.on('context:compacted', ({ tokensFreed }) => {
   console.log(`Freed ${tokensFreed} tokens`);
 });
 
 // Budget events
 ctx.on('budget:warning', ({ budget }) => {
-  console.log(`Context at ${Math.round(budget.used / budget.total * 100)}%`);
+  console.log(`Context at ${budget.utilizationPercent.toFixed(1)}%`);
 });
 
 // Context prepared event
-ctx.on('prepared', ({ budget }) => {
-  console.log(`Context prepared: ${budget.used}/${budget.total} tokens`);
+ctx.on('context:prepared', ({ budget }) => {
+  console.log(`Context prepared: ${budget.totalUsed}/${budget.maxTokens} tokens`);
 });
 ```
 
@@ -1748,7 +1762,7 @@ agent.context.addAssistantResponse(response);
 const conversation = agent.context.getConversation();  // Message[]
 
 // Access WorkingMemory via plugin
-const memoryPlugin = agent.context.getPlugin('working-memory') as WorkingMemoryPluginNextGen;
+const memoryPlugin = agent.context.getPlugin('working_memory') as WorkingMemoryPluginNextGen;
 await memoryPlugin.store('key', 'description', value);
 
 // Access tools via context
@@ -1764,7 +1778,7 @@ await ctx.prepare();                      // Prepare context for LLM call, retur
 ctx.getConversation();                    // Get conversation history
 ctx.registerPlugin(plugin);               // Register context plugin
 ctx.getPlugin(name);                      // Get registered plugin by name
-await ctx.compact(targetTokens);          // Manual compaction
+await ctx.consolidate();                  // Post-cycle consolidation (strategy-driven cleanup)
 await ctx.save(sessionId);                // Save session (if storage configured)
 await ctx.load(sessionId);                // Load session (if storage configured)
 
@@ -1786,14 +1800,20 @@ import { BasePluginNextGen, WorkingMemoryPluginNextGen, InContextMemoryPluginNex
 
 // Custom plugin example:
 class MyPlugin extends BasePluginNextGen {
-  readonly name = 'my-plugin';
+  readonly name = 'my_plugin';
 
-  getContent(): string {
-    return 'Custom context content';
+  getInstructions(): string | null {
+    return null;
   }
 
-  getTokens(): number {
-    return this.estimateTokens(this.getContent());
+  async getContent(): Promise<string | null> {
+    const content = 'Custom context content';
+    this.updateTokenCache(this.estimator.estimateTokens(content));
+    return content;
+  }
+
+  getContents(): unknown {
+    return null;
   }
 }
 
@@ -1871,7 +1891,6 @@ import {
   AgentContextNextGen,
   WorkingMemoryPluginNextGen,
   InContextMemoryPluginNextGen,
-  simpleTokenEstimator,
 } from '@everworker/oneringai';
 
 // Create AgentContextNextGen with configuration
@@ -1889,16 +1908,16 @@ const ctx = AgentContextNextGen.create({
 
 // Plugins are auto-registered when features are enabled
 // Access them via getPlugin():
-const memoryPlugin = ctx.getPlugin('working-memory') as WorkingMemoryPluginNextGen;
-const inContextPlugin = ctx.getPlugin('in-context-memory') as InContextMemoryPluginNextGen;
+const memoryPlugin = ctx.getPlugin('working_memory') as WorkingMemoryPluginNextGen;
+const inContextPlugin = ctx.getPlugin('in_context_memory') as InContextMemoryPluginNextGen;
 
 // Add user message (sets _currentInput)
 ctx.addUserMessage('Current task description');
 
 // Prepare context before each LLM call
 const { input, budget } = await ctx.prepare();
-console.log(`Context: ${budget.used}/${budget.total} tokens`);
-console.log(`Utilization: ${(budget.used / budget.total * 100).toFixed(1)}%`);
+console.log(`Context: ${budget.totalUsed}/${budget.maxTokens} tokens`);
+console.log(`Utilization: ${budget.utilizationPercent.toFixed(1)}%`);
 
 // After LLM response, add it to conversation
 ctx.addAssistantResponse(llmResponse);
@@ -1908,6 +1927,8 @@ const conversation = ctx.getConversation();  // Message[]
 ```
 
 ### Compactors Deep Dive
+
+> **Note:** `TruncateCompactor`, `MemoryEvictionCompactor`, and `SummarizeCompactor` implement the legacy `IContextCompactor`/`IContextComponent` interfaces (`src/core/context/types.ts`) and are standalone utility classes — `AgentContextNextGen` never uses them. Its actual compaction is driven entirely by `ICompactionStrategy` implementations (e.g. `AlgorithmicCompactionStrategy`), which contain no reference to these compactor classes.
 
 Compactors determine **how** content is reduced during compaction. Each compactor handles components with a matching `strategy` metadata.
 
@@ -2007,7 +2028,10 @@ const memoryComponent = {
 The `beforeCompaction` lifecycle hook allows agents to save important data before compaction occurs. This is critical for research tasks where tool outputs may contain valuable information.
 
 ```typescript
-import { Agent, BeforeCompactionContext } from '@everworker/oneringai';
+import { Agent } from '@everworker/oneringai';
+// Note: the `BeforeCompactionContext` type shown below is defined internally
+// (src/core/BaseAgent.ts) and is not currently re-exported from the package root —
+// inline-type your handler's parameter or mirror the shape shown below until it is exported.
 
 // Define lifecycle hooks when creating the agent
 const agent = Agent.create({
@@ -2042,17 +2066,27 @@ The hook receives detailed context about the upcoming compaction:
 
 ```typescript
 interface BeforeCompactionContext {
-  /** Agent ID (set via setAgentId) */
+  /** Agent identifier */
   agentId: string;
 
-  /** Current context budget */
-  currentBudget: ContextBudget;
+  /** Current context budget info (a lightweight summary, not the full ContextBudget) */
+  currentBudget: {
+    total: number;
+    used: number;
+    available: number;
+    utilizationPercent: number;
+    status: 'ok' | 'warning' | 'critical';
+  };
 
   /** Strategy being used (e.g. 'algorithmic') */
   strategy: string;
 
-  /** Components about to be compacted */
-  components: ReadonlyArray<IContextComponent>;
+  /** Components about to be compacted (read-only summaries) */
+  components: ReadonlyArray<{
+    name: string;
+    priority: number;
+    compactable: boolean;
+  }>;
 
   /** Estimated tokens that need to be freed */
   estimatedTokensToFree: number;
@@ -2130,31 +2164,24 @@ class TimeBasedStrategy implements ICompactionStrategy {
     return isBusinessHours ? 0.60 : 0.85;
   }
 
-  async compact(context: CompactionContext): Promise<CompactionResult> {
+  async compact(context: CompactionContext, targetToFree: number): Promise<CompactionResult> {
     const log: string[] = [];
-    let tokensFreed = 0;
 
     // Remove old messages from conversation
-    const messages = context.getConversation();
+    const messages = context.conversation;
     const toRemove = Math.floor(messages.length * 0.3);
-    for (let i = 0; i < toRemove; i++) {
-      context.removeMessage(i);
-      tokensFreed += 100; // Approximate
-    }
+    const indices = Array.from({ length: toRemove }, (_, i) => i);
+    const tokensFreed = await context.removeMessages(indices);
 
     log.push(`Time-based: removed ${toRemove} old messages`);
-    return { tokensFreed, log };
+    return { tokensFreed, messagesRemoved: indices.length, pluginsCompacted: [], log };
   }
 
   async consolidate(context: CompactionContext): Promise<ConsolidationResult> {
     // Post-cycle cleanup (optional)
-    return { tokensFreed: 0, log: [] };
+    return { performed: false, tokensChanged: 0, actions: [] };
   }
 }
-
-  getTargetUtilization(): number {
-    return 0.55;
-  }
 
 // Register the custom strategy
 StrategyRegistry.register(TimeBasedStrategy);
@@ -2248,7 +2275,7 @@ console.log(`  Current input: ${budget.breakdown.currentInput} tokens`);
 
 ### Agent Lifecycle Hooks for Context
 
-Use lifecycle hooks to integrate context management with your application:
+Use lifecycle hooks to integrate context management with your application. **Caveat:** in the current `Agent` implementation, only `beforeCompaction` is actually invoked at runtime (wired in `Agent`'s constructor via `AgentContextNextGen.setBeforeCompactionCallback`). `beforeContextPrepare`, `afterCompaction`, `beforeToolExecution`, `afterToolExecution`, and `onError` can be registered via `agent.setLifecycleHooks()`, but no code path in `Agent`/`BaseAgent` currently calls their `invoke*` helpers, so they will not fire.
 
 ```typescript
 import { AgentLifecycleHooks } from '@everworker/oneringai';
@@ -2274,16 +2301,15 @@ const hooks: AgentLifecycleHooks = {
 
   // Called before each tool execution
   beforeToolExecution: async (context) => {
-    const budget = context.contextManager?.getCurrentBudget();
-    if (budget && budget.utilizationPercent > 80) {
-      console.warn(`High context usage before tool: ${budget.utilizationPercent}%`);
-    }
+    // ToolExecutionHookContext only exposes { toolName, args, agentId, taskId } —
+    // it has no contextManager/budget reference. Call agent.context.prepare() separately if needed.
+    console.log(`[${context.agentId}] About to run tool: ${context.toolName}`);
   },
 
   // Called after tool execution
   afterToolExecution: async (result) => {
     // Could trigger compaction if tool output was large
-    if (result.output && JSON.stringify(result.output).length > 10000) {
+    if (result.result && JSON.stringify(result.result).length > 10000) {
       console.log('Large tool output detected');
     }
   },
@@ -2326,17 +2352,17 @@ const agent = Agent.create({
 // Set up monitoring with AgentContextNextGen events
 const ctx = agent.context;
 
-ctx.on('compacted', async ({ tokensFreed }) => {
+ctx.on('context:compacted', async ({ tokensFreed }) => {
   await metrics.gauge('context.tokens_freed', tokensFreed);
 });
 
-ctx.on('prepared', async ({ budget }) => {
-  await metrics.gauge('context.usage', budget.used);
-  await metrics.gauge('context.total', budget.total);
+ctx.on('context:prepared', async ({ budget }) => {
+  await metrics.gauge('context.usage', budget.totalUsed);
+  await metrics.gauge('context.total', budget.maxTokens);
 });
 
 ctx.on('budget:warning', async ({ budget }) => {
-  const utilization = Math.round(budget.used / budget.total * 100);
+  const utilization = Math.round(budget.utilizationPercent);
   await alerts.warn(`Context warning: ${utilization}%`);
 });
 ```
@@ -2345,36 +2371,36 @@ ctx.on('budget:warning', async ({ budget }) => {
 
 ```typescript
 // Store data in appropriate tiers based on importance
-const memoryPlugin = ctx.getPlugin('working-memory') as WorkingMemoryPluginNextGen;
+const memoryPlugin = ctx.getPlugin('working_memory') as WorkingMemoryPluginNextGen;
 
 // Raw tier: Large, unprocessed data (evicted first)
-await memoryPlugin.storeRaw('search.results', 'Raw search results', largeResults);
+await memoryPlugin.store('search.results', 'Raw search results', largeResults, { tier: 'raw' });
 
 // Summary tier: Condensed information
-await memoryPlugin.storeSummary('search.summary', 'Search summary', summaryData);
+await memoryPlugin.store('search.summary', 'Search summary', summaryData, { tier: 'summary' });
 
 // Findings tier: Key insights (evicted last)
-await memoryPlugin.storeFindings('search.findings', 'Key findings', findings);
+await memoryPlugin.store('search.findings', 'Key findings', findings, { tier: 'findings' });
 ```
 
 #### 4. Plan for Compaction
 
 ```typescript
 // Structure data for efficient compaction using tiers
-const memoryPlugin = ctx.getPlugin('working-memory') as WorkingMemoryPluginNextGen;
+const memoryPlugin = ctx.getPlugin('working_memory') as WorkingMemoryPluginNextGen;
 
 // BAD: Single large object in findings (won't be evicted easily)
-await memoryPlugin.storeFindings('all.data', 'All data', hugeObject);
+await memoryPlugin.store('all.data', 'All data', hugeObject, { tier: 'findings' });
 
 // GOOD: Split by importance using tiers
 // Raw tier: Evicted first during compaction
-await memoryPlugin.storeRaw('data.raw', 'Raw data', rawData);
+await memoryPlugin.store('data.raw', 'Raw data', rawData, { tier: 'raw' });
 
 // Summary tier: Evicted second
-await memoryPlugin.storeSummary('data.summary', 'Summarized data', summaryData);
+await memoryPlugin.store('data.summary', 'Summarized data', summaryData, { tier: 'summary' });
 
 // Findings tier: Evicted last (most important)
-await memoryPlugin.storeFindings('data.findings', 'Key findings', findings);
+await memoryPlugin.store('data.findings', 'Key findings', findings, { tier: 'findings' });
 ```
 
 ---
@@ -2602,6 +2628,7 @@ Any plugin that implements `IContextPluginNextGen` and `IStoreHandler` automatic
 import {
   BasePluginNextGen,
   IStoreHandler,
+  StoreEntrySchema,
   StoreGetResult,
   StoreSetResult,
   StoreDeleteResult,
@@ -2611,31 +2638,40 @@ import {
 
 class SnippetsPlugin extends BasePluginNextGen implements IStoreHandler {
   readonly name = 'snippets';
-  readonly storeName = 'snippets';  // The string used in store_*(store, ...)
 
   private snippets = new Map<string, { text: string; createdAt: number }>();
+
+  getStoreSchema(): StoreEntrySchema {
+    return {
+      storeId: 'snippets',
+      displayName: 'Snippets',
+      description: 'Text snippets keyed by name',
+      usageHint: 'Use for: quick reusable text snippets.',
+      setDataFields: 'text (required): Snippet content',
+    };
+  }
 
   // IStoreHandler implementation
   async storeGet(key?: string): Promise<StoreGetResult> {
     if (key) {
       const snippet = this.snippets.get(key);
-      return snippet ? { found: true, key, data: snippet } : { found: false, key };
+      return snippet ? { found: true, key, entry: snippet } : { found: false, key };
     }
     // Return all entries when key is omitted
     const entries = Array.from(this.snippets.entries()).map(([k, v]) => ({ key: k, ...v }));
-    return { found: true, data: entries };
+    return { found: true, entries };
   }
 
   async storeSet(key: string, data: Record<string, unknown>): Promise<StoreSetResult> {
     const text = data.text as string;
-    if (!text) return { success: false, error: 'Missing "text" field' };
+    if (!text) return { success: false, key, error: 'Missing "text" field' };
     this.snippets.set(key, { text, createdAt: Date.now() });
     return { success: true, key, message: `Snippet "${key}" saved` };
   }
 
   async storeDelete(key: string): Promise<StoreDeleteResult> {
-    const existed = this.snippets.delete(key);
-    return { success: true, existed };
+    const deleted = this.snippets.delete(key);
+    return { deleted, key };
   }
 
   async storeList(filter?: Record<string, unknown>): Promise<StoreListResult> {
@@ -2644,21 +2680,22 @@ class SnippetsPlugin extends BasePluginNextGen implements IStoreHandler {
       text: v.text,
       createdAt: v.createdAt,
     }));
-    return { entries, count: entries.length };
+    return { entries, total: entries.length };
   }
 
   async storeAction(action: string, params?: Record<string, unknown>): Promise<StoreActionResult> {
     if (action === 'clear') {
-      if (!params?.confirm) return { success: false, error: 'Requires confirm: true' };
+      if (!params?.confirm) return { success: false, action, error: 'Requires confirm: true' };
       this.snippets.clear();
-      return { success: true, message: 'All snippets cleared' };
+      return { success: true, action, message: 'All snippets cleared' };
     }
-    return { success: false, error: `Unknown action: ${action}` };
+    return { success: false, action, error: `Unknown action: ${action}` };
   }
 
   // Standard plugin methods
   getInstructions(): string | null { return 'Use store_set("snippets", key, { text }) to save text snippets.'; }
-  getContent(): string | null { return null; }
+  async getContent(): Promise<string | null> { return null; }
+  getContents(): unknown { return Object.fromEntries(this.snippets); }
   getTools() { return []; }  // No plugin-specific tools needed; store_* tools handle everything
 }
 ```
@@ -2701,8 +2738,8 @@ Each workspace entry has richer metadata than other stores:
 ```typescript
 interface WorkspaceEntry {
   key: string;
-  content?: unknown;          // Full content (any JSON-serializable value)
-  references?: string[];      // Keys of related entries
+  content?: string;           // Inline text content (for collaborative documents)
+  references?: string[];      // External pointers: file paths, DB IDs, URLs
   summary: string;            // Human-readable summary (always required)
   status?: string;            // e.g., "draft", "final", "in-review"
   author?: string;            // Agent or user who wrote it
@@ -2724,7 +2761,7 @@ interface WorkspaceEntry {
     "key": "research_findings",
     "data": {
       "summary": "Analysis of competitor pricing models",
-      "content": { "competitors": [...], "insights": [...] },
+      "content": "Competitors: ...\nInsights: ...",
       "status": "draft",
       "tags": ["research", "pricing"],
       "references": ["market_data"]
@@ -2757,8 +2794,8 @@ The workspace store supports additional actions via `store_action`:
 
 | Action | Params | Description |
 |--------|--------|-------------|
-| `log` | `{ message, level? }` | Append a log entry (for coordination/debugging) |
-| `history` | `{ key }` | Get version history for an entry |
+| `log` | `{ message, author? }` | Append a log entry (for coordination/debugging) |
+| `history` | `{ limit? }` | Get recent entries from the shared team log (default limit: 20) |
 | `archive` | `{ key }` | Archive an entry (soft-delete) |
 | `clear` | `{ confirm: true }` | Clear all entries |
 
@@ -2769,17 +2806,17 @@ The workspace store supports additional actions via `store_action`:
   "arguments": {
     "store": "workspace",
     "action": "log",
-    "params": { "message": "Starting phase 2 of analysis", "level": "info" }
+    "params": { "message": "Starting phase 2 of analysis", "author": "researcher" }
   }
 }
 
-// Get version history
+// Get recent team log entries
 {
   "name": "store_action",
   "arguments": {
     "store": "workspace",
     "action": "history",
-    "params": { "key": "research_findings" }
+    "params": { "limit": 20 }
   }
 }
 ```
@@ -2799,14 +2836,14 @@ Connector.create({
 const researcher = Agent.create({
   connector: 'openai',
   model: 'gpt-4.1',
-  systemPrompt: 'You are a research agent. Store findings in the workspace.',
+  instructions: 'You are a research agent. Store findings in the workspace.',
   context: { features: { sharedWorkspace: true } },
 });
 
 const writer = Agent.create({
   connector: 'openai',
   model: 'gpt-4.1',
-  systemPrompt: 'You are a writing agent. Read findings from workspace and write reports.',
+  instructions: 'You are a writing agent. Read findings from workspace and write reports.',
   context: { features: { sharedWorkspace: true } },
 });
 
@@ -2834,7 +2871,7 @@ await writer.run('Write a report based on the workspace findings');
 | **Access pattern** | Requires `store_get("notes", key)` call | Immediate - no retrieval needed |
 | **UI display** | No | Yes — `showInUI` flag renders entries in host app sidebar |
 | **Best for** | Large data, rarely accessed info | Small state, frequently updated, live dashboards |
-| **Default capacity** | 25MB | 20 entries, 4000 tokens |
+| **Default capacity** | 25MB | 20 entries, 40000 tokens |
 
 ### Quick Setup
 
@@ -2848,7 +2885,7 @@ const ctx = AgentContextNextGen.create({
 
 // Plugin is automatically registered when feature is enabled
 // Access it via the plugin registry
-const plugin = ctx.getPlugin('in-context-memory') as InContextMemoryPluginNextGen;
+const plugin = ctx.getPlugin('in_context_memory') as InContextMemoryPluginNextGen;
 plugin.set('state', 'Current processing state', { step: 1, status: 'active' });
 ```
 
@@ -2867,7 +2904,6 @@ const plugin = new InContextMemoryPluginNextGen({
   maxTotalTokens: 4000,
   defaultPriority: 'normal',
   showTimestamps: false,
-  headerText: '## Live Context',
 });
 
 // Register plugin with context
@@ -2881,7 +2917,7 @@ interface InContextMemoryConfig {
   /** Maximum number of entries (default: 20) */
   maxEntries?: number;
 
-  /** Maximum total tokens for all entries (default: 4000) */
+  /** Maximum total tokens for all entries (default: 40000) */
   maxTotalTokens?: number;
 
   /** Default priority for new entries (default: 'normal') */
@@ -2889,9 +2925,6 @@ interface InContextMemoryConfig {
 
   /** Whether to show timestamps in output (default: false) */
   showTimestamps?: boolean;
-
-  /** Header text for the context section (default: '## Live Context') */
-  headerText?: string;
 
   /** Callback fired when entries change (set/delete/clear/restore). Debounced at 100ms. */
   onEntriesChanged?: (entries: InContextEntry[]) => void;
@@ -2936,7 +2969,7 @@ Remove an entry to free space:
     "key": "temp_data"
   }
 }
-// Returns: { "success": true, "existed": true }
+// Returns: { "deleted": true, "key": "temp_data" }
 ```
 
 #### store_list("whiteboard")
@@ -2953,10 +2986,10 @@ List all entries with metadata:
 }
 // Returns: {
 //   "entries": [
-//     { "key": "current_state", "description": "...", "priority": "high", "showInUI": true, "updatedAt": "2026-01-30T..." },
-//     { "key": "user_prefs", "description": "...", "priority": "normal", "showInUI": false, "updatedAt": "2026-01-30T..." }
+//     { "key": "current_state", "description": "...", "priority": "high", "showInUI": true, "updatedAt": 1769798400000 },
+//     { "key": "user_prefs", "description": "...", "priority": "normal", "showInUI": false, "updatedAt": 1769798400000 }
 //   ],
-//   "count": 2
+//   "total": 2
 // }
 ```
 
@@ -2965,7 +2998,7 @@ List all entries with metadata:
 The plugin provides a programmatic API for direct manipulation:
 
 ```typescript
-const plugin = ctx.getPlugin('in-context-memory') as InContextMemoryPluginNextGen;
+const plugin = ctx.getPlugin('in_context_memory') as InContextMemoryPluginNextGen;
 
 // Store entries
 plugin.set('state', 'Current state', { step: 1 });
@@ -2992,7 +3025,7 @@ const entries = plugin.list();
 // [{ key: 'state', description: '...', priority: 'normal', showInUI: false, updatedAt: 1706... }, ...]
 
 // Get entry count
-console.log(plugin.size);  // 2
+console.log(plugin.list().length);  // 2
 
 // Clear all
 plugin.clear();
@@ -3025,26 +3058,26 @@ console.log(plugin.has('normal1'));   // false (evicted)
 
 ### Context Output Format
 
-When the LLM context is prepared, InContextMemory adds a formatted section:
+When the LLM context is prepared, InContextMemory adds a formatted section titled after the store's display name ("Whiteboard"):
 
 ```markdown
-## Live Context
-Data below is always current. Use directly - no retrieval needed.
+# Whiteboard
 
-### current_state
-Processing state for current task
-```json
-{"step": 3, "status": "active", "errors": []}
+**current_state** (high): Processing state for current task
+{
+  "step": 3,
+  "status": "active",
+  "errors": []
+}
+
+**user_preferences** (normal): User preferences for this session
+{
+  "theme": "dark",
+  "verbose": true
+}
 ```
 
-### user_preferences
-User preferences for this session
-```json
-{"theme": "dark", "verbose": true}
-```
-```
-
-The LLM can read this section directly without making any tool calls.
+Each entry renders as `**key** (priority): description` followed by a plain fenced, pretty-printed JSON block. The LLM can read this section directly without making any tool calls.
 
 ### UI Display (`showInUI`)
 
@@ -3149,26 +3182,26 @@ InContextMemoryPluginNextGen supports full state serialization for session persi
 
 ```typescript
 // Save state
-const state = plugin.serialize();
-// state = { entries: [...], config: {...} }
+const state = plugin.getState();
+// state = { entries: [...] }
 
 // Later, restore state
 const newPlugin = new InContextMemoryPluginNextGen();
-newPlugin.deserialize(state);
+newPlugin.restoreState(state);
 ```
 
 When using with `AgentContextNextGen`, the state is automatically included:
 
 ```typescript
-// AgentContextNextGen automatically serializes plugin state
-const ctxState = await ctx.serialize();
+// AgentContextNextGen synchronously captures plugin state
+const ctxState = ctx.getState();
 
 // Restore entire context (including InContextMemory)
 const newCtx = AgentContextNextGen.create({
   model: 'gpt-4.1',
   features: { inContextMemory: true },
 });
-await newCtx.deserialize(ctxState);  // Plugins are restored automatically
+newCtx.restoreState(ctxState);  // Plugins are restored automatically
 ```
 
 ### Use Cases
@@ -3232,11 +3265,11 @@ Use both systems for their strengths:
 
 ```typescript
 // Large data goes to WorkingMemoryPluginNextGen (index-based)
-const memoryPlugin = ctx.getPlugin('working-memory') as WorkingMemoryPluginNextGen;
+const memoryPlugin = ctx.getPlugin('working_memory') as WorkingMemoryPluginNextGen;
 await memoryPlugin.store('search_results', 'Web search results', largeResults);
 
 // Small, frequently-accessed state goes to InContextMemoryPluginNextGen (full values)
-const inContextPlugin = ctx.getPlugin('in-context-memory') as InContextMemoryPluginNextGen;
+const inContextPlugin = ctx.getPlugin('in_context_memory') as InContextMemoryPluginNextGen;
 inContextPlugin.set('search_status', 'Search status', { completed: 3, pending: 2 });
 
 // LLM sees:
@@ -3261,7 +3294,7 @@ inContextPlugin.set('search_status', 'Search status', { completed: 3, pending: 2
 | **Best for** | Session state, counters, flags | Agent personality, learned rules |
 | **LLM can modify** | Yes (store_set("whiteboard", ...)) | Yes (store_set/store_delete("instructions", ...)) |
 | **Auto-loaded** | Via session restore | Always on agent start |
-| **Default capacity** | 20 entries, 4000 tokens | 50 entries, 50,000 chars total |
+| **Default capacity** | 20 entries, 40,000 tokens | 50 entries, 50,000 chars total |
 
 ### Quick Setup
 
@@ -3369,7 +3402,7 @@ Remove a single instruction by key:
     "key": "personality"
   }
 }
-// Returns: { "success": true, "message": "Instruction 'personality' removed", "key": "personality" }
+// Returns: { "deleted": true, "key": "personality" }
 ```
 
 #### store_list("instructions")
@@ -3385,12 +3418,11 @@ List all instructions with their keys and content:
   }
 }
 // Returns: {
-//   "count": 2,
+//   "total": 2,
 //   "entries": [
-//     { "key": "personality", "content": "Always be friendly...", "contentLength": 57, "createdAt": ..., "updatedAt": ... },
-//     { "key": "formatting", "content": "Use bullet points...", "contentLength": 35, "createdAt": ..., "updatedAt": ... }
-//   ],
-//   "agentId": "my-assistant"
+//     { "key": "personality", "contentLength": 57, "createdAt": ..., "updatedAt": ... },
+//     { "key": "formatting", "contentLength": 35, "createdAt": ..., "updatedAt": ... }
+//   ]
 // }
 ```
 
@@ -3408,7 +3440,7 @@ Remove all instructions (requires confirmation):
     "params": { "confirm": true }
   }
 }
-// Returns: { "success": true, "message": "All custom instructions cleared" }
+// Returns: { "success": true, "action": "clear", "message": "All custom instructions cleared" }
 ```
 
 ### Direct API Access
@@ -3485,7 +3517,7 @@ plugin.restoreState(state);
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4.1',
-  systemPrompt: `You are a learning assistant. When the user expresses preferences or
+  instructions: `You are a learning assistant. When the user expresses preferences or
 gives feedback about your responses, use store_set("instructions", key, { content }) to remember them for
 future sessions. Use descriptive keys like "user_preferences", "response_style", etc.
 Review your instructions with store_list("instructions") at the start of each conversation.`,
@@ -3620,11 +3652,10 @@ interface DirectCallOptions {
   /** Maximum output tokens */
   maxOutputTokens?: number;
 
-  /** Response format */
-  responseFormat?: {
-    type: 'text' | 'json_object' | 'json_schema';
-    json_schema?: unknown;
-  };
+  /** Vendor-agnostic structured (JSON) output */
+  responseFormat?:
+    | { type: 'json_object' }
+    | { type: 'json_schema'; schema: Record<string, unknown>; name?: string; description?: string; strict?: boolean };
 
   /** Vendor-agnostic thinking/reasoning configuration */
   thinking?: {
@@ -3713,6 +3744,11 @@ interface RunOptions {
 
   /** Vendor-specific options (shallow-merged with agent-level vendorOptions) */
   vendorOptions?: Record<string, unknown>;
+
+  /** Vendor-agnostic structured (JSON) output override for this call */
+  responseFormat?:
+    | { type: 'json_object' }
+    | { type: 'json_schema'; schema: Record<string, unknown>; name?: string; description?: string; strict?: boolean };
 }
 ```
 
@@ -3936,7 +3972,7 @@ interface UserInfoPluginConfig {
 
 ## Self-Learning Memory (NextGen Plugin)
 
-The Self-Learning Memory system is a brain-like, queryable knowledge store that lets agents *learn from observation* — the user's profile and any user-given behavior rules are injected into the system message on every turn, and the agent can read or mutate the knowledge graph mid-conversation through 11 dedicated tools. It supersedes both `PersistentInstructionsPluginNextGen` and `UserInfoPluginNextGen`.
+The Self-Learning Memory system is a brain-like, queryable knowledge store that lets agents *learn from observation* — the user's profile and any user-given behavior rules are injected into the system message on every turn, and the agent can read or mutate the knowledge graph mid-conversation through 12 dedicated tools. It supersedes both `PersistentInstructionsPluginNextGen` and `UserInfoPluginNextGen`.
 
 This section is the user-guide-level walkthrough. For the full conceptual model, adapter setup, signal ingestion pipeline, predicate vocabulary, and resolution tiers, see:
 - [docs/MEMORY_GUIDE.md](./docs/MEMORY_GUIDE.md) — the canonical memory layer guide.
@@ -3966,7 +4002,7 @@ Everything is append-only with supersession (state changes archive predecessors)
 |---|---|---|
 | `WorkingMemoryPluginNextGen` | `workingMemory` (default true) | Ephemeral per-session scratchpad with tiered eviction (raw / summary / findings). NOT a knowledge store. |
 | `InContextMemoryPluginNextGen` | `inContextMemory` (default true) | Live KV values rendered directly in the system message. Use for small, high-signal state the LLM must always see. |
-| **`MemoryPluginNextGen`** | `memory` (default false) | **Recommended.** Self-learning knowledge store. Read-side: profile injection + 5 retrieval tools. |
+| **`MemoryPluginNextGen`** | `memory` (default false) | **Recommended.** Self-learning knowledge store. Read-side: profile injection + 6 retrieval tools. |
 | **`MemoryWritePluginNextGen`** | `memoryWrite` (default false) | Optional sidecar — adds the 6 write `memory_*` tools. Requires `memory: true`. |
 | `SessionIngestorPluginNextGen` | n/a (registered manually) | Background pipeline — extracts facts from each batch of messages and writes them to the same `MemorySystem`. Pair with `memory: true` (no `memoryWrite`) for retrieval-only agents whose memory updates happen passively. |
 | `PersistentInstructionsPluginNextGen`, `UserInfoPluginNextGen` | `persistentInstructions`, `userInfo` | ⚠️ Deprecated — use `MemoryPluginNextGen` instead. |
@@ -3999,7 +4035,7 @@ const agent = Agent.create({
   context: {
     agentId: 'my-assistant',                    // optional — auto-generated if omitted
     features: {
-      memory: true,                             // reads: profile injection + 5 retrieval tools
+      memory: true,                             // reads: profile injection + 6 retrieval tools
       memoryWrite: true,                        // writes: 6 mutation tools (omit for retrieval-only)
     },
     plugins: {
@@ -4069,11 +4105,11 @@ await (memory['store'] as MongoMemoryAdapter).ensureVectorSearchIndexes({ dimens
 
 ### What gets injected into the system message
 
-Three blocks are rendered when `features.memory: true`:
+Up to four blocks are rendered when `features.memory: true` (the rules block and the priorities block only appear when applicable facts exist):
 
 ```
-## User-specific instructions for this agent
-_The items below describe YOU … each line begins with `[ruleId=<id>]` — pass that exact id to `memory_set_agent_rule.replaces` to supersede or to `memory_forget.factId` to drop._
+## Your persona — how YOU (the assistant) present yourself
+_These lines define the ASSISTANT — you, the AI — NOT the user. Each line begins with `[ruleId=<id>]` — pass that exact id to `memory_set_agent_rule.replaces` to supersede or to `memory_forget.factId` to drop._
 - [ruleId=fact_abc123_…] Be terse in replies.
 - [ruleId=fact_def456_…] Reply in English again.
 
@@ -4084,6 +4120,9 @@ Alice prefers concise replies, leads product strategy at Acme, …
 - prefers: "concise answers" (conf=1.00)
 - works_at: Acme (conf=0.95)
 - role: "product lead" (conf=0.9)
+
+## User's Active Priorities        ← only when the user has tracks_priority facts
+- **Ship NA launch** _(horizon=Q, weight=0.80, deadline=2026-06-30T00:00:00.000Z)_
 
 ## About the User's Organization (Acme)        ← only when groupBootstrap is set
 Acme is a 500-person SaaS company in the logistics space …
@@ -4111,7 +4150,7 @@ interface MemoryPluginConfig {
 
   // Optional org bootstrap — when set AND groupId is set, a third entity
   // (`organization`, identifier `system_group_id`) is upserted and rendered
-  // as "Your Organization Profile". Visibility of facts on it is controlled
+  // as "About the User's Organization". Visibility of facts on it is controlled
   // by your MemorySystem.visibilityPolicy + per-write permissions.
   groupBootstrap?: {
     displayName: string;
@@ -4164,7 +4203,7 @@ interface MemoryWritePluginConfig {
 }
 ```
 
-### The 11 `memory_*` tools
+### The 12 `memory_*` tools
 
 All tools accept a flexible **`SubjectRef`** so the LLM never has to know an entity id:
 
@@ -4218,7 +4257,7 @@ If any identifier already belongs to an entity, the others are added to it — s
 
 ### Behavior rules — `memory_set_agent_rule`
 
-When the user gives a directive about *the agent itself* ("be terse", "stop apologizing", "reply in Russian", "your name is Jason now"), the LLM calls `memory_set_agent_rule`. The rule is stored as a fact on the agent entity scoped to the calling user (`ownerId = userId`, `predicate = 'agent_behavior_rule'`, importance 0.95, private visibility) and rendered back into the **`## User-specific instructions for this agent`** block on every subsequent turn. Each rule shows its `ruleId` so the LLM can pass `replaces` to supersede it cleanly when the user contradicts a prior rule.
+When the user gives a directive about *the agent itself* ("be terse", "stop apologizing", "reply in Russian", "your name is Jason now"), the LLM calls `memory_set_agent_rule`. The rule is stored as a fact on the agent entity scoped to the calling user (`ownerId = userId`, `predicate = 'agent_behavior_rule'`, importance 0.95, private visibility) and rendered back into the **`## Your persona — how YOU (the assistant) present yourself`** block on every subsequent turn. Each rule shows its `ruleId` so the LLM can pass `replaces` to supersede it cleanly when the user contradicts a prior rule.
 
 The plugin's instructions teach the LLM a narrow trigger:
 
@@ -4353,7 +4392,7 @@ If you want the LLM tools but not the plugin's profile injection (e.g. you alrea
 import {
   createMemoryReadTools,
   createMemoryWriteTools,
-  createMemoryTools,            // convenience: all 11
+  createMemoryTools,            // convenience: all 12
 } from '@everworker/oneringai';
 
 const readTools = createMemoryReadTools({
@@ -4367,11 +4406,11 @@ const readTools = createMemoryReadTools({
   autoResolveThreshold: 0.9,
 });
 
-agent.tools.register(readTools);
+agent.tools.registerMany(readTools);
 
 // Or full read+write:
 const writeTools = createMemoryWriteTools({ memory, agentId: 'my-agent', defaultUserId: 'alice' });
-agent.tools.register([...readTools, ...writeTools]);
+agent.tools.registerMany([...readTools, ...writeTools]);
 ```
 
 Without `getOwnSubjectIds`, the `"me"` / `"this_agent"` `SubjectRef` tokens return a structured error; callers must reference entities by id, identifier, or surface.
@@ -4481,7 +4520,7 @@ const agent = Agent.create({
   },
 });
 
-// LLM sees: filesystem, web, code, connector:github, connector:slack, connector:microsoft
+// LLM sees: filesystem, web, code, connector:github, connector:slack, connector:microsoft:work
 ```
 
 **Scoping syntax for `toolCategories`:**
@@ -4707,16 +4746,17 @@ console.log(execution.progress); // 100
 ```typescript
 interface RoutineDefinition {
   name: string;                    // Routine name
-  description?: string;            // Human-readable description
+  description: string;             // Human-readable description (required)
   instructions?: string;           // System prompt for the agent
   requiredTools?: string[];        // Tool names that must be available
   requiredPlugins?: string[];      // Plugin names that must be registered
 
-  tasks: TaskDefinition[];         // Array of task definitions
+  tasks: TaskInput[];              // Array of task definitions (TaskDefinition does not exist)
 
   concurrency?: {
-    maxParallel?: number;          // Max parallel tasks (future)
-    failureMode?: 'fail-fast' | 'continue';  // Default: 'fail-fast'
+    maxParallelTasks: number;      // Required if concurrency is set; runner executes tasks sequentially regardless
+    strategy: 'fifo' | 'priority' | 'shortest-first';
+    failureMode?: 'fail-fast' | 'continue' | 'fail-all';  // Default: 'fail-fast'
   };
 }
 ```
@@ -4726,7 +4766,7 @@ interface RoutineDefinition {
 Each task in a routine has:
 
 ```typescript
-interface TaskDefinition {
+interface TaskInput {
   name: string;                    // Task name (used as ID)
   description: string;             // What the agent should do
   expectedOutput?: string;         // What success looks like
@@ -4769,7 +4809,7 @@ All three support an optional `iterationTimeoutMs` to prevent infinite hangs:
 }
 ```
 
-When `iterationTimeoutMs` is set, each sub-execution is wrapped with `Promise.race`. If an iteration exceeds the timeout, it fails with a timeout error and the control flow moves to the next iteration (or stops, depending on failure mode).
+When `iterationTimeoutMs` is set, each sub-execution is wrapped with `Promise.race`. If an iteration exceeds the timeout (or its sub-execution otherwise fails), the entire `map`/`fold`/`until` task fails immediately — there is no per-iteration failure mode or skip-and-continue; the loop does not proceed to remaining iterations.
 
 ### Error Classification
 
@@ -4832,17 +4872,17 @@ Between tasks, conversation history is cleared but **memory plugins persist**. T
   Task 2 calls: store_get("notes", "raw_data") → gets the full response
   ```
 
-The default system prompt instructs the agent on this pattern. You can override it via `prompts.system`.
+Note: the built-in default system prompt does not use this pattern — it still instructs the agent to use `context_set`, `memory_store` (tier="findings"), and `memory_retrieve`, none of which are registered tools. Use `prompts.system` to override it with instructions that reference the `store_set`/`store_get` tools shown above.
 
 ### Validation and Self-Reflection
 
 After each task completes, the runner validates the output:
 
-1. If `skipReflection: true` → auto-pass
-2. If no `completionCriteria` defined → auto-pass
-3. Otherwise: calls `agent.runDirect()` with the task criteria and agent's response
-4. The validation LLM returns `{ isComplete, completionScore, explanation }`
-5. Task passes if `isComplete === true` AND `completionScore >= minCompletionScore`
+1. LLM validation is opt-in: it only runs when the task sets `skipReflection: false` explicitly AND provides non-empty `completionCriteria`
+2. Otherwise (the default — `skipReflection` omitted/`true`, or no `completionCriteria`) the task auto-passes with `completionScore: 100`
+3. When enabled: calls `agent.runDirect()` with the task criteria and agent's response
+4. The validation LLM is asked to return `{ isComplete, completionScore, explanation }`, but only `completionScore`/`explanation` are used — the LLM's own `isComplete` is ignored
+5. Task passes if `completionScore >= minCompletionScore` (default 80)
 
 ```typescript
 {
@@ -4873,6 +4913,8 @@ If `maxAttempts` is exceeded, the task is marked `failed`.
 const routine = createRoutineDefinition({
   name: 'Pipeline',
   concurrency: {
+    maxParallelTasks: 1,
+    strategy: 'fifo',
     failureMode: 'fail-fast',  // Default: stop on first failure
     // failureMode: 'continue', // Skip failed tasks, continue with independents
   },
@@ -4906,10 +4948,10 @@ const execution = await executeRoutine({
     `,
 
     // Custom validation prompt
-    validation: (task, responseText) => `
+    validation: (task, context) => `
       Did the agent complete "${task.name}"?
       Criteria: ${task.validation?.completionCriteria?.join(', ')}
-      Response: ${responseText}
+      Response: ${context.responseText}
       Return JSON: { "isComplete": boolean, "completionScore": number, "explanation": string }
     `,
   },
@@ -4990,12 +5032,12 @@ interface ExecuteRoutineOptions {
 interface RoutineExecution {
   id: string;                      // Unique execution ID
   routineId: string;               // From definition
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
   plan: Plan;                      // Tasks with statuses and results
   progress: number;                // 0-100 percentage
   startedAt?: number;              // Timestamp
   completedAt?: number;            // Timestamp
-  lastUpdatedAt?: number;          // Timestamp
+  lastUpdatedAt: number;           // Timestamp
   error?: string;                  // Error message if failed
 }
 ```
@@ -5003,9 +5045,10 @@ interface RoutineExecution {
 Each completed task has a `result`:
 
 ```typescript
+// Shape of Task.result (not a separately exported type)
 interface TaskResult {
   success: boolean;
-  output?: string;                 // Agent's response text
+  output?: unknown;                // Agent's response text (or control-flow result)
   error?: string;                  // Error message if failed
   validationScore?: number;        // 0-100 from validation
   validationExplanation?: string;  // Why it passed/failed
@@ -5254,7 +5297,7 @@ interface IRoutineExecutionStorage {
 }
 ```
 
-Implement this interface for your storage backend (MongoDB, PostgreSQL, file system, etc.). The library does not ship a default implementation — it's consumer-provided.
+Implement this interface for your own storage backend (MongoDB, PostgreSQL, etc.), or use the library's built-in `FileRoutineExecutionStorage` (`createFileRoutineExecutionStorage()`), which persists records to `~/.oneringai/users/<userId>/routine-executions/<executionId>.json`.
 
 **StorageRegistry integration:**
 
@@ -5509,11 +5552,11 @@ The library ships with 70+ built-in tools across 14 categories:
 |----------|-------|-------------|
 | **Unified Store** | `store_get`, `store_set`, `store_delete`, `store_list`, `store_action` | Generic CRUD for all plugin stores: memory, context, instructions, user_info, workspace (auto-registered) |
 | **Filesystem** | `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `list_directory` | Local file operations |
-| **Shell** | `bash` | Shell command execution with safety guards |
-| **Web** | `webFetch` (built-in), `web_search` / `web_scrape` (ConnectorTools) | Web content retrieval, search, and scraping |
+| **Shell** | `bash`, `bg_process_kill`, `bg_process_list`, `bg_process_output`, `dev_server` | Shell command execution, background process management, and dev server orchestration |
+| **Web** | `web_fetch` (built-in), `web_search` / `web_scrape` (ConnectorTools) | Web content retrieval, search, and scraping |
 | **Desktop** | `desktop_screenshot`, `desktop_mouse_*`, `desktop_keyboard_*`, `desktop_window_*`, `desktop_get_*` | OS-level desktop automation (11 tools, requires `@nut-tree-fork/nut-js`) |
-| **Code** | `executeJavaScript` | Sandboxed JavaScript execution |
-| **JSON** | `jsonManipulator` | JSON object manipulation (add, delete, replace fields) |
+| **Code** | `execute_javascript` | Sandboxed JavaScript execution |
+| **JSON** | `json_manipulate` | JSON object manipulation (add, delete, replace fields) |
 | **GitHub** | `search_files`, `search_code`, `read_file`, `get_pr`, `pr_files`, `pr_comments`, `create_pr` | GitHub API operations (7 tools, auto-registered for GitHub connectors) |
 | **Microsoft** | `create_draft_email`, `send_email`, `create_meeting`, `edit_meeting`, `get_meeting`, `list_meetings`, `find_meeting_slots`, `get_meeting_transcript`, `read_file`, `list_files`, `search_files` | Microsoft Graph tools (11 tools, auto-registered) |
 | **Google** | `create_draft_email`, `send_email`, `create_meeting`, `edit_meeting`, `get_meeting`, `list_meetings`, `find_meeting_slots`, `get_meeting_transcript`, `read_file`, `list_files`, `search_files` | Google Workspace tools (11 tools, auto-registered) |
@@ -5602,7 +5645,7 @@ const response = await agent.run('Calculate the sum of numbers from 1 to 100');
 
 // Agent will:
 // 1. Generate JavaScript code
-// 2. Execute: executeJavaScript({ code: 'Array(100).fill(0).map((_, i) => i+1).reduce((a,b) => a+b)' })
+// 2. Execute: execute_javascript({ code: 'Array(100).fill(0).map((_, i) => i+1).reduce((a,b) => a+b)' })
 // 3. Return result: 5050
 ```
 
@@ -5695,7 +5738,7 @@ Agent calls: custom_tool_save({
   tags: ["conversion", "temperature"],
   category: "math"
 })
-→ Returns: { success: true, name: "celsius_to_fahrenheit", storagePath: "~/.oneringai/custom-tools/" }
+→ Returns: { success: true, name: "celsius_to_fahrenheit", storagePath: "~/.oneringai/users/default/custom-tools/" }
 ```
 
 #### Dynamic Descriptions & Connector Awareness
@@ -5925,7 +5968,7 @@ These fields are preserved through `getState()`/`loadState()` for session persis
 #### Storage Path
 
 ```
-~/.oneringai/custom-tools/
+~/.oneringai/users/<userId>/custom-tools/
 ├── _index.json              # Index for fast listing and search
 ├── celsius_to_fahrenheit.json
 ├── fetch_weather.json
@@ -5946,7 +5989,7 @@ import { developerTools } from '@everworker/oneringai';
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4.1',
-  tools: developerTools, // All 7 tools included
+  tools: developerTools, // All 11 tools included (filesystem, bash, dev server, background process management)
 });
 
 // Agent can now read, write, edit files, search, and run commands
@@ -6096,7 +6139,7 @@ bash({
 - `rm -rf /` and `rm -rf /*`
 - Fork bombs (`:(){:|:&};:`)
 - `/dev/sda` writes
-- Dangerous git operations
+- (git operations are not runtime-blocked — the tool description only instructs the agent to avoid risky git operations like force-push/reset --hard without permission)
 
 #### Configuration Options
 
@@ -6121,8 +6164,8 @@ interface ShellToolConfig {
   workingDirectory?: string;       // Working directory
   defaultTimeout?: number;         // Default timeout (default: 120000ms)
   maxTimeout?: number;             // Max timeout (default: 600000ms)
-  maxOutputSize?: number;          // Max output size (default: 100KB)
-  allowBackground?: boolean;       // Allow background execution (default: false)
+  maxOutputSize?: number;          // Max output size (default: 10MB)
+  allowBackground?: boolean;       // Allow background execution (default: true)
   shell?: string;                  // Shell to use (default: /bin/bash)
   env?: Record<string, string>;    // Environment variables
 }
@@ -6572,7 +6615,7 @@ All defaults are defined in `DOCUMENT_DEFAULTS` and can be overridden:
 | `MAX_EXTRACTED_IMAGES` | 50 | Max images extracted from a single document |
 | `MAX_EXCEL_ROWS` | 1,000 | Max rows per Excel sheet |
 | `MAX_EXCEL_COLUMNS` | 50 | Max columns per Excel sheet |
-| `MAX_HTML_LENGTH` | 50,000 | Max HTML content length |
+| `MAX_HTML_LENGTH` | 10,000,000 | Max HTML content length |
 | `CHARS_PER_TOKEN` | 4 | Chars per token estimate |
 | `IMAGE_FILTER.MIN_WIDTH` | 50 | Default minimum image width |
 | `IMAGE_FILTER.MIN_HEIGHT` | 50 | Default minimum image height |
@@ -6600,8 +6643,8 @@ await agent.run('Fetch https://example.com and summarize it');
 
 **Parameters:**
 - `url` (required) — URL to fetch
-- `prompt` — What to extract from the page
-- `format` — Output format: `"markdown"` (default) or `"text"`
+- `userAgent` — Custom user agent string (default: a generic bot user agent)
+- `timeout` — Timeout in milliseconds (default: 10000)
 
 #### web_search (ConnectorTools)
 
@@ -6651,7 +6694,7 @@ Connector.create({
   name: 'zenrows',
   serviceType: 'zenrows',
   auth: { type: 'api_key', apiKey: process.env.ZENROWS_API_KEY! },
-  baseURL: 'https://api.zenrows.com',
+  baseURL: 'https://api.zenrows.com/v1',
 });
 
 const scrapeTools = ConnectorTools.for('zenrows');
@@ -6684,14 +6727,14 @@ await agent.run('Add a "version" field set to "2.0" to this JSON: {"name": "app"
 ```
 
 **Parameters:**
-- `json` (required) — JSON string to manipulate
+- `object` (required) — JSON object to manipulate (not a string)
 - `operation` (required) — `"add"`, `"delete"`, or `"replace"`
 - `path` (required) — JSON path (dot notation, e.g., `"config.debug"`)
 - `value` — Value for add/replace operations
 
 ### GitHub Connector Tools
 
-When a GitHub connector is configured, `ConnectorTools.for('github')` automatically includes 7 dedicated tools alongside the generic API tool. These mirror the local filesystem tools for remote GitHub repositories.
+When a GitHub connector is configured, `ConnectorTools.for('github')` automatically includes 8 dedicated tools alongside the generic API tool (including `list_branches`, not otherwise documented here). These mirror the local filesystem tools for remote GitHub repositories.
 
 #### Quick Start
 
@@ -6709,7 +6752,7 @@ Connector.create({
   },
 });
 
-// Get all GitHub tools (generic API + 7 dedicated tools)
+// Get all GitHub tools (generic API + 8 dedicated tools)
 const tools = ConnectorTools.for('github');
 
 // Use with an agent
@@ -6897,6 +6940,7 @@ import {
   createSearchFilesTool,
   createSearchCodeTool,
   createGitHubReadFileTool,
+  createListBranchesTool,
   createGetPRTool,
   createPRFilesTool,
   createPRCommentsTool,
@@ -6996,6 +7040,7 @@ Send an email immediately or reply to an existing message.
 - `body` (required) — Email body as HTML
 - `cc` (optional, string[]) — CC email addresses
 - `replyToMessageId` (optional) — Graph message ID to reply to
+- `replyAll` (optional, boolean) — When true with `replyToMessageId`, replies to all original recipients (To + CC) instead of just the sender. Default: false.
 - `targetUser` (optional) — User ID/email for app-only auth
 
 **Returns:** `{ success }`
@@ -7126,7 +7171,7 @@ createConnectorFromTemplate('my-bot', 'telegram', 'bot-token', {
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4.1',
-  identities: ['my-bot'],  // Enables Telegram tools
+  identities: [{ connector: 'my-bot' }],  // Enables Telegram tools
 });
 ```
 
@@ -7135,7 +7180,7 @@ const agent = Agent.create({
 | `telegram_send_message(chat_id, text, parse_mode?)` | Send a text message with optional HTML/Markdown formatting |
 | `telegram_send_photo(chat_id, photo, caption?)` | Send a photo by URL or file_id with optional caption |
 | `telegram_get_updates(offset?, limit?, timeout?)` | Poll for incoming messages/events (supports long-polling) |
-| `telegram_set_webhook(url?, drop_pending?)` | Set or remove webhook for push-based updates |
+| `telegram_set_webhook(url, drop_pending_updates?)` | Set or remove webhook for push-based updates (pass `url: ""` to remove) |
 | `telegram_get_me()` | Get bot info — useful as a connection test |
 | `telegram_get_chat(chat_id)` | Get chat/group/channel details |
 
@@ -7153,7 +7198,7 @@ import { createConnectorFromTemplate } from '@everworker/oneringai';
 
 createConnectorFromTemplate('my-twilio', 'twilio', 'api-key', {
   apiKey: process.env.TWILIO_AUTH_TOKEN!,
-  extra: { accountId: process.env.TWILIO_ACCOUNT_SID! },
+  accountId: process.env.TWILIO_ACCOUNT_SID!,
 }, {
   vendorOptions: {
     defaultFromNumber: '+15551234567',
@@ -7166,8 +7211,8 @@ createConnectorFromTemplate('my-twilio', 'twilio', 'api-key', {
 |------|-------------|
 | `send_sms(to, body, from?)` | Send an SMS. Uses `defaultFromNumber` from vendor options if `from` is omitted. |
 | `send_whatsapp(to, body, from?, contentSid?)` | Send a WhatsApp message (freeform or pre-approved template via ContentSid). Uses `defaultWhatsAppNumber` if `from` is omitted. |
-| `list_messages(to?, from?, dateSent?, pageSize?)` | List/filter messages by phone number, date range, and channel (SMS/WhatsApp/all) |
-| `get_message(messageSid)` | Get full details of a single message by SID (status, price, errors) |
+| `list_messages(to?, from?, dateSentAfter?, dateSentBefore?, channel?, limit?)` | List/filter messages by phone number, date range, and channel (SMS/WhatsApp/all) |
+| `get_message(sid)` | Get full details of a single message by SID (status, price, errors) |
 
 **Key patterns:**
 - Basic Auth: Twilio uses HTTP Basic Auth (`accountSid:authToken` base64-encoded) — handled automatically by `buildAuthConfig()`
@@ -7194,7 +7239,7 @@ Connector.create({
     redirectUri: 'http://localhost:3000/callback',
     scope: 'https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive.readonly',
   },
-  config: { serviceType: 'google-api' },
+  serviceType: 'google-api',
 });
 
 // Get all Google tools (generic API + 11 dedicated tools)
@@ -7214,7 +7259,7 @@ await agent.run('Search my Drive for the Q4 report');
 | Tool | Description | Risk |
 |------|-------------|------|
 | `create_draft_email` | Create a draft email in Gmail, optionally as a reply | medium |
-| `send_email` | Send an email or reply via Gmail with HTML body support | once |
+| `send_email` | Send an email or reply via Gmail with HTML body support | medium |
 | `create_meeting` | Create Google Calendar event with optional Google Meet link | medium |
 | `edit_meeting` | Update an existing Google Calendar event | medium |
 | `get_meeting` | Get full details of a single calendar event | low |
@@ -7252,18 +7297,18 @@ createConnectorFromTemplate('my-zoom', 'zoom', 'oauth-user', {
 });
 
 // Or Server-to-Server OAuth
-createConnectorFromTemplate('zoom-s2s', 'zoom', 'oauth-s2s', {
+createConnectorFromTemplate('zoom-s2s', 'zoom', 'server-to-server', {
   clientId: process.env.ZOOM_S2S_CLIENT_ID!,
   clientSecret: process.env.ZOOM_S2S_CLIENT_SECRET!,
-  extra: { accountId: process.env.ZOOM_ACCOUNT_ID! },
+  accountId: process.env.ZOOM_ACCOUNT_ID!,
 });
 ```
 
 | Tool | Description | Risk |
 |------|-------------|------|
-| `zoom_create_meeting` | Create instant or scheduled Zoom meeting. Returns join URL, start URL, password. | once |
-| `zoom_update_meeting` | Update meeting settings (topic, time, duration, waiting room, join-before-host) | once |
-| `zoom_get_transcript` | Download and parse cloud recording transcript (VTT → structured speaker-attributed text) | session |
+| `zoom_create_meeting` | Create instant or scheduled Zoom meeting. Returns join URL, start URL, password. | medium |
+| `zoom_update_meeting` | Update meeting settings (topic, time, duration, waiting room, join-before-host) | medium |
+| `zoom_get_transcript` | Download and parse cloud recording transcript (VTT → structured speaker-attributed text) | low |
 
 **Key patterns:**
 - `zoomFetch()` helper with query param support, error handling, and 204 No Content handling
@@ -7442,20 +7487,31 @@ const enabled = toolManager.listEnabled(); // Only enabled
 
 ```typescript
 interface ToolOptions {
-  /** Namespace for organizing tools */
-  namespace?: string;
-
-  /** Priority for selection (higher = preferred) */
-  priority?: number;
-
-  /** Initial enabled state */
+  /** Whether the tool is enabled. Default: true */
   enabled?: boolean;
 
-  /** Condition function for context-aware enabling */
-  condition?: (context: ToolSelectionContext) => boolean;
+  /** Namespace for grouping related tools. Default: 'default' */
+  namespace?: string;
 
-  /** Tool metadata */
-  metadata?: Record<string, unknown>;
+  /** Priority for selection ordering. Higher = preferred. Default: 0 */
+  priority?: number;
+
+  /** Conditions for context-aware enabling (all must pass) */
+  conditions?: ToolCondition[];
+
+  /** Tags for categorization and search */
+  tags?: string[];
+
+  /** Category grouping */
+  category?: string;
+
+  /** Source identifier (built-in, connector, custom, mcp, etc.) */
+  source?: string;
+}
+
+interface ToolCondition {
+  type: 'mode' | 'context' | 'custom';
+  predicate: (context: ToolSelectionContext) => boolean;
 }
 ```
 
@@ -7471,12 +7527,7 @@ agent.tools.register(databaseReadTool, { namespace: 'database' });
 agent.tools.register(databaseWriteTool, { namespace: 'database' });
 
 // Disable all database tools
-for (const name of agent.tools.list()) {
-  const tool = agent.tools.get(name);
-  if (tool?.metadata?.namespace === 'database') {
-    agent.tools.disable(name);
-  }
-}
+agent.tools.disableNamespace('database');
 ```
 
 #### Priority
@@ -7501,12 +7552,14 @@ Dynamic enabling based on context:
 
 ```typescript
 agent.tools.register(adminTool, {
-  condition: (context) => context.user?.role === 'admin',
+  conditions: [
+    { type: 'custom', predicate: (context) => context.custom?.role === 'admin' },
+  ],
 });
 
 // Tool only available when condition is met
 const selected = agent.tools.selectForContext({
-  user: { role: 'admin' },
+  custom: { role: 'admin' },
 });
 ```
 
@@ -7514,23 +7567,23 @@ const selected = agent.tools.selectForContext({
 
 ```typescript
 interface ToolSelectionContext {
-  /** Current agent mode */
-  mode?: 'interactive' | 'planning' | 'executing';
+  /** Current user input or task description */
+  input?: string;
 
-  /** Current task name */
-  taskName?: string;
+  /** Current agent mode (for UniversalAgent) */
+  mode?: string;
 
-  /** User role/permissions */
-  user?: {
-    role?: string;
-    permissions?: string[];
-  };
+  /** Current task name (for TaskAgent) */
+  currentTask?: string;
 
-  /** Environment */
-  environment?: 'development' | 'staging' | 'production';
+  /** Recently used tools (to avoid repetition) */
+  recentTools?: string[];
 
-  /** Custom context */
-  [key: string]: unknown;
+  /** Token budget for tool definitions */
+  tokenBudget?: number;
+
+  /** Custom context data */
+  custom?: Record<string, unknown>;
 }
 ```
 
@@ -7538,8 +7591,7 @@ interface ToolSelectionContext {
 // Select tools based on context
 const tools = agent.tools.selectForContext({
   mode: 'executing',
-  environment: 'production',
-  user: { role: 'admin', permissions: ['write'] },
+  custom: { environment: 'production', role: 'admin', permissions: ['write'] },
 });
 
 // Only tools matching context are selected
@@ -7568,8 +7620,8 @@ agent.tools.loadState(savedState);
 Listen to tool changes:
 
 ```typescript
-agent.tools.on('tool:registered', ({ name, options }) => {
-  console.log(`Tool registered: ${name}`);
+agent.tools.on('tool:registered', ({ name, namespace, enabled }) => {
+  console.log(`Tool registered: ${name} (namespace: ${namespace}, enabled: ${enabled})`);
 });
 
 agent.tools.on('tool:unregistered', ({ name }) => {
@@ -7675,7 +7727,7 @@ class PluginManager {
     for (const tool of plugin.tools) {
       this.agent.tools.register(tool, {
         namespace: plugin.name,
-        metadata: { plugin: plugin.name, version: plugin.version },
+        category: plugin.name,
       });
     }
 
@@ -7683,11 +7735,8 @@ class PluginManager {
   }
 
   unloadPlugin(pluginName: string) {
-    for (const name of this.agent.tools.list()) {
-      const tool = this.agent.tools.get(name);
-      if (tool?.metadata?.plugin === pluginName) {
-        this.agent.tools.unregister(name);
-      }
+    for (const name of this.agent.tools.getByCategory(pluginName)) {
+      this.agent.tools.unregister(name);
     }
 
     console.log(`Unloaded plugin: ${pluginName}`);
@@ -7763,7 +7812,9 @@ function enableDestructiveMode() {
 ```typescript
 // Good
 agent.tools.register(adminTool, {
-  condition: (ctx) => ctx.user?.role === 'admin' && ctx.environment === 'production',
+  conditions: [
+    { type: 'custom', predicate: (ctx) => ctx.custom?.role === 'admin' && ctx.custom?.environment === 'production' },
+  ],
 });
 
 // Bad - manual checking everywhere
@@ -7796,10 +7847,10 @@ ToolManager includes built-in circuit breaker protection for each tool. When a t
 ```typescript
 // Get circuit breaker states for all tools
 const states = agent.tools.getCircuitBreakerStates();
-// Returns: Map<toolName, { state: 'closed' | 'open' | 'half-open', failures: number, lastFailure: Date }>
+// Returns: Map<toolName, 'closed' | 'open' | 'half-open'>
 
 for (const [toolName, state] of states) {
-  console.log(`${toolName}: ${state.state} (${state.failures} failures)`);
+  console.log(`${toolName}: ${state}`);
 }
 
 // Get metrics for a specific tool
@@ -8008,7 +8059,7 @@ Tools default to `blocking: true` if not specified.
 
 ### Events
 
-Five new events for monitoring async tool lifecycle:
+Six new events for monitoring async tool lifecycle (a sixth, `async:results:injected` — `{ executionId, iteration, results: [{toolCallId, toolName}], timestamp }` — fires when queued results are injected mid-loop before the next LLM call, in addition to the five below):
 
 | Event | Payload | When |
 |-------|---------|------|
@@ -8062,7 +8113,7 @@ agent.continueWithAsyncResults(results?: ToolResult[]): Promise<AgentResponse>;
 
 // Response includes pending info
 const response = await agent.run('...');
-response.pendingAsyncTools; // Array<{ toolCallId, toolName, startTime }> | undefined
+response.pendingAsyncTools; // Array<{ toolCallId, toolName, startTime, status }> | undefined
 ```
 
 ### Mixed Blocking and Async Tools
@@ -8092,7 +8143,7 @@ const agent = Agent.create({
 
 | Scenario | Behavior |
 |----------|----------|
-| **Result arrives during active loop** | Queued, not injected mid-iteration. Delivered after current loop ends or in next continuation. |
+| **Result arrives during active loop** | Injected as a `[Async Tool Results]` user message at the start of the next iteration of the *same* run — the LLM can see results before `run()` ends, not just via a later continuation. (This mid-loop message omits the `(toolCallId)` and the "Process these results and continue." line used by `continueWithAsyncResults()`.) |
 | **All called tools are async** | LLM sees only placeholders → likely produces text → loop ends → results trickle in → auto-continue |
 | **Async tool fails** | Error result delivered same as success — LLM sees the error and can react |
 | **Async tool times out** | Treated as error with timeout message. Configurable via `asyncTimeout`. |
@@ -8623,6 +8674,8 @@ const latePlugin: IToolExecutionPlugin = { name: 'late', priority: 200 };
 
 ### Built-in Plugins
 
+Note: `ToolManager` automatically registers a `ResultNormalizerPlugin` (name `'result-normalizer'`, priority 0) on every execution pipeline to guarantee tool results are always valid/serializable — the pipeline is never actually empty. Remove it via `agent.tools.executionPipeline.remove('result-normalizer')` if you don't want this behavior, or reconfigure it via `new ResultNormalizerPlugin({ wrapPrimitives, addSuccessField })`.
+
 #### LoggingPlugin
 
 Logs all tool executions with timing and result information:
@@ -8630,12 +8683,12 @@ Logs all tool executions with timing and result information:
 ```typescript
 import { LoggingPlugin } from '@everworker/oneringai';
 
-// Use with default settings (info level)
+// Use with default settings (debug level)
 agent.tools.executionPipeline.use(new LoggingPlugin());
 
 // Configure log level
 agent.tools.executionPipeline.use(new LoggingPlugin({
-  level: 'debug', // 'debug' | 'info' | 'warn' | 'error'
+  level: 'debug', // 'trace' | 'debug' | 'info' | 'warn' | 'error'
 }));
 ```
 
@@ -9292,7 +9345,7 @@ Manages session-level approval caching based on tool self-declarations. Reads `P
 ```typescript
 import { SessionApprovalPolicy } from '@everworker/oneringai';
 
-const policy = new SessionApprovalPolicy('once'); // default scope for undeclared tools
+const policy = new SessionApprovalPolicy('once'); // constructor arg is currently unused — tools without a self-declared scope always abstain
 ```
 
 | Property | Value |
@@ -9589,15 +9642,16 @@ The merged config (registration override > tool declaration) is passed to polici
 | Filesystem (read) | read_file, glob, grep, list_directory | `always` | `low` |
 | Filesystem (write) | write_file, edit_file | `session` | `medium` |
 | Shell | bash | `once` | `high` |
-| Web | web_fetch, web_search, web_scrape | `session` | `medium` |
+| Web | web_fetch | `session` | `low` |
+| Web (connector-provided) | web_search, web_scrape | *(no self-declared permission — falls through to chain default)* | — |
 | Desktop (read) | desktop_get_*, desktop_window_list | `always` | `low` |
 | Desktop (action) | desktop_mouse_*, desktop_screenshot, desktop_keyboard_key, desktop_window_focus | `session` | `medium` |
-| Desktop (input) | desktop_keyboard_type | `once` | `high` |
+| Desktop (input) | desktop_keyboard_type | `session` | `high` |
 | Store tools | store_*, context_stats | `always` | `low` |
 | Code execution | execute_javascript | `once` | `high` |
 | Custom tools meta | custom_tool_save, custom_tool_delete | `session` | `medium` |
 | Custom tools meta | custom_tool_test | `once` | `high` |
-| Orchestrator | create_agent, list_agents, assign_turn, etc. | `always` | `low` |
+| Orchestrator | assign_turn, delegate_interactive, send_message, list_agents, destroy_agent | `always` | `low` |
 | Meta-tools | _start_planning, _modify_plan, _report_progress, _request_approval | `always` | `low` |
 
 ### Storage (Clean Architecture)
@@ -9647,64 +9701,17 @@ class MongoPermissionRulesStorage implements IUserPermissionRulesStorage {
 
 #### IPermissionAuditStorage
 
-Append-only storage for permission audit trail:
+There is currently no built-in persistent audit-storage interface. `PermissionPolicyManager` only exposes the audit trail via events (`permission:allow`, `permission:deny`, `permission:approval_granted`, `permission:approval_denied`, `permission:audit` — see "Event Emission" below). To persist entries yourself, subscribe to `permission:audit` and write `PermissionAuditEntry` objects to your own store:
 
 ```typescript
-interface IPermissionAuditStorage {
-  /** Append an audit entry. */
-  append(entry: PermissionAuditEntry): Promise<void>;
-
-  /** Query audit entries with optional filtering. */
-  query(options?: AuditQueryOptions): Promise<PermissionAuditEntry[]>;
-
-  /** Clear entries older than the given date. */
-  clear(before?: string): Promise<void>;
-
-  /** Count entries matching the given criteria. */
-  count(options?: AuditQueryOptions): Promise<number>;
-}
-
-interface AuditQueryOptions {
-  toolName?: string;
-  userId?: string;
-  agentId?: string;
-  decision?: 'allow' | 'deny';
-  finalOutcome?: string;
-  since?: string;  // ISO date
-  limit?: number;
-  offset?: number;
-}
+agent.policyManager.on('permission:audit', async (entry: PermissionAuditEntry) => {
+  await myAuditLog.record(entry);
+});
 ```
 
 #### IPermissionPolicyStorage
 
-Stores serialized policy definitions for persistence. Policies can be loaded from storage and instantiated via the `PolicyFactoryRegistry`:
-
-```typescript
-interface IPermissionPolicyStorage {
-  /** Save policy definitions for a user. */
-  save(userId: string | undefined, policies: StoredPolicyDefinition[]): Promise<void>;
-
-  /** Load policy definitions for a user. Returns null if none exist. */
-  load(userId: string | undefined): Promise<StoredPolicyDefinition[] | null>;
-
-  /** Delete policy definitions for a user. */
-  delete(userId: string | undefined): Promise<void>;
-
-  /** Check if policy definitions exist for a user. */
-  exists(userId: string | undefined): Promise<boolean>;
-}
-
-interface StoredPolicyDefinition {
-  name: string;                          // Policy name
-  type: string;                          // Maps to IPermissionPolicyFactory
-  config: Record<string, unknown>;       // Policy-specific configuration
-  enabled: boolean;                      // Whether policy is active
-  priority?: number;                     // Evaluation priority
-  createdAt: string;                     // ISO timestamp
-  updatedAt: string;                     // ISO timestamp
-}
-```
+There is no built-in `IPermissionPolicyStorage` interface or `PolicyFactoryRegistry` in the current implementation — policies cannot be persisted/reloaded out of the box. Each built-in policy module internally exports a `StoredPolicyDefinition`-shaped factory object (e.g. `AllowlistPolicyFactory`, `PathRestrictionPolicyFactory`) implementing `IPermissionPolicyFactory`, but neither these factories nor the `StoredPolicyDefinition`/`IPermissionPolicyFactory` types are exported from the package's public entry point. To persist policy configuration yourself, store your own serializable config and reconstruct `new XPolicy(config)` instances directly at startup.
 
 #### StorageRegistry Integration
 
@@ -9724,8 +9731,8 @@ const agent = Agent.create({
   model: 'gpt-4.1',
   permissions: {
     userRulesStorage: new FileUserPermissionRulesStorage(),
-    auditStorage: new MyAuditStorage(),
-    policyStorage: new MyPolicyStorage(),
+    // NOTE: there is no built-in auditStorage/policyStorage config field —
+    // persist audit entries yourself via agent.policyManager.on('permission:audit', ...).
   },
 });
 ```
@@ -9852,7 +9859,7 @@ manager.on('policy:removed', ({ name }) => console.log(`Policy removed: ${name}`
 manager.on('session:cleared', () => console.log('Session approvals cleared'));
 ```
 
-If audit storage is configured, entries are automatically persisted (fire-and-forget — audit storage failures are non-fatal and do not affect tool execution).
+There is no built-in audit storage — persistence is entirely up to the caller. Subscribe to `permission:audit` (or the more specific `permission:allow`/`permission:deny`/etc. events) and write entries to your own store; do this fire-and-forget so a storage failure never blocks tool execution.
 
 ### Migration from Legacy System
 
@@ -9867,9 +9874,9 @@ The legacy config is automatically translated when passed to `Agent.create()`:
 | `blocklist: [...]` | `BlocklistPolicy` |
 | `allowlist: [...]` | `AllowlistPolicy` (merged with `DEFAULT_ALLOWLIST`) |
 | `defaultScope: 'once'` | `SessionApprovalPolicy('once')` |
-| `onApprovalRequired: fn` | Passed through with adapter wrapping |
+| `onApprovalRequired: fn` | Passed through unchanged (same callback signature in both configs) |
 
-Detection: if the config object contains `policies` or `policyChain`, it uses the new `AgentPolicyConfig` path. Otherwise, it uses the legacy `AgentPermissionsConfig` path.
+`Agent.create()` always routes permission config through `PermissionPolicyManager.fromConfig()` — there is no separate "legacy" vs "policy" code path. `fromConfig()` first applies the legacy translation (blocklist/allowlist/defaultScope/onApprovalRequired) unconditionally, then layers on any explicitly supplied `policies`.
 
 ```typescript
 // Legacy config — still works, auto-translated to policies
@@ -9920,13 +9927,12 @@ const manager = PermissionPolicyManager.fromLegacyConfig({
 const manager = PermissionPolicyManager.fromConfig({
   allowlist: ['my_tool'],
   policies: [new PathRestrictionPolicy({ allowedPaths: ['/workspace'] })],
-  policyChain: { defaultVerdict: 'deny' },
   userRulesStorage: new FileUserPermissionRulesStorage(),
-  auditStorage: new MyAuditStorage(),
+  // NOTE: policyChain and auditStorage are not read by fromConfig() — see notes above.
 });
 ```
 
-Note: when using `fromLegacyConfig` without an `onApprovalRequired` callback, the chain default verdict is automatically set to `'allow'` to preserve backward compatibility (pre-policy-system behavior where all tools auto-execute). The strict `'deny'` default applies only when policies are explicitly configured via `AgentPolicyConfig`.
+Note: the chain default verdict is `'deny'` only when `onApprovalRequired` is supplied; otherwise it is `'allow'` to preserve backward compatibility (pre-policy-system behavior where all tools auto-execute). This is independent of whether `policies` are configured — `PermissionPolicyManager.fromConfig()` never reads `AgentPolicyConfig.policyChain`, so it cannot be used to force a strict `'deny'` default.
 
 #### Accessing the Manager
 
@@ -10041,7 +10047,8 @@ const agent = Agent.create({
       ]),
     ],
 
-    // Policy chain config — strict deny by default
+    // NOTE: `policyChain` is currently a no-op — PermissionPolicyManager.fromConfig() never reads it.
+    // The chain's default verdict is 'deny' automatically because onApprovalRequired is set below.
     policyChain: { defaultVerdict: 'deny' },
 
     // Per-user rules storage (persistent)
@@ -10457,7 +10464,7 @@ const client = MCPRegistry.create({
       'X-Client-Version': '1.0.0',
       'X-Custom-Header': 'value',
     },
-    timeoutMs: 30000,                                  // Request timeout (default: 30000)
+    timeoutMs: 30000,                                  // Request timeout (no default — omitting this applies no timeout at all)
     sessionId: 'optional-session-id',                  // For reconnection
     reconnection: {
       maxReconnectionDelay: 30000,                     // Max delay between retries (default: 30000)
@@ -10480,8 +10487,9 @@ const client = MCPRegistry.create({
 MCP tools are automatically namespaced to prevent conflicts:
 
 ```typescript
-// Default namespace: mcp:{server-name}:{tool-name}
-// Example: mcp:filesystem:read_file, mcp:github:create_issue
+// Default namespace: mcp:{server-name}:{tool-name} (sanitized to mcp_{server-name}_{tool-name}
+// for tool-name compatibility — colons are not allowed in tool names)
+// Example: mcp_filesystem_read_file, mcp_github_create_issue
 
 // Custom namespace
 const client = MCPRegistry.create({
@@ -10489,11 +10497,11 @@ const client = MCPRegistry.create({
   toolNamespace: 'files',
   // ...
 });
-// Tools: files:read_file, files:write_file, etc.
+// Tools: files_read_file, files_write_file, etc.
 
 // Check registered tools
 const toolNames = agent.listTools();
-console.log(toolNames.filter(name => name.startsWith('mcp:')));
+console.log(toolNames.filter(name => name.startsWith('mcp_')));
 ```
 
 ### Multi-Server Example
@@ -10734,36 +10742,36 @@ import { Agent, createMessageWithImages } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
-  model: 'gpt-4-vision',
+  model: 'gpt-4o',
 });
 
 // From file path
-const response1 = await agent.run(
+const response1 = await agent.run([
   createMessageWithImages('What is in this image?', ['./photo.jpg'])
-);
+]);
 
 // From URL
-const response2 = await agent.run(
+const response2 = await agent.run([
   createMessageWithImages('Describe this image', [
     'https://example.com/image.jpg'
   ])
-);
+]);
 
 // From base64
 const base64Image = Buffer.from(imageData).toString('base64');
-const response3 = await agent.run(
+const response3 = await agent.run([
   createMessageWithImages('Analyze this', [
     `data:image/jpeg;base64,${base64Image}`
   ])
-);
+]);
 
 // Multiple images
-const response4 = await agent.run(
+const response4 = await agent.run([
   createMessageWithImages(
     'Compare these two images',
     ['./image1.jpg', './image2.jpg']
   )
-);
+]);
 ```
 
 ### Clipboard Images
@@ -10783,12 +10791,12 @@ if (await hasClipboardImage()) {
   // Read clipboard image
   const result = await readClipboardImage();
 
-  if (result.success && result.base64) {
-    const response = await agent.run(
+  if (result.success && result.dataUri) {
+    const response = await agent.run([
       createMessageWithImages('What is in this screenshot?', [
-        `data:${result.mimeType};base64,${result.base64}`
+        result.dataUri
       ])
-    );
+    ]);
 
     console.log(response.output_text);
   }
@@ -10800,16 +10808,16 @@ if (await hasClipboardImage()) {
 ```typescript
 const agent = Agent.create({
   connector: 'openai',
-  model: 'gpt-4-vision',
+  model: 'gpt-4o',
   tools: [extractTextTool, identifyObjectsTool],
 });
 
-const response = await agent.run(
+const response = await agent.run([
   createMessageWithImages(
     'Extract all text from this receipt and calculate the total',
     ['./receipt.jpg']
   )
-);
+]);
 
 // Agent will:
 // 1. Analyze image
@@ -10862,7 +10870,7 @@ const voices = await tts.listVoices();
 // [
 //   { id: 'alloy', name: 'Alloy', gender: 'neutral', isDefault: true },
 //   { id: 'echo', name: 'Echo', gender: 'male' },
-//   { id: 'fable', name: 'Fable', gender: 'male' },
+//   { id: 'fable', name: 'Fable', gender: 'neutral', accent: 'british' },
 //   { id: 'onyx', name: 'Onyx', gender: 'male' },
 //   { id: 'nova', name: 'Nova', gender: 'female' },
 //   { id: 'shimmer', name: 'Shimmer', gender: 'female' },
@@ -11299,16 +11307,16 @@ const ultraResult = await googleGen.generate({
 
 | Model | Features | Max Images | Sizes | Price/Image |
 |-------|----------|------------|-------|-------------|
-| `dall-e-3` | HD quality, style control, prompt revision | 1 | 1024², 1024x1792, 1792x1024 | $0.04-0.08 |
-| `dall-e-2` | Fast, multiple images, editing, variations | 10 | 256², 512², 1024² | $0.02 |
-| `gpt-image-1` | Latest model, transparency support | 1 | 1024², 1024x1536, 1536x1024 | $0.01-0.04 |
+| `dall-e-3` | **Deprecated** (migrate to `gpt-image-1.5`) — HD quality, style control, prompt revision | 1 | 1024², 1024x1792, 1792x1024 | $0.04-0.08 |
+| `dall-e-2` | **Deprecated** (migrate to `gpt-image-1-mini`) — Fast, multiple images, editing, variations | 10 | 256², 512², 1024² | $0.02 |
+| `gpt-image-1` | Previous-gen model (superseded by `gpt-image-1.5`), transparency support | 10 | 1024², 1024x1536, 1536x1024, auto | $0.042-0.167 |
 
 #### Google Image Models
 
 | Model | Features | Max Images | Price/Image |
 |-------|----------|------------|-------------|
 | `imagen-4.0-generate-001` | Standard quality, aspect ratios | 4 | $0.04 |
-| `imagen-4.0-ultra-generate-001` | Highest quality | 4 | $0.08 |
+| `imagen-4.0-ultra-generate-001` | Highest quality | 4 | $0.06 |
 | `imagen-4.0-fast-generate-001` | Speed optimized | 4 | $0.02 |
 
 ### Model Introspection
@@ -11677,9 +11685,14 @@ interface VideoResponse {
   progress?: number;          // 0-100 percentage (when processing)
   video?: {
     url?: string;             // Download URL (if available)
+    b64_json?: string;        // Base64-encoded video data (if provider returns inline)
     duration?: number;        // Actual duration in seconds
     resolution?: string;      // Actual resolution
     format?: string;          // 'mp4' typically
+  };
+  audio?: {                   // Separate audio track (if provider returns one)
+    url?: string;
+    b64_json?: string;
   };
   error?: string;             // Error message if failed
 }
@@ -11729,7 +11742,7 @@ const proResult = await videoGen.generate({
   prompt: 'A photorealistic ocean wave crashing',
   model: 'sora-2-pro',
   duration: 12,
-  resolution: '1920x1080',  // Full HD
+  resolution: '1792x1024',  // Landscape, 1.4x higher-resolution export
   seed: 42,
 });
 
@@ -11765,10 +11778,10 @@ const veo2 = await googleVideo.generate({
   },
 });
 
-// Veo 3.0 (with audio support)
+// Veo 3.1 Fast (with audio support)
 const veo3 = await googleVideo.generate({
   prompt: 'A thunderstorm over a city with lightning',
-  model: 'veo-3-generate-preview',
+  model: 'veo-3.1-fast-generate-preview',
   duration: 8,
   vendorOptions: {
     personGeneration: 'dont_allow',  // Safety setting
@@ -11904,17 +11917,16 @@ const hd = await videoGen.generate({
 
 | Model | Features | Durations | Resolutions | Price/Second |
 |-------|----------|-----------|-------------|--------------|
-| `sora-2` | Text/image-to-video, audio, seed | 4, 8, 12s | 720p, custom | $0.15 |
-| `sora-2-pro` | + HD, upscaling, style control | 4, 8, 12s | 720p-1080p | $0.40 |
+| `sora-2` | Text/image-to-video, audio, seed | 4, 8, 12s | 720p, custom | $0.10 |
+| `sora-2-pro` | + HD, upscaling, style control | 4, 8, 12s | 720p-1080p | $0.30 |
 
 #### Google Veo Models
 
 | Model | Features | Durations | Resolutions | Price/Second |
 |-------|----------|-----------|-------------|--------------|
-| `veo-2.0-generate-001` | Image-to-video, negative prompts | 5-8s | 768x1408 | $0.03 |
-| `veo-3-generate-preview` | + Audio, extension, style | 4-8s | 720p-1080p | $0.75 |
-| `veo-3.1-fast-generate-preview` | Fast inference, audio | 4-8s | 720p | $0.75 |
-| `veo-3.1-generate-preview` | Full features, 4K | 4-8s | 720p-4K | $0.75 |
+| `veo-2.0-generate-001` | Negative prompts, frame control | 5-8s | 720p | $0.35 |
+| `veo-3.1-fast-generate-preview` | Fast inference, audio | 4-8s | 720p-4K | $0.15 |
+| `veo-3.1-generate-preview` | Full features, 4K | 4-8s | 720p-4K | $0.40 |
 
 ### Model Introspection
 
@@ -11925,7 +11937,7 @@ console.log('Available models:', models);
 
 // Get model information
 const info = videoGen.getModelInfo('sora-2');
-console.log('Durations:', info.capabilities.durations);       // [4, 8, 12]
+console.log('Durations:', info.capabilities.durations);       // [4, 8, 12, 16, 20]
 console.log('Resolutions:', info.capabilities.resolutions);   // ['720x1280', ...]
 console.log('Has audio:', info.capabilities.audio);           // true
 console.log('Image-to-video:', info.capabilities.imageToVideo); // true
@@ -11937,21 +11949,21 @@ console.log('Style control:', info.capabilities.features.styleControl); // false
 ```typescript
 import { calculateVideoCost } from '@everworker/oneringai';
 
-// Sora 2: $0.15/second
+// Sora 2: $0.10/second
 const soraCost = calculateVideoCost('sora-2', 8);  // 8 seconds
-console.log(`Sora 2 (8s): $${soraCost}`);  // $1.20
+console.log(`Sora 2 (8s): $${soraCost}`);  // $0.80
 
-// Sora 2 Pro: $0.40/second
+// Sora 2 Pro: $0.30/second
 const proCost = calculateVideoCost('sora-2-pro', 12);  // 12 seconds
-console.log(`Sora 2 Pro (12s): $${proCost}`);  // $4.80
+console.log(`Sora 2 Pro (12s): $${proCost}`);  // $3.60
 
-// Veo 2.0: $0.03/second (budget option)
+// Veo 2.0: $0.35/second
 const veo2Cost = calculateVideoCost('veo-2.0-generate-001', 8);
-console.log(`Veo 2.0 (8s): $${veo2Cost}`);  // $0.24
+console.log(`Veo 2.0 (8s): $${veo2Cost}`);  // $2.80
 
-// Veo 3.1: $0.75/second
+// Veo 3.1: $0.40/second
 const veo3Cost = calculateVideoCost('veo-3.1-generate-preview', 8);
-console.log(`Veo 3.1 (8s): $${veo3Cost}`);  // $6.00
+console.log(`Veo 3.1 (8s): $${veo3Cost}`);  // $3.20
 ```
 
 ### Error Handling
@@ -12381,11 +12393,11 @@ const connector = Connector.get('serper-main');
 // Get metrics
 const metrics = connector.getMetrics();
 console.log(`Requests: ${metrics.requestCount}`);
-console.log(`Success rate: ${(metrics.successRate * 100).toFixed(1)}%`);
+console.log(`Success rate: ${((metrics.successCount / metrics.requestCount) * 100).toFixed(1)}%`);
 console.log(`Avg latency: ${metrics.avgLatencyMs.toFixed(0)}ms`);
 
 // Circuit breaker state
-const cbState = connector.getCircuitBreakerState();
+const cbState = metrics.circuitBreakerState;
 console.log(`Circuit breaker: ${cbState}`);  // 'closed' | 'open' | 'half-open'
 ```
 
@@ -12496,7 +12508,7 @@ Connector.create({
   name: 'zenrows',
   serviceType: 'zenrows',
   auth: { type: 'api_key', apiKey: process.env.ZENROWS_API_KEY! },
-  baseURL: 'https://api.zenrows.com',
+  baseURL: 'https://api.zenrows.com/v1',
 });
 
 const scrapeTools = ConnectorTools.for('zenrows');
@@ -12566,27 +12578,27 @@ for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
 // All events
 for await (const event of agent.stream('Hello')) {
   switch (event.type) {
-    case 'response_created':
+    case 'response.created':
       console.log('🔄 Starting...');
       break;
 
-    case 'output_text_delta':
+    case 'response.output_text.delta':
       process.stdout.write(event.delta);
       break;
 
-    case 'tool_call_start':
-      console.log(`\n🔧 Calling ${event.toolName}...`);
+    case 'response.tool_call.start':
+      console.log(`\n🔧 Calling ${event.tool_name}...`);
       break;
 
-    case 'tool_execution_done':
+    case 'response.tool_execution.done':
       console.log(`✅ Tool complete`);
       break;
 
-    case 'response_complete':
+    case 'response.complete':
       console.log('\n✓ Done');
       break;
 
-    case 'error':
+    case 'response.error':
       console.error('Error:', event.error);
       break;
   }
@@ -12603,15 +12615,15 @@ const agent = Agent.create({
 });
 
 for await (const event of agent.stream('What is the weather in Paris?')) {
-  if (event.type === 'tool_call_start') {
-    console.log(`🔧 Calling ${event.toolName}...`);
+  if (event.type === 'response.tool_call.start') {
+    console.log(`🔧 Calling ${event.tool_name}...`);
   }
 
-  if (event.type === 'tool_execution_done') {
+  if (event.type === 'response.tool_execution.done') {
     console.log(`✅ Tool result: ${JSON.stringify(event.result)}`);
   }
 
-  if (event.type === 'output_text_delta') {
+  if (event.type === 'response.output_text.delta') {
     process.stdout.write(event.delta);
   }
 }
@@ -12621,7 +12633,7 @@ for await (const event of agent.stream('What is the weather in Paris?')) {
 
 ## External API Integration
 
-Connect your AI agents to 35+ external services with enterprise-grade resilience. The library provides both connector-based tools and direct fetch capabilities.
+Connect your AI agents to 45+ external services with enterprise-grade resilience. The library provides both connector-based tools and direct fetch capabilities.
 
 ### Overview
 
@@ -12707,21 +12719,25 @@ Connector.create({
 });
 ```
 
-### Supported Services (35+)
+### Supported Services (45+)
 
-The library includes built-in definitions for 35+ popular services:
+The library includes built-in definitions for 45+ popular services:
 
 | Category | Services |
 |----------|----------|
-| **Communication** | Slack, Discord, Microsoft Teams, Twilio, Zoom |
-| **Development** | GitHub, GitLab, Jira, Linear, Bitbucket, CircleCI |
-| **Productivity** | Notion, Asana, Monday, Airtable, Trello, Confluence |
-| **CRM** | Salesforce, HubSpot, Zendesk, Intercom, Freshdesk |
-| **Payments** | Stripe, PayPal, Square, Braintree |
-| **Cloud** | AWS, Azure, GCP, DigitalOcean, Vercel, Netlify |
-| **Storage** | Dropbox, Box, Google Drive, OneDrive |
-| **Email** | SendGrid, Mailchimp, Mailgun, Postmark |
-| **Monitoring** | Datadog, PagerDuty, Sentry, New Relic |
+| **Major Vendors** | Microsoft, Google |
+| **Communication** | Slack, Discord, Telegram, X (Twitter), Zoom |
+| **Development** | GitHub, GitLab, Bitbucket, Jira, Linear, Asana, Trello |
+| **Productivity** | Notion, Airtable, Confluence |
+| **CRM** | Salesforce, HubSpot, Pipedrive |
+| **Payments** | Stripe, PayPal, QuickBooks, Ramp |
+| **Cloud** | AWS, Cloudflare |
+| **Storage** | Dropbox, Box |
+| **Email** | SendGrid, Mailchimp, Postmark, Mailgun |
+| **Monitoring** | Datadog, PagerDuty, Sentry |
+| **Search** | Serper, Brave Search, Tavily, RapidAPI Search |
+| **Scrape** | ZenRows |
+| **Other** | Twilio, Zendesk, Intercom, Shopify, ipinfo |
 
 ```typescript
 import { Services, getServiceInfo, getServicesByCategory } from '@everworker/oneringai';
@@ -12800,13 +12816,10 @@ const tools = ConnectorTools.for(connector);  // Can pass instance too
 const registry = Connector.scoped({ tenantId: 'acme' });
 const tools = ConnectorTools.for('github', undefined, { registry });
 
-// Get only the generic API tool
-const apiTool = ConnectorTools.genericAPI('github');
-
-// Custom tool name
-const customTool = ConnectorTools.genericAPI('github', {
-  toolName: 'github_api',
-});
+// The generic API tool is included automatically by ConnectorTools.for()
+// (named `{connectorName}_api` whenever the connector has a baseURL)
+const tools = ConnectorTools.for('github');
+const apiTool = tools.find(t => t.definition.function.name === 'github_api');
 ```
 
 #### Tool Naming Convention
@@ -12819,7 +12832,7 @@ All tools generated by `ConnectorTools.for()` are prefixed with the connector na
 | Service-specific | `{connectorName}_{toolName}` | `github_search_files`, `google_generate_image`, `main-openai_text_to_speech` |
 
 **Services with built-in tools:**
-- **GitHub** — 7 tools: `search_files`, `search_code`, `read_file`, `get_pr`, `pr_files`, `pr_comments`, `create_pr` (see [GitHub Connector Tools](#github-connector-tools))
+- **GitHub** — 8 tools: `search_files`, `search_code`, `read_file`, `list_branches`, `get_pr`, `pr_files`, `pr_comments`, `create_pr` (see [GitHub Connector Tools](#github-connector-tools))
 - **Microsoft** — 11 tools: email, calendar, meetings, Teams transcripts, OneDrive/SharePoint files (see [Microsoft Graph Connector Tools](#microsoft-graph-connector-tools))
 - **Google Workspace** — 11 tools: Gmail, Calendar, Meet transcripts, Drive files (see [Google Workspace Connector Tools](#google-workspace-connector-tools))
 - **Zoom** — 3 tools: `zoom_create_meeting`, `zoom_update_meeting`, `zoom_get_transcript` (see [Zoom Connector Tools](#zoom-connector-tools))
@@ -12968,7 +12981,7 @@ import { ToolRegistry } from '@everworker/oneringai';
 // Get ALL tools (main API for UIs)
 const allTools = ToolRegistry.getAllTools();
 
-// Built-in tools only (filesystem, shell, web, code, json)
+// Built-in tools only (filesystem, shell, web, code, json, connector, desktop, custom-tools, routines, other)
 const builtInTools = ToolRegistry.getBuiltInTools();
 
 // All connector-generated tools
@@ -13020,7 +13033,7 @@ for (const tool of ToolRegistry.getAllTools()) {
 |----------|------|-------------|
 | `name` | `string` | Tool name (e.g., `read_file`) |
 | `displayName` | `string` | Human-readable name (e.g., `Read File`) |
-| `category` | `ToolCategory` | `filesystem`, `shell`, `web`, `code`, `json` |
+| `category` | `ToolCategory` | `filesystem`, `shell`, `web`, `code`, `json`, `connector`, `desktop`, `custom-tools`, `routines`, `other` |
 | `description` | `string` | Brief description |
 | `safeByDefault` | `boolean` | Whether safe without approval |
 | `tool` | `ToolFunction` | The actual tool function |
@@ -13045,7 +13058,7 @@ import { detectServiceFromURL, Services } from '@everworker/oneringai';
 detectServiceFromURL('https://api.github.com/repos');     // 'github'
 detectServiceFromURL('https://slack.com/api/chat');       // 'slack'
 detectServiceFromURL('https://api.stripe.com/v1');        // 'stripe'
-detectServiceFromURL('https://company.atlassian.net');    // 'jira'
+detectServiceFromURL('https://company.atlassian.net/jira'); // 'jira'
 
 // Explicit serviceType takes precedence
 Connector.create({
@@ -13129,7 +13142,7 @@ await agent.run(`
 
 ## Vendor Templates
 
-Quickly set up connectors for 43+ services with pre-configured authentication templates. No need to look up URLs, headers, or scopes - just provide your credentials!
+Quickly set up connectors for 45+ services with pre-configured authentication templates. No need to look up URLs, headers, or scopes - just provide your credentials!
 
 ### Quick Start
 
@@ -13169,7 +13182,7 @@ import { listVendors, getVendorTemplate, getVendorInfo } from '@everworker/oneri
 
 // List all available vendors
 const vendors = listVendors();
-console.log(vendors.length);  // 43
+console.log(vendors.length);  // 45
 
 // Get specific vendor info
 const github = getVendorInfo('github');
@@ -13229,7 +13242,7 @@ const whiteSvg = getVendorLogoSvg('github', 'FFFFFF');
 const stripeColor = getVendorColor('stripe');  // "635BFF"
 
 // List all vendors with logos
-const vendorsWithLogos = listVendorsWithLogos();  // 43 vendors
+const vendorsWithLogos = listVendorsWithLogos();  // 49 vendors
 
 // Get all logos at once
 const allLogos = getAllVendorLogos();  // Map<vendorId, VendorLogo>
@@ -13284,8 +13297,8 @@ createConnectorFromTemplate('my-github-oauth', 'github', 'oauth-user', {
   scope: 'repo read:user'  // Optional - uses template defaults
 });
 
-// Google Workspace OAuth
-createConnectorFromTemplate('my-google', 'google-workspace', 'oauth-user', {
+// Google OAuth (unified template also covers Workspace: Drive, Gmail, Calendar, Sheets, Docs)
+createConnectorFromTemplate('my-google', 'google-api', 'oauth-user', {
   clientId: process.env.GOOGLE_CLIENT_ID!,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
   redirectUri: 'https://myapp.com/google/callback',
@@ -13297,8 +13310,8 @@ createConnectorFromTemplate('my-google', 'google-workspace', 'oauth-user', {
 For server-to-server authentication:
 
 ```typescript
-// Google Service Account
-createConnectorFromTemplate('my-gcp', 'gcp', 'service-account', {
+// Google Service Account (same unified 'google-api' vendor template)
+createConnectorFromTemplate('my-gcp', 'google-api', 'service-account', {
   clientId: process.env.GOOGLE_SERVICE_CLIENT_ID!,
   privateKey: process.env.GOOGLE_SERVICE_PRIVATE_KEY!,
   scope: 'https://www.googleapis.com/auth/cloud-platform'
@@ -13317,8 +13330,8 @@ createConnectorFromTemplate('my-salesforce', 'salesforce', 'jwt-bearer', {
 For app-level authentication:
 
 ```typescript
-// Microsoft 365 App-Only
-createConnectorFromTemplate('my-m365', 'microsoft-365', 'client-credentials', {
+// Microsoft 365 App-Only (unified 'microsoft' vendor template covers 365, Teams, OneDrive, Outlook)
+createConnectorFromTemplate('my-m365', 'microsoft', 'client-credentials', {
   clientId: process.env.AZURE_CLIENT_ID!,
   clientSecret: process.env.AZURE_CLIENT_SECRET!,
   tenantId: process.env.AZURE_TENANT_ID!
@@ -13378,14 +13391,15 @@ createConnectorFromTemplate(
 
 ### Complete Vendor Reference
 
-#### Communication (4 vendors)
+#### Communication (5 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
 | Slack | `slack` | `bot-token`, `oauth-user` | [api.slack.com/apps](https://api.slack.com/apps) |
 | Discord | `discord` | `bot-token`, `oauth-user` | [discord.com/developers](https://discord.com/developers/applications) |
 | Telegram | `telegram` | `bot-token` | [t.me/BotFather](https://t.me/BotFather) |
-| Microsoft Teams | `microsoft-teams` | `oauth-user`, `client-credentials` | [Azure Portal](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps) |
+| X (Twitter) | `twitter` | `oauth-user`, `bearer-token` | [developer.x.com](https://developer.x.com/en/portal/dashboard) |
+| Zoom | `zoom` | `oauth-user`, `server-to-server` | [marketplace.zoom.us](https://marketplace.zoom.us/develop/create) |
 
 #### Development (7 vendors)
 
@@ -13399,54 +13413,54 @@ createConnectorFromTemplate(
 | Asana | `asana` | `pat`, `oauth-user` | [app.asana.com/0/developer-console](https://app.asana.com/0/developer-console) |
 | Trello | `trello` | `api-key`, `oauth-user` | [trello.com/power-ups/admin](https://trello.com/power-ups/admin) |
 
-#### Productivity (5 vendors)
+#### Productivity (3 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
 | Notion | `notion` | `internal-token`, `oauth-user` | [notion.so/my-integrations](https://www.notion.so/my-integrations) |
 | Airtable | `airtable` | `pat`, `oauth-user` | [airtable.com/create/tokens](https://airtable.com/create/tokens) |
-| Google Workspace | `google-workspace` | `oauth-user`, `service-account` | [GCP Console](https://console.cloud.google.com/apis/credentials) |
-| Microsoft 365 | `microsoft-365` | `oauth-user`, `client-credentials` | [Azure Portal](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps) |
 | Confluence | `confluence` | `api-token`, `oauth-3lo` | [Atlassian API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens) |
+
+(Google Workspace / Microsoft 365 access is provided by the unified `google-api` / `microsoft` vendor templates, not separate ids.)
 
 #### CRM (3 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
-| Salesforce | `salesforce` | `oauth-user`, `jwt-bearer` | [Salesforce Connected Apps](https://login.salesforce.com/lightning/setup/ConnectedApplication) |
-| HubSpot | `hubspot` | `api-key`, `oauth-user` | [developers.hubspot.com](https://developers.hubspot.com/get-started) |
+| Salesforce | `salesforce` | `oauth-user`, `jwt-bearer` | [Salesforce Connected Apps](https://login.salesforce.com/lightning/setup/ConnectedApplication/home) |
+| HubSpot | `hubspot` | `api-key`, `oauth-user`, `oauth-mcp` | [developers.hubspot.com](https://developers.hubspot.com/get-started) |
 | Pipedrive | `pipedrive` | `api-token`, `oauth-user` | [app.pipedrive.com/settings/api](https://app.pipedrive.com/settings/api) |
 
-#### Payments (2 vendors)
+#### Payments (4 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
 | Stripe | `stripe` | `api-key`, `oauth-connect` | [dashboard.stripe.com/apikeys](https://dashboard.stripe.com/apikeys) |
 | PayPal | `paypal` | `oauth-client-credentials` | [developer.paypal.com/dashboard](https://developer.paypal.com/dashboard/applications) |
+| QuickBooks | `quickbooks` | `oauth-user` | [developer.intuit.com](https://developer.intuit.com/app/developer/dashboard) |
+| Ramp | `ramp` | `oauth-client-credentials`, `oauth-user` | [app.ramp.com/settings/developer](https://app.ramp.com/settings/developer) |
 
-#### Cloud (3 vendors)
+#### Cloud (2 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
 | AWS | `aws` | `access-key` | [AWS IAM Console](https://console.aws.amazon.com/iam/home#/security_credentials) |
-| GCP | `gcp` | `service-account` | [GCP Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts) |
-| Azure | `azure` | `client-credentials` | [Azure Portal](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps) |
+| Cloudflare | `cloudflare` | `api-token`, `global-api-key` | [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) |
 
-#### Storage (4 vendors)
+#### Storage (2 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
 | Dropbox | `dropbox` | `oauth-user` | [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps) |
 | Box | `box` | `oauth-user`, `client-credentials` | [developer.box.com/console](https://developer.box.com/console) |
-| Google Drive | `google-drive` | `oauth-user`, `service-account` | [GCP Console](https://console.cloud.google.com/apis/credentials) |
-| OneDrive | `onedrive` | `oauth-user` | [Azure Portal](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps) |
 
-#### Email (3 vendors)
+#### Email (4 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
 | SendGrid | `sendgrid` | `api-key` | [app.sendgrid.com/settings/api_keys](https://app.sendgrid.com/settings/api_keys) |
 | Mailchimp | `mailchimp` | `api-key`, `oauth-user` | [admin.mailchimp.com/account/api](https://admin.mailchimp.com/account/api/) |
+| Mailgun | `mailgun` | `api-key` | [app.mailgun.com/settings/api_security](https://app.mailgun.com/settings/api_security) |
 | Postmark | `postmark` | `server-token`, `account-token` | [account.postmarkapp.com/api_tokens](https://account.postmarkapp.com/api_tokens) |
 
 #### Monitoring (3 vendors)
@@ -13464,7 +13478,7 @@ createConnectorFromTemplate(
 | Serper | `serper` | `api-key` | [serper.dev/api-key](https://serper.dev/api-key) |
 | Brave Search | `brave-search` | `api-key` | [brave.com/search/api](https://brave.com/search/api/) |
 | Tavily | `tavily` | `api-key` | [tavily.com/#api](https://tavily.com/#api) |
-| RapidAPI Search | `rapidapi-search` | `api-key` | [rapidapi.com/developer/dashboard](https://rapidapi.com/developer/dashboard) |
+| RapidAPI Web Search | `rapidapi-search` | `api-key` | [rapidapi.com/developer/dashboard](https://rapidapi.com/developer/dashboard) |
 
 #### Scrape (1 vendor)
 
@@ -13472,7 +13486,7 @@ createConnectorFromTemplate(
 |--------|-----|-------------|-----------------|
 | ZenRows | `zenrows` | `api-key` | [zenrows.com/register](https://www.zenrows.com/register) |
 
-#### Other (4 vendors)
+#### Other (5 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
@@ -13480,6 +13494,7 @@ createConnectorFromTemplate(
 | Zendesk | `zendesk` | `api-token`, `oauth-user` | [Zendesk API Tokens](https://support.zendesk.com/hc/en-us/articles/4408889192858) |
 | Intercom | `intercom` | `access-token`, `oauth-user` | [developers.intercom.com](https://developers.intercom.com/docs/build-an-integration) |
 | Shopify | `shopify` | `access-token`, `oauth-user` | [partners.shopify.com](https://partners.shopify.com/) |
+| ipinfo | `ipinfo` | `api-key` | [ipinfo.io/signup](https://ipinfo.io/signup) |
 
 ### Template vs Manual Configuration
 
@@ -13544,11 +13559,11 @@ const oauth = new OAuthManager({
 const authUrl = await oauth.startAuthFlow('user-123');
 console.log('Visit:', authUrl);
 
-// After user authorizes and you receive the code:
-const token = await oauth.handleCallback('user-123', code);
+// After user authorizes and is redirected back with ?code=...&state=...
+await oauth.handleCallback(callbackUrl, 'user-123');  // callbackUrl is the full redirect URL; returns void
 
 // Use token
-const userToken = await oauth.getToken('user-123');
+const accessToken = await oauth.getToken('user-123');  // returns the access token string
 ```
 
 ### Authenticated Fetch
@@ -13556,16 +13571,15 @@ const userToken = await oauth.getToken('user-123');
 ```typescript
 import { createAuthenticatedFetch } from '@everworker/oneringai';
 
-// Create connector for external API
+// Create connector for external API using a pre-obtained access token
 Connector.create({
   name: 'github',
   vendor: Vendor.Custom,
   auth: {
-    type: 'oauth',
-    flow: 'authorization_code',
-    accessToken: userToken.access_token,
-    refreshToken: userToken.refresh_token,
-    expiresAt: userToken.expires_at,
+    type: 'api_key',
+    apiKey: userToken.access_token,
+    headerName: 'Authorization',
+    headerPrefix: 'Bearer',
   },
 });
 
@@ -13580,17 +13594,16 @@ const repos = await response.json();
 ### OAuth as a Connector
 
 ```typescript
-// Create connector with OAuth
+// Create connector with a pre-obtained access token
 Connector.create({
   name: 'microsoft-graph',
   vendor: Vendor.Custom,
   baseURL: 'https://graph.microsoft.com/v1.0',
   auth: {
-    type: 'oauth',
-    flow: 'authorization_code',
-    accessToken: token.access_token,
-    refreshToken: token.refresh_token,
-    expiresAt: Date.now() + token.expires_in * 1000,
+    type: 'api_key',
+    apiKey: token.access_token,
+    headerName: 'Authorization',
+    headerPrefix: 'Bearer',
   },
 });
 
@@ -13625,7 +13638,7 @@ await agent.run('Show me my recent emails');
 
 ## Model Registry
 
-The library includes a comprehensive model registry with metadata for 35+ models.
+The library includes a comprehensive model registry with metadata for 68+ models.
 
 ### Using the Model Registry
 
@@ -13657,16 +13670,16 @@ console.log(`Cost: $${cost}`); // $0.1155
 const cachedCost = calculateCost('gpt-5.2', 50000, 2000, {
   useCachedInput: true
 });
-console.log(`Cached: $${cachedCost}`); // $0.0293
+console.log(`Cached: $${cachedCost}`); // $0.03675
 
 // Get all models for a vendor
 const openaiModels = getModelsByVendor(Vendor.OpenAI);
 console.log(openaiModels.map(m => m.name));
-// ['gpt-5.2', 'gpt-5.2-instant', 'gpt-5.1', ...]
+// ['gpt-5.5', 'gpt-5.4', 'gpt-5.2', 'gpt-5.1', ...]
 
 // Get all active models
 const activeModels = getActiveModels();
-console.log(activeModels.length); // 65
+console.log(activeModels.length); // 68
 
 // Use model constants
 const flagship = LLM_MODELS[Vendor.OpenAI].GPT_5_5;   // 'gpt-5.5' (current OpenAI flagship)
@@ -13717,16 +13730,16 @@ console.log(limit); // 400000
 ```typescript
 interface ILLMDescription {
   name: string;
-  vendor: string;
+  provider: string;
   releaseDate: string;
   knowledgeCutoff?: string;
-  active: boolean;
+  isActive: boolean;
 
   features: {
     input: {
       tokens: number;
       cpm: number;
-      cachedCpm?: number;
+      cpmCached?: number;
     };
     output: {
       tokens: number;
@@ -13750,28 +13763,37 @@ interface ILLMDescription {
 
 ### Available Models
 
-**OpenAI (12 models):**
-- GPT-5.2: standard, pro
-- GPT-5: standard, mini, nano
+**OpenAI (40 models):**
+- GPT-5.5 (flagship)
+- GPT-5.4: standard, pro, mini, nano
+- GPT-5.3: codex, chat-latest
+- GPT-5.2: standard, pro, codex, chat-latest
+- GPT-5.1: standard, codex, codex-max, codex-mini, chat-latest
+- GPT-5: standard, mini, nano, codex, chat-latest
 - GPT-4.1: standard, mini, nano
 - GPT-4o: standard, mini
-- o3-mini, o1
+- Audio: gpt-audio-1.5, gpt-audio, gpt-audio-mini
+- Realtime: gpt-realtime-1.5, gpt-realtime, gpt-realtime-mini
+- o-series: o3, o4-mini, o3-mini, o1
+- Deep Research: o3-deep-research, o4-mini-deep-research
+- Open-weight: gpt-oss-120b, gpt-oss-20b
 
-**Anthropic (7 models):**
+**Anthropic (13 models):**
+- Claude 5 / Opus 4.8 series (current flagships): Opus 4.8, Sonnet 5, Fable 5
+- Claude 4.7: Opus 4.7 (legacy flagship)
+- Claude 4.6: Opus 4.6, Sonnet 4.6
 - Claude 4.5: Opus, Sonnet, Haiku
-- Claude 4.x: Opus 4.1, Sonnet 4, Sonnet 3.7
-- Claude 3: Haiku
+- Claude 4.x legacy: Opus 4.1, Opus 4, Sonnet 4
+- Claude 3.7: Sonnet
 
-**Google (7 models):**
-- Gemini 3: Flash preview, Pro, Pro Image
+**Google (10 models):**
+- Gemini 3.1 (preview): Pro, Flash-Lite, Flash Image, Flash Live
+- Gemini 3 (preview): Flash, Pro Image
 - Gemini 2.5: Pro, Flash, Flash-Lite, Flash Image
 
-**Grok / xAI (9 models):**
-- Grok 4.1: fast-reasoning, fast-non-reasoning (2M context)
-- Grok 4: fast-reasoning, fast-non-reasoning, 0709
-- Grok Code: fast-1
-- Grok 3: standard, mini
-- Grok 2: vision-1212
+**Grok / xAI (5 models):**
+- Grok 4.20 (2M context, flagship): reasoning, non-reasoning, multi-agent
+- Grok 4.1 fast (2M context): reasoning, non-reasoning
 
 ---
 
@@ -14272,6 +14294,7 @@ interface OrchestratorConfig {
   agentTypes: Record<string, AgentTypeConfig>;  // Available worker types
   workspace?: Partial<SharedWorkspaceConfig>;    // Workspace settings
   features?: Partial<ContextFeatures>;           // Orchestrator context features
+  pluginConfigs?: PluginConfigs;                 // Plugin configurations for the orchestrator
   name?: string;               // Orchestrator name (default: 'orchestrator')
   agentId?: string;            // For session persistence
   maxIterations?: number;      // Max loop iterations (default: 100)
@@ -14314,7 +14337,7 @@ The orchestrator gets 5 tools automatically:
 | Tool | Description |
 |------|-------------|
 | `assign_turn(agent, type, instruction)` | Assign work to an agent. Auto-creates the agent if it doesn't exist. Always async. Optional `autoDestroy` to clean up after completion. |
-| `delegate_interactive(type, instruction)` | Hand the user-facing session to a sub-agent. Supports `monitoring` (passive/active/event) and `reclaimOn` conditions (keyword, maxTurns, workspaceKey). |
+| `delegate_interactive(agent, type?, monitoring?, reclaimOn?, briefing?)` | Hand the user-facing session to a sub-agent. Supports `monitoring` (passive/active/event) and `reclaimOn` conditions (keyword, maxTurns, workspaceKey). |
 
 #### Team Management
 
@@ -14572,16 +14595,16 @@ const agent = Agent.create({
   model: 'gpt-4.1',
   hooks: {
     'before:tool': async (context) => {
-      console.log(`Calling ${context.tool.name}`);
-      return context.args; // Return modified args
+      console.log(`Calling ${context.toolCall.function.name}`);
+      return {}; // Return a ToolModification, e.g. { modified: { function: { ...context.toolCall.function, arguments: '...' } } }
     },
     'after:tool': async (context) => {
       console.log(`Result: ${JSON.stringify(context.result)}`);
-      return context.result; // Return modified result
+      return {}; // Return a ToolResultModification, e.g. { modified: { content: '...' } }
     },
     'approve:tool': async (context) => {
       // Return approval decision
-      return { approved: true, message: 'Approved' };
+      return { approved: true, reason: 'Approved' };
     },
   },
 });
@@ -14610,11 +14633,10 @@ Protect external services:
 ```typescript
 import { CircuitBreaker } from '@everworker/oneringai';
 
-const breaker = new CircuitBreaker({
+const breaker = new CircuitBreaker('my-breaker', {
   failureThreshold: 5,        // Open after 5 failures
   successThreshold: 2,        // Close after 2 successes
-  timeout: 5000,              // 5 second timeout
-  resetTimeout: 30000,        // Try again after 30 seconds
+  resetTimeoutMs: 30000,      // Try again after 30 seconds
 });
 
 // Wrap API calls
@@ -14623,8 +14645,8 @@ const result = await breaker.execute(async () => {
 });
 
 // Monitor state
-breaker.on('stateChange', ({ from, to }) => {
-  console.log(`Circuit: ${from} → ${to}`);
+breaker.on('opened', ({ name, failureCount, nextRetryTime }) => {
+  console.log(`Circuit '${name}' opened after ${failureCount} failures`);
 });
 
 // Get metrics
@@ -14632,10 +14654,10 @@ const metrics = breaker.getMetrics();
 console.log(metrics);
 // {
 //   state: 'closed',
-//   failures: 0,
-//   successes: 10,
-//   totalCalls: 10,
-//   consecutiveFailures: 0
+//   failureCount: 0,
+//   successCount: 10,
+//   totalRequests: 10,
+//   consecutiveSuccesses: 10
 // }
 ```
 
@@ -14650,12 +14672,13 @@ const result = await retryWithBackoff(
     return await apiCall();
   },
   {
-    maxAttempts: 5,
-    initialDelay: 1000,     // Start with 1 second
-    maxDelay: 30000,        // Cap at 30 seconds
-    backoffFactor: 2,       // Double each time
+    strategy: 'exponential',
+    initialDelayMs: 1000,   // Start with 1 second
+    maxDelayMs: 30000,      // Cap at 30 seconds
+    multiplier: 2,          // Double each time
     jitter: true,           // Add randomness
-  }
+  },
+  5                          // maxAttempts (separate 3rd argument)
 );
 ```
 
@@ -14665,7 +14688,7 @@ const result = await retryWithBackoff(
 import { logger } from '@everworker/oneringai';
 
 // Set log level
-logger.setLevel('debug'); // 'debug' | 'info' | 'warn' | 'error'
+logger.updateConfig({ level: 'debug' }); // 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent'
 
 // Log messages
 logger.debug('Debug message');
@@ -14674,7 +14697,7 @@ logger.warn('Warning message');
 logger.error('Error message');
 
 // Structured logging
-logger.info('User action', { userId: '123', action: 'login' });
+logger.info({ userId: '123', action: 'login' }, 'User action');
 ```
 
 ### Metrics
@@ -14686,17 +14709,21 @@ import { metrics, setMetricsCollector, ConsoleMetrics } from '@everworker/onerin
 setMetricsCollector(new ConsoleMetrics());
 
 // Track metrics
-metrics.counter('requests', 1, { endpoint: '/api/chat' });
+metrics.increment('requests', 1, { endpoint: '/api/chat' });
 metrics.gauge('active_connections', 42);
 metrics.histogram('response_time', 125.5, { endpoint: '/api/chat' });
 
 // Custom metrics collector
-class CustomMetrics {
-  counter(name: string, value: number, tags?: Record<string, string>) {
+class CustomMetrics implements MetricsCollector {
+  increment(name: string, value: number, tags?: Record<string, string>) {
     // Send to your metrics service
   }
 
   gauge(name: string, value: number, tags?: Record<string, string>) {
+    // Send to your metrics service
+  }
+
+  timing(name: string, duration: number, tags?: Record<string, string>) {
     // Send to your metrics service
   }
 
@@ -14727,8 +14754,8 @@ OAUTH_ENCRYPTION_KEY=abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234
 OPENAI_BASE_URL=https://api.openai.com/v1
 ANTHROPIC_BASE_URL=https://api.anthropic.com
 
-# Optional: Timeouts
-REQUEST_TIMEOUT=30000
+# Note: timeouts are configured per-tool/provider in code, not via env vars —
+# there is no REQUEST_TIMEOUT env var read by the library.
 ```
 
 ### Error Handling
@@ -14791,10 +14818,12 @@ import { retryWithBackoff } from '@everworker/oneringai';
 const response = await retryWithBackoff(
   () => agent.run(input),
   {
-    maxAttempts: 3,
-    initialDelay: 1000,
-    backoffFactor: 2,
-  }
+    strategy: 'exponential',
+    initialDelayMs: 1000,
+    maxDelayMs: 30000,
+    multiplier: 2,
+  },
+  3
 );
 ```
 
@@ -14813,9 +14842,9 @@ if (budget.utilizationPercent > 80) {
 ```typescript
 import { CircuitBreaker } from '@everworker/oneringai';
 
-const breaker = new CircuitBreaker({
+const breaker = new CircuitBreaker('my-breaker', {
   failureThreshold: 5,
-  resetTimeout: 30000,
+  resetTimeoutMs: 30000,
 });
 
 const safeTool: ToolFunction = {
@@ -15017,5 +15046,5 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Last Updated:** 2026-04-25
-**Version:** 0.6.0
+**Last Updated:** 2026-07-06
+**Version:** 0.10.3

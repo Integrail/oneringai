@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-07-03
+**Generated:** 2026-07-06
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -28,7 +28,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (10 items)
 - [Interfaces](#interfaces) (63 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (692 items)
+- [Other](#other) (693 items)
 
 ## Core
 
@@ -20831,7 +20831,7 @@ Default: true |
 
 ### ToolCallArgumentsDeltaEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:95`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:97`](src/domain/entities/StreamEvent.ts)
 
 Tool call arguments delta - incremental JSON
 
@@ -20853,7 +20853,7 @@ Tool call arguments delta - incremental JSON
 
 ### ToolCallArgumentsDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:107`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:109`](src/domain/entities/StreamEvent.ts)
 
 Tool call arguments complete
 
@@ -20874,7 +20874,7 @@ Tool call arguments complete
 
 ### ToolCallStartEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:83`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:85`](src/domain/entities/StreamEvent.ts)
 
 Tool call detected and starting
 
@@ -21012,7 +21012,7 @@ Tool execution context - tracks all tool calls in a generation
 
 ### ToolExecutionDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:128`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:130`](src/domain/entities/StreamEvent.ts)
 
 Tool execution complete
 
@@ -21053,7 +21053,7 @@ Default: true (if crypto.randomUUID is available) |
 
 ### ToolExecutionStartEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:118`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:120`](src/domain/entities/StreamEvent.ts)
 
 Tool execution starting
 
@@ -22657,7 +22657,7 @@ export function hydrateCustomTool(
 
 ### isToolCallArgumentsDelta `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:293`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:303`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallArgumentsDelta(
@@ -22669,7 +22669,7 @@ export function isToolCallArgumentsDelta(
 
 ### isToolCallArgumentsDone `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:299`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:309`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallArgumentsDone(
@@ -22681,7 +22681,7 @@ export function isToolCallArgumentsDone(
 
 ### isToolCallStart `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:289`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:299`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent
@@ -22967,7 +22967,7 @@ static async *skip(
 
 ### StreamState `class`
 
-📍 [`src/domain/entities/StreamState.ts:21`](src/domain/entities/StreamState.ts)
+📍 [`src/domain/entities/StreamState.ts:22`](src/domain/entities/StreamState.ts)
 
 StreamState tracks all accumulated data during streaming
 
@@ -23286,7 +23286,7 @@ Get summary statistics
 getStatistics()
 ```
 
-**Returns:** `{ responseId: string; model: string; status: "in_progress" | "completed" | "failed" | "incomplete"; iterations: number; totalChunks: number; totalTextDeltas: number; totalToolCalls: number; textItemsCount: number; toolCallBuffersCount: number; completedToolCallsCount: number; durationMs: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; }`
+**Returns:** `{ responseId: string; model: string; status: "in_progress" | "completed" | "failed" | "incomplete"; iterations: number; totalChunks: number; totalTextDeltas: number; totalToolCalls: number; textItemsCount: number; toolCallBuffersCount: number; completedToolCallsCount: number; durationMs: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; }`
 
 #### `hasText()`
 
@@ -23326,7 +23326,7 @@ Create a snapshot for checkpointing (error recovery)
 createSnapshot()
 ```
 
-**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; reasoningBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;; completedToolCalls: ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; status: "in_progress" | "completed" | "failed" | "incomplete"; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; startTime: Date; endTime: Date | undefined; }`
+**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; reasoningBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;; completedToolCalls: ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; status: "in_progress" | "completed" | "failed" | "incomplete"; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; startTime: Date; endTime: Date | undefined; }`
 
 </details>
 
@@ -23348,6 +23348,7 @@ createSnapshot()
 | `status` | `status: "in_progress" | "completed" | "failed" | "incomplete"` | - |
 | `providerStatus` | `providerStatus: "completed" | "failed" | "incomplete"` | Status reported by the provider's RESPONSE_COMPLETE event. Defaults to 'incomplete' (safe if never received). |
 | `stopReason?` | `stopReason: string | undefined` | Raw stop reason from provider (e.g., 'end_turn', 'max_tokens', 'SAFETY') |
+| `stopDetails?` | `stopDetails: ProviderStopDetails | undefined` | Structured stop detail (Anthropic refusals: which classifier fired + why). |
 | `startTime` | `startTime: Date` | - |
 | `endTime?` | `endTime: Date | undefined` | - |
 | `totalChunks` | `totalChunks: number` | - |
@@ -23483,7 +23484,7 @@ destroy(): void
 
 ### AudioChunkErrorEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:231`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:241`](src/domain/entities/StreamEvent.ts)
 
 Audio chunk error - TTS synthesis failed for a text chunk
 
@@ -23503,7 +23504,7 @@ Audio chunk error - TTS synthesis failed for a text chunk
 
 ### AudioChunkReadyEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:210`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:220`](src/domain/entities/StreamEvent.ts)
 
 Audio chunk ready - TTS synthesis complete for a text chunk
 
@@ -23527,7 +23528,7 @@ Audio chunk ready - TTS synthesis complete for a text chunk
 
 ### AudioStreamCompleteEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:241`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:251`](src/domain/entities/StreamEvent.ts)
 
 Audio stream complete - all TTS chunks have been processed
 
@@ -23547,7 +23548,7 @@ Audio stream complete - all TTS chunks have been processed
 
 ### ErrorEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:193`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:203`](src/domain/entities/StreamEvent.ts)
 
 Error event
 
@@ -23610,7 +23611,7 @@ synthesizeStream(options: TTSOptions): AsyncIterableIterator&lt;TTSStreamChunk&g
 
 ### IterationCompleteEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:140`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:142`](src/domain/entities/StreamEvent.ts)
 
 Iteration complete - end of agentic loop iteration
 
@@ -23630,7 +23631,7 @@ Iteration complete - end of agentic loop iteration
 
 ### OutputTextDeltaEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:61`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:63`](src/domain/entities/StreamEvent.ts)
 
 Text delta - incremental text output
 
@@ -23652,7 +23653,7 @@ Text delta - incremental text output
 
 ### OutputTextDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:73`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:75`](src/domain/entities/StreamEvent.ts)
 
 Text output complete for this item
 
@@ -23672,7 +23673,7 @@ Text output complete for this item
 
 ### ReasoningDeltaEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:174`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:184`](src/domain/entities/StreamEvent.ts)
 
 Reasoning/thinking delta - incremental reasoning output
 
@@ -23692,7 +23693,7 @@ Reasoning/thinking delta - incremental reasoning output
 
 ### ReasoningDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:184`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:194`](src/domain/entities/StreamEvent.ts)
 
 Reasoning/thinking complete for this item
 
@@ -23711,7 +23712,7 @@ Reasoning/thinking complete for this item
 
 ### ResponseCompleteEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:150`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:152`](src/domain/entities/StreamEvent.ts)
 
 Response complete - final event
 
@@ -23726,6 +23727,11 @@ Response complete - final event
 | `iterations` | `iterations: number;` | - |
 | `duration_ms?` | `duration_ms?: number;` | - |
 | `stop_reason?` | `stop_reason?: string;` | Raw provider stop reason for diagnostics (e.g., 'end_turn', 'max_tokens', 'SAFETY') |
+| `stop_details?` | `stop_details?: ProviderStopDetails;` | Structured detail accompanying a terminal stop reason, when the provider
+supplies one. Anthropic populates this only for `stop_reason: 'refusal'`
+(`{ type: 'refusal', category, explanation }`) — the `category` names which
+safety classifier fired (e.g. 'cyber', 'bio'). Surfaced in logs so a refusal
+is diagnosable rather than an opaque empty response. |
 
 </details>
 
@@ -23733,7 +23739,7 @@ Response complete - final event
 
 ### ResponseCreatedEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:45`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:47`](src/domain/entities/StreamEvent.ts)
 
 Response created - first event in stream
 
@@ -23752,7 +23758,7 @@ Response created - first event in stream
 
 ### ResponseInProgressEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:54`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:56`](src/domain/entities/StreamEvent.ts)
 
 Response in progress
 
@@ -23820,7 +23826,7 @@ Events emitted by VoiceStream via EventEmitter
 
 ### StreamEventType `enum`
 
-📍 [`src/domain/entities/StreamEvent.ts:11`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:13`](src/domain/entities/StreamEvent.ts)
 
 Stream event type enum
 
@@ -23854,7 +23860,7 @@ Stream event type enum
 
 ### StreamEvent `type`
 
-📍 [`src/domain/entities/StreamEvent.ts:252`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:262`](src/domain/entities/StreamEvent.ts)
 
 Union type of all stream events
 Discriminated by 'type' field for type narrowing
@@ -23884,7 +23890,7 @@ type StreamEvent = | ResponseCreatedEvent
 
 ### isAudioChunkError `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:325`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:335`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isAudioChunkError(event: StreamEvent): event is AudioChunkErrorEvent
@@ -23894,7 +23900,7 @@ export function isAudioChunkError(event: StreamEvent): event is AudioChunkErrorE
 
 ### isAudioChunkReady `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:321`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:331`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isAudioChunkReady(event: StreamEvent): event is AudioChunkReadyEvent
@@ -23904,7 +23910,7 @@ export function isAudioChunkReady(event: StreamEvent): event is AudioChunkReadyE
 
 ### isAudioStreamComplete `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:329`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:339`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isAudioStreamComplete(event: StreamEvent): event is AudioStreamCompleteEvent
@@ -23914,7 +23920,7 @@ export function isAudioStreamComplete(event: StreamEvent): event is AudioStreamC
 
 ### isErrorEvent `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:317`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:327`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isErrorEvent(event: StreamEvent): event is ErrorEvent
@@ -23924,7 +23930,7 @@ export function isErrorEvent(event: StreamEvent): event is ErrorEvent
 
 ### isOutputTextDelta `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:285`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:295`](src/domain/entities/StreamEvent.ts)
 
 Type guards for specific events
 
@@ -23936,7 +23942,7 @@ export function isOutputTextDelta(event: StreamEvent): event is OutputTextDeltaE
 
 ### isReasoningDelta `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:305`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:315`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isReasoningDelta(event: StreamEvent): event is ReasoningDeltaEvent
@@ -23946,7 +23952,7 @@ export function isReasoningDelta(event: StreamEvent): event is ReasoningDeltaEve
 
 ### isReasoningDone `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:309`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:319`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isReasoningDone(event: StreamEvent): event is ReasoningDoneEvent
@@ -23956,7 +23962,7 @@ export function isReasoningDone(event: StreamEvent): event is ReasoningDoneEvent
 
 ### isResponseComplete `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:313`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:323`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isResponseComplete(event: StreamEvent): event is ResponseCompleteEvent
@@ -23966,7 +23972,7 @@ export function isResponseComplete(event: StreamEvent): event is ResponseComplet
 
 ### isStreamEvent `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:275`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:285`](src/domain/entities/StreamEvent.ts)
 
 Type guard to check if event is a specific type
 
@@ -24263,7 +24269,7 @@ emitted only when the primitive actually called a connector.
 
 ### calculateCost `function`
 
-📍 [`src/domain/entities/Model.ts:2752`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2876`](src/domain/entities/Model.ts)
 
 Calculate the cost for a given model and token usage
 
@@ -24291,7 +24297,7 @@ export function calculateEmbeddingCost(modelName: string, tokens: number): numbe
 
 ### getActiveModels `function`
 
-📍 [`src/domain/entities/Model.ts:2740`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2864`](src/domain/entities/Model.ts)
 
 Get all currently active models
 
@@ -24317,7 +24323,7 @@ export function getEmbeddingModelsWithFeature(
 
 ### getModelInfo `function`
 
-📍 [`src/domain/entities/Model.ts:2723`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2847`](src/domain/entities/Model.ts)
 
 Get model information by name
 
@@ -24329,7 +24335,7 @@ export function getModelInfo(modelName: string): ILLMDescription | undefined
 
 ### getModelsByVendor `function`
 
-📍 [`src/domain/entities/Model.ts:2732`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:2856`](src/domain/entities/Model.ts)
 
 Get all models for a specific vendor
 
@@ -24684,7 +24690,7 @@ Last full audit: March 2026
 
 ### MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/Model.ts:236`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:240`](src/domain/entities/Model.ts)
 
 Complete model registry with all model metadata
 Updated: March 2026 - Verified from official vendor documentation
@@ -26194,12 +26200,127 @@ Updated: March 2026 - Verified from official vendor documentation
       },
     },
   }` | - |
+| `'claude-opus-4-8'` | `{
+    name: 'claude-opus-4-8',
+    provider: Vendor.Anthropic,
+    description: 'Most capable Opus-tier model — highly autonomous, state-of-the-art long-horizon agentic work, knowledge work, and memory. 1M context, 128K output, adaptive thinking (low/medium/high/xhigh/max effort), high-resolution vision. Does not accept `temperature`.',
+    isActive: true,
+    preferred: true,
+    releaseDate: '2026-05-01',
+    knowledgeCutoff: '2026-01-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+      },
+      input: {
+        tokens: 1000000,
+        text: true,
+        image: true,
+        cpm: 5,
+        cpmCached: 0.5,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 25,
+      },
+    },
+  }` | - |
+| `'claude-sonnet-5'` | `{
+    name: 'claude-sonnet-5',
+    provider: Vendor.Anthropic,
+    description: 'Best combination of speed and intelligence; near-Opus quality on coding and agentic work. 1M context, 128K output, adaptive thinking on by default (low/medium/high/xhigh/max effort), high-resolution vision. New tokenizer. Does not accept `temperature`.',
+    isActive: true,
+    preferred: true,
+    releaseDate: '2026-05-01',
+    knowledgeCutoff: '2026-01-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+      },
+      input: {
+        tokens: 1000000,
+        text: true,
+        image: true,
+        cpm: 3,
+        cpmCached: 0.3,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 15,
+      },
+    },
+  }` | - |
+| `'claude-fable-5'` | `{
+    name: 'claude-fable-5',
+    provider: Vendor.Anthropic,
+    description: 'Anthropic\'s most capable widely released model, for the most demanding reasoning and long-horizon agentic work. 1M context, 128K output, thinking always on (raw chain of thought never returned). Does not accept `temperature`. Requires 30-day data retention.',
+    isActive: true,
+    releaseDate: '2026-06-01',
+    knowledgeCutoff: '2026-01-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+      },
+      input: {
+        tokens: 1000000,
+        text: true,
+        image: true,
+        cpm: 10,
+        cpmCached: 1,
+      },
+      output: {
+        tokens: 128000,
+        text: true,
+        cpm: 50,
+      },
+    },
+  }` | - |
 | `'claude-opus-4-7'` | `{
     name: 'claude-opus-4-7',
     provider: Vendor.Anthropic,
-    description: 'Most capable model for complex reasoning and agentic coding. 1M context, 128K output, adaptive thinking with new xhigh effort level, high-resolution vision (2576px). New tokenizer. Does not accept `temperature`.',
+    description: 'Legacy Opus 4.7. Superseded by Opus 4.8. Complex reasoning and agentic coding. 1M context, 128K output, adaptive thinking with xhigh effort level, high-resolution vision (2576px). New tokenizer. Does not accept `temperature`.',
     isActive: true,
-    preferred: true,
     releaseDate: '2026-04-16',
     knowledgeCutoff: '2026-01-01',
     features: {
@@ -26271,9 +26392,8 @@ Updated: March 2026 - Verified from official vendor documentation
 | `'claude-sonnet-4-6'` | `{
     name: 'claude-sonnet-4-6',
     provider: Vendor.Anthropic,
-    description: 'Best combination of speed and intelligence. Adaptive thinking, 1M context',
+    description: 'Legacy Sonnet 4.6. Superseded by Sonnet 5. Adaptive thinking, 1M context',
     isActive: true,
-    preferred: true,
     releaseDate: '2026-02-01',
     knowledgeCutoff: '2025-08-01',
     features: {
@@ -47188,7 +47308,7 @@ optional fields (`identifiers`, `aliases`, `metadata`, `permissions`,
 
 ### LLMResponse `interface`
 
-📍 [`src/domain/entities/Response.ts:22`](src/domain/entities/Response.ts)
+📍 [`src/domain/entities/Response.ts:37`](src/domain/entities/Response.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47220,6 +47340,10 @@ See `src/core/StructuredOutput.ts`. |
     message: string;
   };` | - |
 | `metadata?` | `metadata?: Record&lt;string, string&gt;;` | - |
+| `stop_reason?` | `stop_reason?: string;` | Raw provider stop reason (e.g. 'end_turn', 'max_tokens', 'refusal'), when known. |
+| `stop_details?` | `stop_details?: ProviderStopDetails;` | Structured stop detail accompanying a terminal stop reason. Anthropic
+populates this for refusals — names which safety classifier fired. Undefined
+for ordinary completions. |
 | `pendingAsyncTools?` | `pendingAsyncTools?: Array&lt;{ toolCallId: string; toolName: string; startTime: number; status: import('./Tool.js').PendingAsyncToolStatus }&gt;;` | Non-empty when async tools are still executing in the background |
 | `suspension?` | `suspension?: {
     /** Correlation ID for routing external events back to this session */
@@ -48835,6 +48959,28 @@ Capped at 500 by MemorySystem. |
 The generator never sees these facts' contents — only their IDs — so it
 cannot reference them in the updated profile, only remove existing mentions. |
 | `targetScope` | `targetScope: ScopeFields;` | - |
+
+</details>
+
+---
+
+### ProviderStopDetails `interface`
+
+📍 [`src/domain/entities/Response.ts:28`](src/domain/entities/Response.ts)
+
+Structured stop detail from a provider. Currently populated for Anthropic
+refusals (`{ type: 'refusal', category, explanation }`) — `category` names
+which safety classifier fired (e.g. 'cyber', 'bio'). Surfaced so a refusal is
+diagnosable rather than an opaque empty/failed response.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type?` | `type?: string;` | Discriminator, e.g. 'refusal'. |
+| `category?` | `category?: string | null;` | Which classifier/category triggered the stop (e.g. 'cyber', 'bio'), or null. |
+| `explanation?` | `explanation?: string | null;` | Human-readable explanation from the provider, when present. |
 
 </details>
 
@@ -52162,7 +52308,7 @@ type AgenticLoopEventName = keyof AgenticLoopEvents
 
 ### AgentResponse `type`
 
-📍 [`src/domain/entities/Response.ts:74`](src/domain/entities/Response.ts)
+📍 [`src/domain/entities/Response.ts:97`](src/domain/entities/Response.ts)
 
 ```typescript
 type AgentResponse = LLMResponse

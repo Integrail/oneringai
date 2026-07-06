@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] — 2026-07-06
+
+### Documentation
+
+- **`README.md` and `USER_GUIDE.md` fully re-audited against the current codebase and brought up to date.** Every section was verified against `src/` and all confirmed discrepancies were fixed — no API or behavior changes, docs only. Highlights:
+  - **Model registry**: corrected "Available Models" (OpenAI 40 / Anthropic 13 / Google 10 / Grok 5; 68 active total) and removed nonexistent ids used in examples (`gpt-4-vision`, `gpt-4-turbo`, `veo-3.0-generate-001`, `gemini-tts`, `gpt-5.2-instant`); deprecated `dall-e-3` lead examples → `gpt-image-1.5`; fixed video/image prices and `calculateCost` outputs.
+  - **API shapes**: current 5-tool orchestrator set (`assign_turn`, `delegate_interactive`, `send_message`, `list_agents`, `destroy_agent`); the 12 `memory_*` tools (6 read + 6 write); store IDs `notes`/`whiteboard` (not `memory`/`context`); snake_case plugin registry keys (`working_memory`, `in_context_memory`, `persistent_instructions`); accurate `ToolManager` / `AgentContextNextGen` / `CircuitBreaker` / `retryWithBackoff` / `logger` / `metrics` / `RoutineDefinition` signatures and event names; `Agent.create({ instructions })` (not `systemPrompt`); array-wrapped multimodal `agent.run([...])`.
+  - **Connectors/vendors**: corrected connector-tool tables (GitHub 8 tools, Telegram/Twilio/Zoom params, risk levels), vendor-template ids (`google-api`/`microsoft`; 45 vendors, 49 logos), service counts (45+), and category tables.
+  - **Defaults & paths**: InContextMemory 40k-token budget, shell `maxOutputSize` 10MB, `allowBackground` true, `MAX_HTML_LENGTH` 10MB, user-scoped storage paths.
+  - Flagged non-functional/undocumented surfaces accurately (no built-in permission audit/policy storage, unfired lifecycle hooks, `REQUEST_TIMEOUT` not read). Doc version footers bumped to 0.10.3.
+
 ## [0.10.2] — 2026-07-04
 
 ### Fixed

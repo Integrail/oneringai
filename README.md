@@ -97,7 +97,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
 - 📊 **Model Registry** - Complete metadata for 60+ latest (2026) models with pricing and features
 - 🎤 **Audio Capabilities** - Text-to-Speech (TTS) and Speech-to-Text (STT) with OpenAI and Groq
-- 🖼️ **Image Generation** - DALL-E 3, gpt-image-1, Google Imagen 4 with editing and variations
+- 🖼️ **Image Generation** - gpt-image-1.5, gpt-image-1, Google Imagen 4 with editing and variations
 - 🎬 **Video Generation** - NEW: OpenAI Sora 2 and Google Veo 3 for AI video creation
 - 🔢 **Embeddings** - NEW: Multi-vendor embedding generation with MRL dimension control (OpenAI, Google, Ollama, Mistral)
 - 🔍 **Web Search** - Connector-based search with Serper, Brave, Tavily, and RapidAPI providers
@@ -115,7 +115,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 📌 **InContextMemory** - Live key-value storage directly in LLM context with optional UI display (`showInUI`)
 - 📝 **Persistent Instructions** - ⚠️ *Deprecated* in favour of `MemoryPluginNextGen` (self-learning memory). Still works unchanged.
 - 👤 **User Info Plugin** - ⚠️ *Deprecated* in favour of `MemoryPluginNextGen`. Still works unchanged.
-- 🧠 **Self-Learning Memory** - NEW: `MemoryPluginNextGen` + `MemoryWritePluginNextGen` + 11 `memory_*` tools — brain-like entity/fact store with three-principal permissions, semantic search, graph queries, LLM-synthesised profiles that evolve from observations, user-driven behavior rules, optional background ingestion via `SessionIngestorPluginNextGen`
+- 🧠 **Self-Learning Memory** - NEW: `MemoryPluginNextGen` + `MemoryWritePluginNextGen` + 12 `memory_*` tools — brain-like entity/fact store with three-principal permissions, semantic search, graph queries, LLM-synthesised profiles that evolve from observations, user-driven behavior rules, optional background ingestion via `SessionIngestorPluginNextGen`
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
 - 🧰 **Custom Tool Generation** - NEW: Let agents create, test, and persist their own reusable tools at runtime — complete meta-tool system with VM sandbox
@@ -127,7 +127,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 🔐 **Scoped Connector Registry** - NEW: Pluggable access control for multi-tenant connector isolation
 - 💾 **StorageRegistry** - Centralized storage configuration — swap all backends (sessions, media, custom tools, etc.) with one `configure()` call
 - 🔐 **OAuth 2.0** - Full OAuth support for external APIs with encrypted token storage
-- 📦 **Vendor Templates** - NEW: Pre-configured auth templates for 43+ services (GitHub, Slack, Stripe, etc.)
+- 📦 **Vendor Templates** - NEW: Pre-configured auth templates for 45+ services (GitHub, Slack, Stripe, etc.)
 - 📧 **Microsoft Graph Tools** - NEW: Email, calendar, meetings, and Teams transcripts via Microsoft Graph API
 - 🔁 **Routine Execution** - NEW: Multi-step workflows with task dependencies, LLM validation, retry logic, and memory bridging between tasks
 - 📊 **Execution Recording** - NEW: Persist full routine execution history with `createExecutionRecorder()` — replaces manual hook wiring
@@ -273,9 +273,9 @@ const imageGen = ImageGeneration.create({ connector: 'openai' });
 
 const result = await imageGen.generate({
   prompt: 'A futuristic city at sunset',
-  model: 'dall-e-3',
+  model: 'gpt-image-1.5',
   size: '1024x1024',
-  quality: 'hd',
+  quality: 'high',
 });
 
 // Save to file
@@ -319,7 +319,7 @@ const googleVideo = VideoGeneration.create({ connector: 'google' });
 
 const veoJob = await googleVideo.generate({
   prompt: 'A butterfly flying through a garden',
-  model: 'veo-3.0-generate-001',
+  model: 'veo-3.1-generate-preview',
   duration: 8,
 });
 ```
@@ -353,8 +353,9 @@ const edited = await videoGen.edit({
 
 #### Sora: reusable characters (OpenAI only)
 
-Upload a reference video to register a character; thread the returned id
-back through `vendorOptions` on a later `generate()`.
+Upload a reference video to register a character. Note: the unified `generate()`
+does not yet apply the character id — reference the character in your prompt and
+use `getCharacter()` to look it up.
 
 ```typescript
 const character = await videoGen.createCharacter({
@@ -365,7 +366,6 @@ const character = await videoGen.createCharacter({
 
 const scene = await videoGen.generate({
   prompt: 'Hero walks across a windswept beach at dusk',
-  vendorOptions: { characterId: character.id },
 });
 
 // Look up later
@@ -537,7 +537,7 @@ await agent.run('Scrape https://example.com and summarize');
 | **Google (Gemini)** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | 1M |
 | **Google Vertex AI** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 1M |
 | **Grok (xAI)** | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | 128K |
-| **Groq** | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | 128K |
+| **Groq** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 128K |
 | **Together AI** | ✅ | Some | ❌ | ❌ | ❌ | ❌ | ✅ | 128K |
 | **DeepSeek** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 64K |
 | **Mistral** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 32K |
@@ -621,7 +621,7 @@ console.log(agent.tools.listEnabled().includes('email_tool'));  // false
 // Context-aware selection
 const selected = agent.tools.selectForContext({
   mode: 'interactive',
-  priority: 'high',
+  currentTask: 'send-invoice',
 });
 
 // Backward compatible
@@ -731,20 +731,19 @@ User rules have the **highest priority** -- they override all built-in policies.
 ```typescript
 import { PermissionPolicyManager } from '@everworker/oneringai';
 
-const manager = new PermissionPolicyManager({
-  userRules: [
-    // Allow bash, but only in the project directory
-    {
-      id: '1', toolName: 'bash', action: 'allow', enabled: true,
-      createdBy: 'user', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      conditions: [{ argName: 'command', operator: 'not_contains', value: 'rm -rf' }],
-    },
-    // Block all web tools unconditionally
-    {
-      id: '2', toolName: 'web_fetch', action: 'deny', enabled: true, unconditional: true,
-      createdBy: 'admin', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    },
-  ],
+const manager = new PermissionPolicyManager();
+
+// Allow bash, but only in the project directory
+await manager.userRules.addRule({
+  id: '1', toolName: 'bash', action: 'allow', enabled: true,
+  createdBy: 'user', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  conditions: [{ argName: 'command', operator: 'not_contains', value: 'rm -rf' }],
+});
+
+// Block all web tools unconditionally
+await manager.userRules.addRule({
+  id: '2', toolName: 'web_fetch', action: 'deny', enabled: true, unconditional: true,
+  createdBy: 'admin', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
 });
 ```
 
@@ -773,7 +772,7 @@ const agent = Agent.create({
   permissions: {
     policies: [
       new PathRestrictionPolicy({ allowedPaths: ['/workspace'] }),
-      new BashFilterPolicy({ blockedPatterns: ['rm -rf', 'sudo'] }),
+      new BashFilterPolicy({ denyCommands: ['rm -rf', 'sudo'] }),
     ],
   },
 });
@@ -1022,8 +1021,8 @@ const agent = Agent.create({
 **Available Features:**
 | Feature | Default | Plugin | Associated Tools |
 |---------|---------|--------|------------------|
-| `workingMemory` | `true` | WorkingMemoryPluginNextGen | Unified `store_*` tools (store="memory"). Actions: cleanup_raw, query |
-| `inContextMemory` | `true` | InContextMemoryPluginNextGen | Unified `store_*` tools (store="context") |
+| `workingMemory` | `true` | WorkingMemoryPluginNextGen | Unified `store_*` tools (store="notes"). Actions: cleanup_raw, query |
+| `inContextMemory` | `true` | InContextMemoryPluginNextGen | Unified `store_*` tools (store="whiteboard") |
 | `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen | Unified `store_*` tools (store="instructions"). Actions: clear |
 | `userInfo` | `false` | UserInfoPluginNextGen | Unified `store_*` tools (store="user_info") + `todo_add/update/remove` |
 | `toolCatalog` | `false` | ToolCatalogPluginNextGen | `tool_catalog_search/load/unload` |
@@ -1171,7 +1170,7 @@ TODOs are stored alongside user info and rendered in a separate **"Current TODOs
 
 ### 10b. Self-Learning Memory — plugin + tools
 
-A brain-like, queryable knowledge store built on the [memory layer](./docs/MEMORY_GUIDE.md). Two cooperating context plugins + **11 LLM-callable tools** turn the agent into a learning system: it bootstraps a `person` entity for the user (and optionally an `organization` entity for their group), injects the evolving user profile + any user-given behavior rules into the system message every turn, and exposes `memory_*` tools so the LLM can read or write the knowledge graph mid-conversation. Observations flow in via `memory_remember` (LLM-driven) or `SessionIngestorPluginNextGen` (passive); incremental profile regeneration synthesises them; the next turn sees the updated profile. No manual prompt engineering for user/agent preferences.
+A brain-like, queryable knowledge store built on the [memory layer](./docs/MEMORY_GUIDE.md). Two cooperating context plugins + **12 LLM-callable tools** turn the agent into a learning system: it bootstraps a `person` entity for the user (and optionally an `organization` entity for their group), injects the evolving user profile + any user-given behavior rules into the system message every turn, and exposes `memory_*` tools so the LLM can read or write the knowledge graph mid-conversation. Observations flow in via `memory_remember` (LLM-driven) or `SessionIngestorPluginNextGen` (passive); incremental profile regeneration synthesises them; the next turn sees the updated profile. No manual prompt engineering for user/agent preferences.
 
 ```typescript
 import { Agent, createMemorySystemWithConnectors, InMemoryAdapter } from '@everworker/oneringai';
@@ -1191,7 +1190,7 @@ const agent = Agent.create({
   context: {
     agentId: 'my-assistant',
     features: {
-      memory: true,                             // reads: profile injection + 5 retrieval tools
+      memory: true,                             // reads: profile injection + 6 retrieval tools
       memoryWrite: true,                        // writes: 6 mutation tools (omit for retrieval-only)
     },
     plugins: {
@@ -1234,7 +1233,7 @@ await agent.run('Remember I prefer concise answers');
 - `memory_list_facts(subject, predicate?, archivedOnly?)` — structured enumeration
 
 *Write (via `MemoryWritePluginNextGen`, feature flag `memoryWrite`, requires `memory: true`):*
-- `memory_remember(subject, predicate, value?/objectId?/details?, visibility?)` — write a fact (atomic or document)
+- `memory_remember(subject, predicate, value?/objectId?/details?)` — write a fact (atomic or document); visibility is host-decided, not an LLM-settable arg
 - `memory_link(from, predicate, to)` — write a relational fact
 - `memory_upsert_entity(type, displayName, identifiers, ...)` — create or merge an entity by identifier
 - `memory_forget(factId, replaceWith?)` — archive or supersede (rate-limited 10/60s/user)
@@ -1271,7 +1270,7 @@ const response = await agent.runDirect('Summarize this', {
 const response = await agent.runDirect([
   { type: 'message', role: 'user', content: [
     { type: 'input_text', text: 'What is in this image?' },
-    { type: 'input_image', image_url: 'https://example.com/image.png' }
+    { type: 'input_image_url', image_url: { url: 'https://example.com/image.png' } }
   ]}
 ]);
 
@@ -1440,7 +1439,7 @@ for await (const event of voice.wrap(agent.stream('Tell me a story'))) { ... }
 ```
 
 **Available Models:**
-- **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-tts`)
+- **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-2.5-flash-preview-tts`, `gemini-2.5-pro-preview-tts`)
 - **STT**: OpenAI (`whisper-1`, `gpt-4o-transcribe`), Groq (`whisper-large-v3` - 12x cheaper!)
 
 ### Embeddings (NEW)
@@ -1543,12 +1542,12 @@ console.log(`Cost: $${cost}`);  // $0.1155
 const cachedCost = calculateCost('gpt-5.2', 50_000, 2_000, {
   useCachedInput: true
 });
-console.log(`Cached: $${cachedCost}`);  // $0.0293 (90% discount)
+console.log(`Cached: $${cachedCost}`);  // $0.03675 (90% discount on cached input tokens)
 ```
 
 **Available Models:**
 - **OpenAI (40+)**: GPT-5.5 (flagship), GPT-5.4 (+ pro / mini / nano), GPT-5.3, GPT-5.2, GPT-5.1, GPT-5, GPT-4.1, GPT-4o, o3, o4-mini, o1, Deep Research, Audio, Realtime, Open-Source
-- **Anthropic (9)**: Claude 4.6 (Opus, Sonnet), Claude 4.5, Claude 4.1, Claude 4, Claude 3.7 Sonnet, Haiku 4.5
+- **Anthropic (13)**: Claude Opus 4.8, Claude Sonnet 5, Claude Fable 5, Claude Opus 4.7, Claude 4.6 (Opus, Sonnet), Claude 4.5 (Opus, Sonnet, Haiku), Claude 4.1, Claude 4, Claude 3.7 Sonnet
 - **Google (10)**: Gemini 3.1, Gemini 3, Gemini 2.5
 - **Grok (5)**: Grok 4.20 (reasoning, non-reasoning, multi-agent), Grok 4.1 Fast
 
@@ -1575,7 +1574,7 @@ const oauth = new OAuthManager({
   clientSecret: process.env.GITHUB_CLIENT_SECRET!,
   authorizationUrl: 'https://github.com/login/oauth/authorize',
   tokenUrl: 'https://github.com/login/oauth/access_token',
-  storage: new FileStorage({ directory: './tokens' }),
+  storage: new FileStorage({ directory: './tokens', encryptionKey: process.env.OAUTH_ENCRYPTION_KEY! }),
 });
 
 const authUrl = await oauth.startAuthFlow('user123');
@@ -1911,8 +1910,8 @@ Connector.create({
 });
 
 // Generate tools from the connector
-// GitHub connectors get 7 dedicated tools + generic API automatically:
-// search_files, search_code, read_file, get_pr, pr_files, pr_comments, create_pr
+// GitHub connectors get 8 dedicated tools + generic API automatically:
+// search_files, search_code, read_file, list_branches, get_pr, pr_files, pr_comments, create_pr
 const tools = ConnectorTools.for('github');
 
 // Use with an agent — userId flows to all tools automatically
@@ -1928,14 +1927,14 @@ await agent.run('Show me PR #42 and summarize the review comments');
 ```
 
 **Supported Services (45+):**
-- **Communication**: Slack, Discord, Microsoft Teams, Twilio, Telegram *(6 built-in tools)*, Zoom *(3 built-in tools)*
-- **Development**: GitHub *(7 built-in tools)*, GitLab, Jira, Linear, Bitbucket
+- **Communication**: Slack *(10 built-in tools)*, Telegram *(6 built-in tools)*, Twilio *(4 built-in tools)*, Discord (generic API only), Zoom *(3 built-in tools)*
+- **Development**: GitHub *(8 built-in tools)*, GitLab, Jira, Linear, Bitbucket
 - **Google Workspace**: Google APIs *(11 built-in tools)* — Gmail, Calendar, Meet transcripts, Drive
 - **Microsoft**: Microsoft Graph *(11 built-in tools)* — email, calendar, meetings, Teams transcripts, OneDrive
-- **Productivity**: Notion, Asana, Monday, Airtable, Trello
+- **Productivity**: Notion, Asana, Airtable, Trello
 - **CRM**: Salesforce, HubSpot, Zendesk, Intercom
-- **Payments**: Stripe, PayPal, Square
-- **Cloud**: AWS, Azure, GCP, DigitalOcean
+- **Payments**: Stripe, PayPal, QuickBooks, Ramp
+- **Cloud**: AWS, Cloudflare
 - And more...
 
 **Enterprise Features:**
@@ -2002,7 +2001,7 @@ const allTools = ConnectorTools.discoverAll(undefined, { registry });
 
 #### Vendor Templates (NEW)
 
-Quickly set up connectors for 43+ services with pre-configured authentication templates:
+Quickly set up connectors for 45+ services with pre-configured authentication templates:
 
 ```typescript
 import {
@@ -2037,16 +2036,16 @@ const agent = Agent.create({
 await agent.run('List my GitHub repositories');
 ```
 
-**Supported Categories (43 vendors):**
+**Supported Categories (45 vendors):**
 | Category | Vendors |
 |----------|---------|
-| Communication | Slack, Discord, Telegram, Microsoft Teams, Zoom, Twilio |
+| Communication | Slack, Discord, Telegram, Zoom, Twilio |
 | Development | GitHub, GitLab, Bitbucket, Jira, Linear, Asana, Trello |
 | Productivity | Notion, Airtable, Google Workspace, Microsoft 365, Confluence |
 | CRM | Salesforce, HubSpot, Pipedrive |
 | Payments | Stripe, PayPal |
-| Cloud | AWS, GCP, Azure |
-| Storage | Dropbox, Box, Google Drive, OneDrive |
+| Cloud | AWS, Cloudflare |
+| Storage | Dropbox, Box |
 | Email | SendGrid, Mailchimp, Postmark |
 | Monitoring | Datadog, PagerDuty, Sentry |
 | Search | Serper, Brave, Tavily, RapidAPI |
@@ -2436,7 +2435,7 @@ const result = await orchestrator.run('Build an auth module with JWT support');
 | Tool | Purpose |
 |------|---------|
 | `assign_turn(agent, type, instruction)` | Assign work (auto-creates agent if needed, always async, optional autoDestroy) |
-| `delegate_interactive(type, instruction)` | Hand user session to a sub-agent with monitoring/reclaim |
+| `delegate_interactive(agent, type?, briefing?)` | Hand user session to a sub-agent with monitoring/reclaim |
 | `send_message(agent, message)` | Inject message into running/idle agent |
 | `list_agents()` | See team status + delegation state |
 | `destroy_agent(name)` | Remove a worker (auto-reclaims if delegated) |
@@ -2468,7 +2467,7 @@ import { createConnectorFromTemplate } from '@everworker/oneringai';
 
 createConnectorFromTemplate('my-twilio', 'twilio', 'api-key', {
   apiKey: process.env.TWILIO_AUTH_TOKEN!,
-  extra: { accountId: process.env.TWILIO_ACCOUNT_SID! },
+  accountId: process.env.TWILIO_ACCOUNT_SID!,
 }, { vendorOptions: { defaultFromNumber: '+15551234567' } });
 
 // Tools: send_sms, send_whatsapp, list_messages, get_message
@@ -2491,6 +2490,8 @@ Connector.create({
     clientId: process.env.GOOGLE_CLIENT_ID!,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     redirectUri: 'http://localhost:3000/callback',
+    authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
     scope: 'https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive.readonly',
   },
   config: { serviceType: 'google-api' },
@@ -2506,7 +2507,7 @@ const tools = ConnectorTools.for('google');
 | Tool | Purpose | Risk |
 |------|---------|------|
 | `create_draft_email` | Create Gmail draft (or reply draft) | medium |
-| `send_email` | Send email or reply via Gmail | once |
+| `send_email` | Send email or reply via Gmail | medium |
 | `create_meeting` | Create Calendar event with optional Meet link | medium |
 | `edit_meeting` | Update existing Calendar event | medium |
 | `get_meeting` | Get full details of a calendar event | low |
@@ -2585,13 +2586,15 @@ Reusable test suite framework for validating connector tools against live APIs:
 ```typescript
 import { IntegrationTestRunner } from '@everworker/oneringai';
 
-// List all available suites
+// List all available suites (16 total)
 const suites = IntegrationTestRunner.getAllSuites();
-// → google, microsoft, slack, github, telegram, twilio, zoom, web-search, web-scrape, generic-api
+// → google-workspace, microsoft-365, slack, github, telegram, twilio, zoom,
+//   generic-api, plus 4 web-search-* and 4 web-scrape-* provider variants
 
-// Run a suite
-const result = await IntegrationTestRunner.runSuite('google', tools, {
-  params: { testEmail: 'test@example.com' },
+// Run a suite: pass the suite OBJECT, the tools, and a flat params map
+import { googleWorkspaceSuite } from '@everworker/oneringai';
+const result = await IntegrationTestRunner.runSuite(googleWorkspaceSuite, tools, {
+  testEmail: 'test@example.com',
 });
 ```
 
@@ -2773,7 +2776,7 @@ Use a vision-capable model: `gpt-4.1`, `claude-sonnet-4-6`, `gemini-2.5-flash`.
 
 ## Contributing
 
-Contributions are welcome! Please see our [Contributing Guide](./CONTRIBUTING.md) (coming soon).
+Contributions are welcome! Please see our [Contributing Guide](./CONTRIBUTING.md).
 
 ## License
 
@@ -2781,4 +2784,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.6.0 | **Last Updated:** 2026-04-25 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 0.10.3 | **Last Updated:** 2026-07-06 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
