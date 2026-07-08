@@ -117,6 +117,14 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     docsURL: 'https://developers.zoom.us/docs/api/',
     commonScopes: ['meeting:read', 'meeting:write', 'recording:read', 'user:read'],
   },
+  {
+    id: 'heyreach',
+    name: 'HeyReach',
+    category: 'communication',
+    urlPattern: /api\.heyreach\.io/i,
+    baseURL: 'https://api.heyreach.io/api/public',
+    docsURL: 'https://documenter.getpostman.com/view/23808049/2sA2xb5F75',
+  },
 
   // ============ Development & Project Management ============
   {
@@ -208,6 +216,22 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     baseURL: 'https://your-domain.atlassian.net/wiki/rest/api',
     docsURL: 'https://developer.atlassian.com/cloud/confluence/rest/',
     commonScopes: ['read:confluence-content.all', 'write:confluence-content'],
+  },
+  {
+    id: 'cal-com',
+    name: 'Cal.com',
+    category: 'productivity',
+    urlPattern: /api\.cal\.com/i,
+    baseURL: 'https://api.cal.com/v1',
+    docsURL: 'https://cal.com/docs/api-reference',
+  },
+  {
+    id: 'calendly',
+    name: 'Calendly',
+    category: 'productivity',
+    urlPattern: /api\.calendly\.com|auth\.calendly\.com/i,
+    baseURL: 'https://api.calendly.com',
+    docsURL: 'https://developer.calendly.com/api-docs',
   },
 
   // ============ CRM & Sales ============
@@ -343,6 +367,15 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     baseURL: 'https://api.mailgun.net/v3',
     docsURL: 'https://documentation.mailgun.com/docs/mailgun/api-reference/',
   },
+  {
+    id: 'emailbison',
+    name: 'EmailBison',
+    category: 'email',
+    urlPattern: /emailbison\.com/i,
+    // Per-instance deployment — override with your own instance domain.
+    baseURL: 'https://your-instance.emailbison.com/api',
+    docsURL: 'https://docs.emailbison.com/get-started/authentication',
+  },
 
   // ============ Monitoring & Observability ============
   {
@@ -458,6 +491,14 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     baseURL: 'https://your-store.myshopify.com/admin/api/2024-01',
     docsURL: 'https://shopify.dev/docs/api',
     commonScopes: ['read_products', 'write_products', 'read_orders'],
+  },
+  {
+    id: 'clay',
+    name: 'Clay',
+    category: 'other',
+    urlPattern: /api\.clay\.com/i,
+    baseURL: 'https://api.clay.com',
+    docsURL: 'https://university.clay.com/docs',
   },
 ] as const;
 

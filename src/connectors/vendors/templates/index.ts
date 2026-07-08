@@ -66,6 +66,12 @@ export { zenrowsTemplate } from './scrape.js';
 // Geolocation
 export { ipinfoTemplate } from './geolocation.js';
 
+// Scheduling
+export { calcomTemplate, calendlyTemplate } from './scheduling.js';
+
+// Sales Engagement / Outreach
+export { emailbisonTemplate, heyreachTemplate, clayTemplate } from './outreach.js';
+
 // Other
 export { twilioTemplate, zendeskTemplate, intercomTemplate, shopifyTemplate } from './other.js';
 
@@ -117,6 +123,8 @@ import {
 } from './search.js';
 import { zenrowsTemplate } from './scrape.js';
 import { ipinfoTemplate } from './geolocation.js';
+import { calcomTemplate, calendlyTemplate } from './scheduling.js';
+import { emailbisonTemplate, heyreachTemplate, clayTemplate } from './outreach.js';
 import { twilioTemplate, zendeskTemplate, intercomTemplate, shopifyTemplate } from './other.js';
 import type { VendorTemplate } from '../types.js';
 
@@ -187,6 +195,15 @@ export const allVendorTemplates: VendorTemplate[] = [
 
   // Geolocation
   ipinfoTemplate,
+
+  // Scheduling
+  calcomTemplate,
+  calendlyTemplate,
+
+  // Sales Engagement / Outreach
+  emailbisonTemplate,
+  heyreachTemplate,
+  clayTemplate,
 
   // Other
   twilioTemplate,

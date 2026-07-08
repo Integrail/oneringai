@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Five new connector vendor templates (50 vendors total, 54 logos).** Each ships a template, a `Services.ts` service definition (auto-detection + generic `<connector>_api` tool), and a logo:
+  - **Cal.com** (`cal-com`, productivity) — API v1 key auth via the `apiKey` query parameter (base `https://api.cal.com/v1`); notes cover switching to v2 (`cal-api-version` header). Official simple-icons logo.
+  - **Calendly** (`calendly`, productivity) — Personal Access Token (Bearer) **and** OAuth 2.0 authorization-code with PKCE (`auth.calendly.com`, auto-refresh). Official simple-icons logo.
+  - **HeyReach** (`heyreach`, communication) — LinkedIn sequencing; API key via the `X-API-KEY` header (no scheme prefix), base `https://api.heyreach.io/api/public`.
+  - **EmailBison** (`emailbison`, email) — cold-email sequencing; Bearer token. Per-instance deployment, so `baseURL` **must** be overridden with your instance domain (e.g. `https://acme.emailbison.com/api`).
+  - **Clay** (`clay`, other) — best-effort Bearer template for HTTP calls + per-table webhook ingestion; Clay is MCP-first, so prefer configuring it via `MCPRegistry` for richer agentic use (documented in the template `notes`).
+  - Functionality is delivered through the generic authenticated `<connector>_api` tool (same model as HubSpot and other API-key vendors) — no service-specific tool factories added. HeyReach/EmailBison/Clay use branded placeholder logos (no official simple-icon exists).
+
 ## [0.10.3] — 2026-07-06
 
 ### Documentation

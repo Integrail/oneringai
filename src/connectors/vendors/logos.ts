@@ -46,6 +46,15 @@ export const VENDOR_ICON_MAP: Record<string, string | null> = {
   hubspot: 'hubspot',
   pipedrive: 'pipedrive',
 
+  // Scheduling
+  'cal-com': 'caldotcom',
+  calendly: 'calendly',
+
+  // Sales Engagement / Outreach
+  heyreach: null, // No Simple Icon available
+  emailbison: null, // No Simple Icon available
+  clay: null, // No Simple Icon available
+
   // Development
   github: 'github',
   gitlab: 'gitlab',
@@ -137,6 +146,11 @@ const FALLBACK_PLACEHOLDERS: Record<string, { color: string; letter: string }> =
 
   // Scrape (no Simple Icon available)
   zenrows: { color: '#00D4AA', letter: 'Z' },
+
+  // Sales Engagement / Outreach (no Simple Icon available)
+  heyreach: { color: '#7C3AED', letter: 'H' },
+  emailbison: { color: '#D97706', letter: 'E' },
+  clay: { color: '#EA580C', letter: 'C' },
 
   // Other (trademark removed)
   twilio: { color: '#F22F46', letter: 'T' },

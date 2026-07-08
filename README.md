@@ -2036,21 +2036,21 @@ const agent = Agent.create({
 await agent.run('List my GitHub repositories');
 ```
 
-**Supported Categories (45 vendors):**
+**Supported Categories (50 vendors):**
 | Category | Vendors |
 |----------|---------|
-| Communication | Slack, Discord, Telegram, Zoom, Twilio |
+| Communication | Slack, Discord, Telegram, Zoom, Twilio, HeyReach |
 | Development | GitHub, GitLab, Bitbucket, Jira, Linear, Asana, Trello |
-| Productivity | Notion, Airtable, Google Workspace, Microsoft 365, Confluence |
+| Productivity | Notion, Airtable, Google Workspace, Microsoft 365, Confluence, Cal.com, Calendly |
 | CRM | Salesforce, HubSpot, Pipedrive |
 | Payments | Stripe, PayPal |
 | Cloud | AWS, Cloudflare |
 | Storage | Dropbox, Box |
-| Email | SendGrid, Mailchimp, Postmark |
+| Email | SendGrid, Mailchimp, Postmark, EmailBison |
 | Monitoring | Datadog, PagerDuty, Sentry |
 | Search | Serper, Brave, Tavily, RapidAPI |
 | Scrape | ZenRows |
-| Other | Zendesk, Intercom, Shopify |
+| Other | Zendesk, Intercom, Shopify, Clay |
 
 Each vendor includes:
 - **Credentials setup URL** - Direct link to where you create API keys

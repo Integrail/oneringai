@@ -12726,18 +12726,18 @@ The library includes built-in definitions for 45+ popular services:
 | Category | Services |
 |----------|----------|
 | **Major Vendors** | Microsoft, Google |
-| **Communication** | Slack, Discord, Telegram, X (Twitter), Zoom |
+| **Communication** | Slack, Discord, Telegram, X (Twitter), Zoom, HeyReach |
 | **Development** | GitHub, GitLab, Bitbucket, Jira, Linear, Asana, Trello |
-| **Productivity** | Notion, Airtable, Confluence |
+| **Productivity** | Notion, Airtable, Confluence, Cal.com, Calendly |
 | **CRM** | Salesforce, HubSpot, Pipedrive |
 | **Payments** | Stripe, PayPal, QuickBooks, Ramp |
 | **Cloud** | AWS, Cloudflare |
 | **Storage** | Dropbox, Box |
-| **Email** | SendGrid, Mailchimp, Postmark, Mailgun |
+| **Email** | SendGrid, Mailchimp, Postmark, Mailgun, EmailBison |
 | **Monitoring** | Datadog, PagerDuty, Sentry |
 | **Search** | Serper, Brave Search, Tavily, RapidAPI Search |
 | **Scrape** | ZenRows |
-| **Other** | Twilio, Zendesk, Intercom, Shopify, ipinfo |
+| **Other** | Twilio, Zendesk, Intercom, Shopify, ipinfo, Clay |
 
 ```typescript
 import { Services, getServiceInfo, getServicesByCategory } from '@everworker/oneringai';
@@ -13282,6 +13282,27 @@ createConnectorFromTemplate('my-slack', 'slack', 'bot-token', {
 createConnectorFromTemplate('my-stripe', 'stripe', 'api-key', {
   apiKey: process.env.STRIPE_SECRET_KEY!
 });
+
+// HeyReach (LinkedIn sequencing) — key sent via the X-API-KEY header
+createConnectorFromTemplate('my-heyreach', 'heyreach', 'api-key', {
+  apiKey: process.env.HEYREACH_API_KEY!
+});
+
+// EmailBison (cold-email sequencing) — per-instance deployment, so you MUST
+// override baseURL with your own instance domain.
+createConnectorFromTemplate('my-emailbison', 'emailbison', 'api-token', {
+  apiKey: process.env.EMAILBISON_TOKEN!
+}, { baseURL: 'https://acme.emailbison.com/api' });
+
+// Cal.com — API v1 key passed automatically as the ?apiKey query parameter
+createConnectorFromTemplate('my-calcom', 'cal-com', 'api-key', {
+  apiKey: process.env.CALCOM_API_KEY!  // cal_live_...
+});
+
+// Calendly — Personal Access Token (Bearer). See OAuth section for multi-account.
+createConnectorFromTemplate('my-calendly', 'calendly', 'personal-token', {
+  apiKey: process.env.CALENDLY_TOKEN!
+});
 ```
 
 #### OAuth (User Authorization)
@@ -13302,6 +13323,13 @@ createConnectorFromTemplate('my-google', 'google-api', 'oauth-user', {
   clientId: process.env.GOOGLE_CLIENT_ID!,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
   redirectUri: 'https://myapp.com/google/callback',
+});
+
+// Calendly OAuth (multi-account/public apps; auto-refresh, PKCE)
+createConnectorFromTemplate('my-calendly-oauth', 'calendly', 'oauth-user', {
+  clientId: process.env.CALENDLY_CLIENT_ID!,
+  clientSecret: process.env.CALENDLY_CLIENT_SECRET!,
+  redirectUri: 'https://myapp.com/calendly/callback',
 });
 ```
 
