@@ -26,6 +26,13 @@ import { AgentContextNextGen } from './context-nextgen/AgentContextNextGen.js';
 import type { AgentContextNextGenConfig, AuthIdentity, SerializedContextState } from './context-nextgen/types.js';
 import { createProvider } from './createProvider.js';
 import type { ITextProvider, TextGenerateOptions } from '../domain/interfaces/ITextProvider.js';
+import type {
+  AdvancedTextCapabilities,
+  DataHandlingPolicy,
+  IAsyncTextBatchProvider,
+  NativeToolRequest,
+  PromptCachePolicy,
+} from '../domain/interfaces/IAdvancedInference.js';
 import type { LLMResponse } from '../domain/entities/Response.js';
 import {
   type ResponseFormat,
@@ -299,6 +306,13 @@ export interface DirectCallOptions {
 
   /** Vendor-specific options */
   vendorOptions?: Record<string, unknown>;
+
+  /** Provider-neutral prompt caching policy. */
+  promptCache?: PromptCachePolicy;
+
+  /** Provider-hosted tools, separate from client-executed ToolFunctions. */
+  nativeTools?: NativeToolRequest[];
+  dataHandling?: DataHandlingPolicy;
 
   /** Skip pre-flight context limit check. Default: false (check is ON) */
   skipContextLimitCheck?: boolean;
@@ -904,6 +918,47 @@ export abstract class BaseAgent<
     return this._provider.listModels();
   }
 
+  /** Executable advanced capabilities for this agent's concrete model. */
+  getAdvancedCapabilities(): AdvancedTextCapabilities {
+    return this._provider.getAdvancedCapabilities?.(this.model) ?? {
+      promptCaching: { mode: 'unsupported', ttlModes: [], reportsCacheUsage: false },
+      batch: { supported: false, cancellable: false },
+      structuredOutput: { jsonObject: 'prompt', jsonSchema: 'prompt', nativeWithTools: false },
+      nativeTools: [],
+      nativeToolOptions: { remoteMcpApproval: false },
+      dataHandling: { promptCaching: 'none', batch: 'none', remoteMcp: 'none' },
+    };
+  }
+
+  /** Optional provider batch surface. The host owns durable handles and polling. */
+  getBatchProvider(): IAsyncTextBatchProvider<TextGenerateOptions, LLMResponse> | undefined {
+    const batch = this._provider.batch;
+    if (!batch) return undefined;
+
+    // Bind submissions to the same identity boundary as run()/runDirect().
+    // Returning the provider object directly would let remote-MCP credential
+    // resolution fall back to the global Connector registry with no userId.
+    return {
+      submitBatch: (requests, options) =>
+        batch.submitBatch(
+          requests.map((request) => ({
+            ...request,
+            options: {
+              ...request.options,
+              credential_context: {
+                userId: this.userId,
+                connectorRegistry: this._config.registry,
+              },
+            },
+          })),
+          options,
+        ),
+      getBatch: (id) => batch.getBatch(id),
+      cancelBatch: (id) => batch.cancelBatch(id),
+      getBatchResults: (id) => batch.getBatchResults(id),
+    };
+  }
+
   // ===== Snapshot / Inspection =====
 
   /**
@@ -999,6 +1054,10 @@ export abstract class BaseAgent<
       max_output_tokens: options.maxOutputTokens,
       thinking: options.thinking,
       vendorOptions: options.vendorOptions,
+      prompt_cache: options.promptCache,
+      native_tools: options.nativeTools,
+      data_handling: options.dataHandling,
+      credential_context: { userId: this.userId, connectorRegistry: this._config.registry },
       skipContextLimitCheck: options.skipContextLimitCheck,
     };
 
@@ -1010,6 +1069,14 @@ export abstract class BaseAgent<
     try {
       const response = await provider.generate(generateOptions);
       if (options.responseFormat) {
+        const enforcement = resolveStructuredStrategy(
+          options.responseFormat,
+          provider.getModelCapabilities(this.model),
+          this.connector.vendor,
+          (generateOptions.tools?.length ?? 0) + (generateOptions.native_tools?.length ?? 0) > 0,
+          provider.getAdvancedCapabilities?.(this.model),
+        );
+        const before = response.output_text;
         // Re-ask tool-free, reusing the same (format-applied) options with a
         // repair prompt as the input.
         await this.coerceStructuredOutput(response, options.responseFormat, (repairInput) =>
@@ -1017,9 +1084,12 @@ export abstract class BaseAgent<
             ...generateOptions,
             input: repairInput,
             tools: undefined,
+            native_tools: undefined,
             tool_choice: undefined,
           }),
         );
+        response.structured_output_enforcement =
+          response.output_text === before ? enforcement : 'repair';
       }
       this._logger.debug({ outputLength: response.output_text?.length }, 'runDirect completed');
       return response;
@@ -1067,6 +1137,10 @@ export abstract class BaseAgent<
       max_output_tokens: options.maxOutputTokens,
       thinking: options.thinking,
       vendorOptions: options.vendorOptions,
+      prompt_cache: options.promptCache,
+      native_tools: options.nativeTools,
+      data_handling: options.dataHandling,
+      credential_context: { userId: this.userId, connectorRegistry: this._config.registry },
       skipContextLimitCheck: options.skipContextLimitCheck,
     };
 
@@ -1100,8 +1174,15 @@ export abstract class BaseAgent<
   ): void {
     if (!format) return;
     const caps = this.getProvider().getModelCapabilities(this.model);
-    const hasTools = (generateOptions.tools?.length ?? 0) > 0;
-    const strategy = resolveStructuredStrategy(format, caps, this.connector.vendor, hasTools);
+    const hasTools =
+      (generateOptions.tools?.length ?? 0) + (generateOptions.native_tools?.length ?? 0) > 0;
+    const strategy = resolveStructuredStrategy(
+      format,
+      caps,
+      this.connector.vendor,
+      hasTools,
+      this.getProvider().getAdvancedCapabilities?.(this.model),
+    );
     if (strategy === 'native') {
       generateOptions.response_format = toProviderResponseFormat(
         format,
@@ -1177,6 +1258,35 @@ export abstract class BaseAgent<
     target.usage.input_tokens += extra.usage.input_tokens ?? 0;
     target.usage.output_tokens += extra.usage.output_tokens ?? 0;
     target.usage.total_tokens += extra.usage.total_tokens ?? 0;
+    target.usage.cached_input_tokens =
+      (target.usage.cached_input_tokens ?? 0) + (extra.usage.cached_input_tokens ?? 0);
+    target.usage.cache_creation_input_tokens =
+      (target.usage.cache_creation_input_tokens ?? 0) +
+      (extra.usage.cache_creation_input_tokens ?? 0);
+    if (extra.usage.cache_creation_details) {
+      target.usage.cache_creation_details ??= {};
+      target.usage.cache_creation_details.short_ttl_input_tokens =
+        (target.usage.cache_creation_details.short_ttl_input_tokens ?? 0) +
+        (extra.usage.cache_creation_details.short_ttl_input_tokens ?? 0);
+      target.usage.cache_creation_details.extended_ttl_input_tokens =
+        (target.usage.cache_creation_details.extended_ttl_input_tokens ?? 0) +
+        (extra.usage.cache_creation_details.extended_ttl_input_tokens ?? 0);
+    }
+    if (extra.usage.output_tokens_details?.reasoning_tokens !== undefined) {
+      target.usage.output_tokens_details = {
+        reasoning_tokens:
+          (target.usage.output_tokens_details?.reasoning_tokens ?? 0) +
+          extra.usage.output_tokens_details.reasoning_tokens,
+      };
+    }
+    for (const [tool, count] of Object.entries(extra.usage.native_tool_calls ?? {})) {
+      target.usage.native_tool_calls ??= {};
+      const key = tool as keyof NonNullable<typeof target.usage.native_tool_calls>;
+      target.usage.native_tool_calls[key] =
+        (target.usage.native_tool_calls[key] ?? 0) + (count ?? 0);
+    }
+    if (extra.usage.processing_mode === 'batch') target.usage.processing_mode = 'batch';
+    target.usage.service_tier = extra.usage.service_tier ?? target.usage.service_tier;
   }
 
   // ===== Lifecycle Hooks =====

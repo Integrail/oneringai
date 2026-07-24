@@ -2,7 +2,7 @@
  * Google Gemini text provider (using new unified SDK)
  */
 
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, type BatchJob } from '@google/genai';
 import { BaseTextProvider } from '../base/BaseTextProvider.js';
 import { TextGenerateOptions, ModelCapabilities } from '../../../domain/interfaces/ITextProvider.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
@@ -13,6 +13,23 @@ import { GoogleStreamConverter } from './GoogleStreamConverter.js';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
 import { resolveModelCapabilities } from '../base/ModelCapabilityResolver.js';
 import { ProviderErrorMapper } from '../base/ProviderErrorMapper.js';
+import type { AdvancedTextCapabilities } from '../../../domain/interfaces/IAdvancedInference.js';
+import { getModelInfo } from '../../../domain/entities/Model.js';
+import type {
+  BatchHandle,
+  BatchSubmitOptions,
+  BatchTextRequest,
+  BatchTextResult,
+  IAsyncTextBatchProvider,
+} from '../../../domain/interfaces/IAdvancedInference.js';
+import {
+  ProviderAmbiguousOperationError,
+  ProviderCapabilityNotSupportedError,
+} from '../../../domain/errors/AIErrors.js';
+
+const GOOGLE_SERVER_TOOL_MODELS = /^gemini-(?:2\.5|3(?:\.|-|$))/;
+const GOOGLE_STRUCTURED_WITH_TOOLS_MODELS = /^gemini-3(?:\.|-|$)/;
+const GOOGLE_NON_TEXT_VARIANTS = /(?:image|live)/;
 
 export class GoogleTextProvider extends BaseTextProvider {
   readonly name = 'google';
@@ -26,6 +43,7 @@ export class GoogleTextProvider extends BaseTextProvider {
   private client: GoogleGenAI;
   private converter: GoogleConverter;
   private streamConverter: GoogleStreamConverter;
+  readonly batch: IAsyncTextBatchProvider<TextGenerateOptions, LLMResponse> = this;
 
   constructor(config: GoogleConfig) {
     super(config);
@@ -51,6 +69,7 @@ export class GoogleTextProvider extends BaseTextProvider {
    */
   async generate(options: TextGenerateOptions): Promise<LLMResponse> {
     options = this.applyContextLimitGuardrail(options);
+    options = await this.resolveAdvancedCredentials(options);
     return this.executeWithCircuitBreaker(async () => {
       try {
         // Convert our format → Google format
@@ -129,6 +148,7 @@ export class GoogleTextProvider extends BaseTextProvider {
    */
   async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent> {
     options = this.applyContextLimitGuardrail(options);
+    options = await this.resolveAdvancedCredentials(options);
     this.ensureObservabilityInitialized();
     try {
       // Convert our format → Google format
@@ -202,6 +222,212 @@ export class GoogleTextProvider extends BaseTextProvider {
       maxInputTokens: 1048576,
       maxOutputTokens: 65536,
     });
+  }
+
+  override getAdvancedCapabilities(model: string): AdvancedTextCapabilities {
+    const info = getModelInfo(model);
+    const supportsPromptCaching = info?.features.promptCaching === true;
+    const supportsBatch = info?.features.batchAPI === true;
+    const supportsStructuredOutput = info?.features.structuredOutput === true;
+    const nativeTools: AdvancedTextCapabilities['nativeTools'] =
+      info && GOOGLE_SERVER_TOOL_MODELS.test(model) && !GOOGLE_NON_TEXT_VARIANTS.test(model)
+        ? ['web_search', 'web_fetch', 'code_execution']
+        : [];
+    return {
+      promptCaching: {
+        mode: supportsPromptCaching ? 'implicit' : 'unsupported',
+        ttlModes: [],
+        reportsCacheUsage: supportsPromptCaching,
+      },
+      batch: {
+        supported: supportsBatch,
+        cancellable: true,
+        completionWindow: '24h',
+      },
+      structuredOutput: {
+        jsonObject: supportsStructuredOutput ? 'native' : 'prompt',
+        jsonSchema: supportsStructuredOutput ? 'native' : 'prompt',
+        nativeWithTools:
+          supportsStructuredOutput &&
+          GOOGLE_STRUCTURED_WITH_TOOLS_MODELS.test(model) &&
+          !GOOGLE_NON_TEXT_VARIANTS.test(model),
+      },
+      nativeTools,
+      nativeToolOptions: { remoteMcpApproval: false },
+      dataHandling: {
+        promptCaching: supportsPromptCaching ? 'provider_managed' : 'none',
+        batch: supportsBatch ? 'provider_retained' : 'none',
+        remoteMcp: 'none',
+      },
+    };
+  }
+
+  async submitBatch(
+    requests: Array<BatchTextRequest<TextGenerateOptions>>,
+    options?: BatchSubmitOptions,
+  ): Promise<BatchHandle> {
+    this.validateBatchRequests(requests);
+    for (const model of new Set(requests.map((request) => request.options.model))) {
+      if (!this.getAdvancedCapabilities(model).batch.supported) {
+        throw new ProviderCapabilityNotSupportedError(this.name, model, 'batch');
+      }
+    }
+    if (options?.completionWindow && options.completionWindow !== '24h') {
+      throw new ProviderCapabilityNotSupportedError(
+        this.name,
+        requests[0]!.options.model,
+        `batch_completion_window:${options.completionWindow}`,
+      );
+    }
+    if (options?.dataHandling?.allowBatchRetention !== true) {
+      throw new ProviderCapabilityNotSupportedError(
+        this.name,
+        requests[0]!.options.model,
+        'batch_blocked_by_data_policy',
+      );
+    }
+    const model = requests[0]!.options.model;
+    if (requests.some((request) => request.options.model !== model)) {
+      throw new Error('Google inline batch requires one model per batch');
+    }
+    const src = await Promise.all(
+      requests.map(async (request) => {
+        const normalized = this.applyContextLimitGuardrail(request.options);
+        const resolved = await this.resolveAdvancedCredentials(normalized);
+        const converted = await this.converter.convertRequest(
+          resolved,
+        );
+        return {
+          model,
+          contents: converted.contents,
+          config: {
+            systemInstruction: converted.systemInstruction,
+            tools: converted.tools,
+            toolConfig: converted.toolConfig,
+            ...converted.generationConfig,
+          },
+          metadata: { customId: request.customId },
+        };
+      }),
+    );
+    try {
+      const job = await this.client.batches.create({
+        model,
+        src,
+        config: {
+          ...(options?.metadata?.name ? { displayName: options.metadata.name } : {}),
+        },
+      });
+      return this.mapBatch(job, requests.length, options?.metadata);
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (status === undefined || status >= 500) {
+        throw new ProviderAmbiguousOperationError(
+          this.name,
+          'batch submission',
+          { customIds: requests.map((request) => request.customId), model },
+          error as Error,
+        );
+      }
+      throw ProviderErrorMapper.mapError(error, { providerName: this.name, model });
+    }
+  }
+
+  async getBatch(id: string): Promise<BatchHandle> {
+    return this.mapBatch(await this.client.batches.get({ name: id }));
+  }
+
+  async cancelBatch(id: string): Promise<BatchHandle> {
+    await this.client.batches.cancel({ name: id });
+    return this.getBatch(id);
+  }
+
+  async *getBatchResults(id: string): AsyncIterable<BatchTextResult<LLMResponse>> {
+    const job = await this.client.batches.get({ name: id });
+    const results = job.dest?.inlinedResponses;
+    if (!results) {
+      if (this.mapGoogleBatchState(job.state) === 'completed') return;
+      throw new Error(`Google batch ${id} has no inline results while ${job.state}`);
+    }
+    for (const [index, item] of results.entries()) {
+      const customId = item.metadata?.customId ?? String(index);
+      if (item.response) {
+        const response = this.converter.convertResponse(item.response);
+        response.usage.processing_mode = 'batch';
+        yield { customId, response, providerRequestId: item.response.responseId };
+      } else {
+        yield {
+          customId,
+          error: {
+            code: item.error?.code ? String(item.error.code) : undefined,
+            message: item.error?.message ?? 'Google batch item failed',
+            details: item.error,
+          },
+        };
+      }
+    }
+  }
+
+  private validateBatchRequests(requests: Array<BatchTextRequest<TextGenerateOptions>>): void {
+    if (requests.length === 0) throw new Error('Batch requires at least one request');
+    const ids = new Set<string>();
+    for (const request of requests) {
+      if (!request.customId || ids.has(request.customId)) {
+        throw new Error(`Batch customId must be non-empty and unique: ${request.customId}`);
+      }
+      ids.add(request.customId);
+    }
+  }
+
+  private mapGoogleBatchState(state?: string): BatchHandle['state'] {
+    switch (state) {
+      case 'JOB_STATE_QUEUED':
+      case 'JOB_STATE_PENDING':
+        return 'queued';
+      case 'JOB_STATE_RUNNING':
+      case 'JOB_STATE_UPDATING':
+      case 'JOB_STATE_PAUSED':
+        return 'in_progress';
+      case 'JOB_STATE_SUCCEEDED':
+      case 'JOB_STATE_PARTIALLY_SUCCEEDED':
+        return 'completed';
+      case 'JOB_STATE_CANCELLING':
+        return 'cancelling';
+      case 'JOB_STATE_CANCELLED':
+        return 'cancelled';
+      case 'JOB_STATE_EXPIRED':
+        return 'expired';
+      default:
+        return 'failed';
+    }
+  }
+
+  private mapBatch(
+    job: BatchJob,
+    total?: number,
+    metadata?: Record<string, string>,
+  ): BatchHandle {
+    const succeeded = Number(job.completionStats?.successfulCount ?? 0);
+    const failed = Number(job.completionStats?.failedCount ?? 0);
+    const incomplete = Number(job.completionStats?.incompleteCount ?? 0);
+    return {
+      id: job.name ?? '',
+      provider: this.name,
+      state: this.mapGoogleBatchState(job.state),
+      rawStatus: job.state,
+      ...(job.createTime ? { createdAt: new Date(job.createTime) } : {}),
+      ...(metadata ? { metadata } : {}),
+      ...((total !== undefined || job.completionStats)
+        ? {
+            requestCounts: {
+              total: total ?? succeeded + failed + Math.max(0, incomplete),
+              succeeded,
+              failed,
+              processing: Math.max(0, incomplete),
+            },
+          }
+        : {}),
+    };
   }
 
   /**

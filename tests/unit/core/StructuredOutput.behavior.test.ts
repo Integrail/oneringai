@@ -13,9 +13,11 @@ import { ContentType } from '@/domain/entities/Content.js';
 import { LLMResponse } from '@/domain/entities/Response.js';
 import { StructuredOutputError, type ResponseFormat } from '@/core/StructuredOutput.js';
 import type { ModelCapabilities, TextGenerateOptions } from '@/domain/interfaces/ITextProvider.js';
+import type { AdvancedTextCapabilities } from '@/domain/interfaces/IAdvancedInference.js';
 
 const mockGenerate = vi.fn();
 let mockCaps: ModelCapabilities;
+let mockAdvanced: AdvancedTextCapabilities;
 
 const mockProvider = {
   name: 'openai',
@@ -23,6 +25,7 @@ const mockProvider = {
   generate: mockGenerate,
   streamGenerate: vi.fn(),
   getModelCapabilities: vi.fn(() => mockCaps),
+  getAdvancedCapabilities: vi.fn(() => mockAdvanced),
   listModels: vi.fn(async () => []),
 };
 
@@ -72,6 +75,24 @@ function baseCaps(over: Partial<ModelCapabilities> = {}): ModelCapabilities {
   };
 }
 
+function advancedCaps(
+  over: Partial<AdvancedTextCapabilities> = {},
+): AdvancedTextCapabilities {
+  return {
+    promptCaching: { mode: 'unsupported', ttlModes: [], reportsCacheUsage: false },
+    batch: { supported: false, cancellable: false },
+    structuredOutput: {
+      jsonObject: 'native',
+      jsonSchema: 'native',
+      nativeWithTools: true,
+    },
+    nativeTools: ['web_search'],
+    nativeToolOptions: { remoteMcpApproval: false },
+    dataHandling: { promptCaching: 'none', batch: 'none', remoteMcp: 'none' },
+    ...over,
+  };
+}
+
 describe('Structured output — behavior (runDirect)', () => {
   let agent: Agent;
 
@@ -80,6 +101,7 @@ describe('Structured output — behavior (runDirect)', () => {
     Connector.clear();
     Connector.create({ name: 'c', vendor: Vendor.OpenAI, auth: { type: 'api_key', apiKey: 'k' } });
     mockCaps = baseCaps();
+    mockAdvanced = advancedCaps();
     agent = Agent.create({ connector: 'c', model: 'gpt-4.1' });
   });
 
@@ -91,9 +113,14 @@ describe('Structured output — behavior (runDirect)', () => {
   it('native path: passes response_format and attaches output_parsed', async () => {
     mockGenerate.mockResolvedValue(textResponse('{"name":"Jane"}'));
 
-    const res = await agent.runDirect('Extract the contact', { responseFormat: SCHEMA });
+    const res = await agent.runDirect('Extract the contact', {
+      responseFormat: SCHEMA,
+      nativeTools: [{ capability: 'web_search' }],
+      dataHandling: { allowProviderTools: true },
+    });
 
     expect(res.output_parsed).toEqual({ name: 'Jane' });
+    expect(res.structured_output_enforcement).toBe('native');
     const opts = mockGenerate.mock.calls[0][0] as TextGenerateOptions;
     expect(opts.response_format).toBeDefined();
     expect(opts.response_format?.type).toBe('json_schema');
@@ -105,28 +132,69 @@ describe('Structured output — behavior (runDirect)', () => {
     mockCaps = baseCaps({ supportsJSONSchema: false });
     mockGenerate.mockResolvedValue(textResponse('```json\n{"name":"Jane"}\n```'));
 
-    const res = await agent.runDirect('Extract the contact', { responseFormat: SCHEMA });
+    const res = await agent.runDirect('Extract the contact', {
+      responseFormat: SCHEMA,
+      nativeTools: [{ capability: 'web_search' }],
+      dataHandling: { allowProviderTools: true },
+    });
 
     expect(res.output_parsed).toEqual({ name: 'Jane' }); // permissive parse strips fences
+    expect(res.structured_output_enforcement).toBe('prompt');
     const opts = mockGenerate.mock.calls[0][0] as TextGenerateOptions;
     expect(opts.response_format).toBeUndefined();
     expect(opts.instructions ?? '').toContain('JSON Schema:');
   });
 
   it('parse failure triggers exactly one re-ask, then succeeds', async () => {
-    mockGenerate
-      .mockResolvedValueOnce(textResponse('not json at all'))
-      .mockResolvedValueOnce(textResponse('{"name":"Jane"}'));
+    const first = textResponse('not json at all');
+    first.usage = {
+      ...first.usage,
+      cached_input_tokens: 4,
+      cache_creation_input_tokens: 3,
+      cache_creation_details: { short_ttl_input_tokens: 3 },
+      output_tokens_details: { reasoning_tokens: 2 },
+      native_tool_calls: { web_search: 1 },
+      service_tier: 'standard',
+    };
+    const repaired = textResponse('{"name":"Jane"}');
+    repaired.usage = {
+      ...repaired.usage,
+      cached_input_tokens: 5,
+      cache_creation_input_tokens: 7,
+      cache_creation_details: {
+        short_ttl_input_tokens: 2,
+        extended_ttl_input_tokens: 5,
+      },
+      output_tokens_details: { reasoning_tokens: 3 },
+      native_tool_calls: { web_search: 2, code_execution: 1 },
+      service_tier: 'priority',
+    };
+    mockGenerate.mockResolvedValueOnce(first).mockResolvedValueOnce(repaired);
 
-    const res = await agent.runDirect('Extract the contact', { responseFormat: SCHEMA });
+    const res = await agent.runDirect('Extract the contact', {
+      responseFormat: SCHEMA,
+      nativeTools: [{ capability: 'web_search' }],
+      dataHandling: { allowProviderTools: true },
+    });
 
     expect(res.output_parsed).toEqual({ name: 'Jane' });
     expect(mockGenerate).toHaveBeenCalledTimes(2); // initial + 1 re-ask
+    expect(res.structured_output_enforcement).toBe('repair');
     // re-ask is tool-free
     const reask = mockGenerate.mock.calls[1][0] as TextGenerateOptions;
     expect(reask.tools).toBeUndefined();
+    expect(reask.native_tools).toBeUndefined();
     // usage accumulated across both calls
     expect(res.usage.total_tokens).toBe(30);
+    expect(res.usage.cached_input_tokens).toBe(9);
+    expect(res.usage.cache_creation_input_tokens).toBe(10);
+    expect(res.usage.cache_creation_details).toEqual({
+      short_ttl_input_tokens: 5,
+      extended_ttl_input_tokens: 5,
+    });
+    expect(res.usage.output_tokens_details?.reasoning_tokens).toBe(5);
+    expect(res.usage.native_tool_calls).toEqual({ web_search: 3, code_execution: 1 });
+    expect(res.usage.service_tier).toBe('priority');
   });
 
   it('throws StructuredOutputError when JSON never parses (bounded re-ask)', async () => {
@@ -148,6 +216,7 @@ describe('Structured output — behavior (run)', () => {
     Connector.clear();
     Connector.create({ name: 'c', vendor: Vendor.OpenAI, auth: { type: 'api_key', apiKey: 'k' } });
     mockCaps = baseCaps();
+    mockAdvanced = advancedCaps();
     agent = Agent.create({ connector: 'c', model: 'gpt-4.1' });
   });
 
@@ -162,6 +231,7 @@ describe('Structured output — behavior (run)', () => {
     const res = await agent.run('Extract the contact', { responseFormat: SCHEMA });
 
     expect(res.output_parsed).toEqual({ name: 'Jane' });
+    expect(res.structured_output_enforcement).toBe('native');
     expect(mockGenerate).toHaveBeenCalledTimes(1); // no reformat pass needed
     const opts = mockGenerate.mock.calls[0][0] as TextGenerateOptions;
     expect(opts.response_format?.type).toBe('json_schema');
@@ -180,6 +250,35 @@ describe('Structured output — behavior (run)', () => {
     expect(mockGenerate).toHaveBeenCalledTimes(2);
     const reformat = mockGenerate.mock.calls[1][0] as TextGenerateOptions;
     expect(reformat.tools).toBeUndefined(); // reformat pass is tool-free
+  });
+
+  it('forces a constrained tool-free pass when native tools cannot compose with schema output', async () => {
+    mockAdvanced = advancedCaps({
+      structuredOutput: {
+        jsonObject: 'native',
+        jsonSchema: 'native',
+        nativeWithTools: false,
+      },
+    });
+    mockGenerate
+      .mockResolvedValueOnce(textResponse('{"name":"Accidental JSON"}'))
+      .mockResolvedValueOnce(textResponse('{"name":"Jane"}'));
+
+    const res = await agent.run('Extract the contact', {
+      responseFormat: SCHEMA,
+      nativeTools: [{ capability: 'web_search' }],
+      dataHandling: { allowProviderTools: true },
+    });
+
+    expect(mockGenerate).toHaveBeenCalledTimes(2);
+    expect((mockGenerate.mock.calls[0][0] as TextGenerateOptions).response_format).toBeUndefined();
+    expect((mockGenerate.mock.calls[1][0] as TextGenerateOptions).native_tools).toBeUndefined();
+    expect(res.output_parsed).toEqual({ name: 'Jane' });
+    expect(res.structured_output_enforcement).toBe('prompt');
+    expect(res.usage.total_tokens).toBe(30);
+    expect(agent.getMetrics()).toEqual(
+      expect.objectContaining({ inputTokens: 20, outputTokens: 10, totalTokens: 30 }),
+    );
   });
 
   it('reformat is written back to conversation history (context matches the returned JSON)', async () => {

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Advanced inference contracts.** Provider-neutral prompt caching, executable model/provider
+  capability discovery, detailed cache/reasoning/native-tool usage, and host data-handling policy
+  are available on normal, direct, and streaming Agent calls. `TokenUsage` is exported for hosts
+  that persist or aggregate the detailed telemetry contract directly.
+- **Asynchronous text batches for Anthropic, OpenAI, and Google.** One lifecycle covers submit,
+  status, cancellation, and correlated partial results. Ambiguous submissions throw
+  `ProviderAmbiguousOperationError`; SDK retries are disabled at the non-idempotent creation
+  boundary so submissions are never automatically repeated.
+- **Provider-hosted tools.** Typed web search/fetch, code execution, file search, and remote MCP
+  requests are mapped per provider and kept distinct from client-executed `ToolFunction`s.
+
 - **Five new connector vendor templates (50 vendors total, 54 logos).** Each ships a template, a `Services.ts` service definition (auto-detection + generic `<connector>_api` tool), and a logo:
   - **Cal.com** (`cal-com`, productivity) — API v1 key auth via the `apiKey` query parameter (base `https://api.cal.com/v1`); notes cover switching to v2 (`cal-api-version` header). Official simple-icons logo.
   - **Calendly** (`calendly`, productivity) — Personal Access Token (Bearer) **and** OAuth 2.0 authorization-code with PKCE (`auth.calendly.com`, auto-refresh). Official simple-icons logo.
@@ -16,6 +27,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **EmailBison** (`emailbison`, email) — cold-email sequencing; Bearer token. Per-instance deployment, so `baseURL` **must** be overridden with your instance domain (e.g. `https://acme.emailbison.com/api`).
   - **Clay** (`clay`, other) — best-effort Bearer template for HTTP calls + per-table webhook ingestion; Clay is MCP-first, so prefer configuring it via `MCPRegistry` for richer agentic use (documented in the template `notes`).
   - Functionality is delivered through the generic authenticated `<connector>_api` tool (same model as HubSpot and other API-key vendors) — no service-specific tool factories added. HeyReach/EmailBison/Clay use branded placeholder logos (no official simple-icon exists).
+
+### Changed
+
+- **Anthropic structured output is model-gated and native where supported.** Current Claude 4.5+
+  families use `output_config.format`; older models retain the safe prompt/repair fallback. Returned
+  responses report whether structured output was enforced natively, by prompt, or by repair.
+- **Token cost estimation supports mixed cached input and batch pricing.** Cache-hit, cache-write,
+  reasoning, service-tier, and provider-native tool counters are retained through response and Agent
+  metrics. Anthropic input usage is normalized to total processed input, and short/extended cache
+  writes use their provider pricing multipliers.
+
+### Fixed
+
+- **Ordinary final Agent responses now contribute to execution metrics.** Previously the no-tool
+  exit path skipped iteration accounting, causing successful one-turn runs to report zero tokens;
+  normal, tool, suspension, and max-iteration wrap-up calls are now consistently recorded.
+- **Advanced inference edge cases.** Scoped connector registries now govern remote MCP credentials;
+  OpenAI batch output and error files are both consumed; structured-output repair calls contribute
+  to metrics; max-iteration wrap-ups retain per-run inference policy; and provider capability
+  checks are model- and tool-composition-aware. Capability, policy, URL, and schema checks now run
+  before remote-MCP token resolution or a paid batch boundary; low-level/batch structured-output
+  requests use the same native-vs-prompt normalization as Agent calls.
+- **Batch and MCP safety.** Agent batch surfaces now preserve `userId` and scoped connector identity;
+  Anthropic remote-MCP batches use the beta batch header correctly; OpenAI no longer advertises an
+  unimplemented host-approval continuation and normalizes executable MCP calls to no-approval mode.
+- **Advanced inference documentation now lives entirely in `README.md` and `USER_GUIDE.md`.** Both
+  cover executable capability discovery, prompt-cache semantics, asynchronous batch recovery,
+  provider-hosted tool security, data-handling policy, detailed usage/cost telemetry, structured
+  output interaction, troubleshooting, and production checklists.
 
 ## [0.10.3] — 2026-07-06
 

@@ -38,7 +38,10 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
    */
   convertRequest(options: TextGenerateOptions): Anthropic.MessageCreateParams {
     const messages = this.convertMessages(options.input);
-    const tools = this.convertAnthropicTools(options.tools);
+    const tools = [
+      ...(this.convertAnthropicTools(options.tools) ?? []),
+      ...this.convertNativeTools(options),
+    ];
 
     // Anthropic's Messages API REQUIRES `max_tokens`. When the caller didn't
     // set one, use the model's capability max (from the registry) so the
@@ -80,8 +83,36 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
     }
 
     // Add tools if provided
-    if (tools && tools.length > 0) {
-      params.tools = tools;
+    if (tools.length > 0) {
+      params.tools = tools as Anthropic.MessageCreateParams['tools'];
+    }
+
+    if (options.prompt_cache?.mode === 'auto') {
+      (params as unknown as Record<string, unknown>).cache_control = {
+        type: 'ephemeral',
+        ...(options.prompt_cache.ttl === 'extended' ? { ttl: '1h' } : {}),
+      };
+    }
+
+    const mcpServers = (options.native_tools ?? [])
+      .filter((tool) => tool.capability === 'remote_mcp')
+      .map((tool) => {
+        const resolvedToken = (
+          tool.server as typeof tool.server & { resolvedAuthorizationToken?: string }
+        ).resolvedAuthorizationToken;
+        return {
+          type: 'url',
+          name: tool.server.name,
+          url: tool.server.url,
+          ...(resolvedToken ? { authorization_token: resolvedToken } : {}),
+          ...(tool.server.allowedTools
+            ? { tool_configuration: { allowed_tools: tool.server.allowedTools } }
+            : {}),
+        };
+      });
+    if (mcpServers.length > 0) {
+      (params as unknown as Record<string, unknown>).mcp_servers = mcpServers;
+      (params as unknown as Record<string, unknown>).betas = ['mcp-client-2025-11-20'];
     }
 
     // Some models (e.g. claude-opus-4-7) deprecate the `temperature` parameter entirely.
@@ -107,15 +138,18 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
       params.temperature = options.temperature;
     }
 
-    // NOTE: structured output (`options.response_format`) is intentionally NOT
-    // mapped to Anthropic's native `output_config.format` here. That native path
-    // only works on a subset of Claude models, but the registry's
-    // `features.structuredOutput` flag (which drives model capabilities) is set
-    // `true` for older models too (e.g. claude-3-7-sonnet) that would 400 on it.
-    // Without a precise per-model signal, `AnthropicTextProvider` reports
-    // `supportsJSONSchema: false`, so `resolveStructuredStrategy` routes Anthropic
-    // to the vendor-agnostic prompt fallback (see StructuredOutput.ts). Re-enable
-    // native here only alongside an accurate capability gate.
+    if (options.response_format?.type === 'json_schema') {
+      const jsonSchema = options.response_format.json_schema;
+      const schema =
+        jsonSchema && typeof jsonSchema === 'object' && 'schema' in jsonSchema
+          ? jsonSchema.schema
+          : jsonSchema;
+      if (schema && typeof schema === 'object') {
+        params.output_config = {
+          format: { type: 'json_schema', schema: schema as Record<string, unknown> },
+        };
+      }
+    }
 
     return params;
   }
@@ -124,6 +158,18 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
    * Convert Anthropic response -> our LLMResponse format
    */
   convertResponse(response: Anthropic.Message): LLMResponse {
+    const cacheReadInputTokens = response.usage.cache_read_input_tokens ?? 0;
+    const cacheCreationInputTokens = response.usage.cache_creation_input_tokens ?? 0;
+    // Anthropic reports mutually exclusive input buckets. Normalize the shared
+    // input_tokens field to the total processed input so it has the same
+    // meaning as OpenAI/Google and can be priced without discarding cache hits.
+    const totalInputTokens =
+      response.usage.input_tokens + cacheReadInputTokens + cacheCreationInputTokens;
+    const reasoningTokens = (
+      response.usage as Anthropic.Usage & {
+        output_tokens_details?: { thinking_tokens?: number } | null;
+      }
+    ).output_tokens_details?.thinking_tokens;
     const built = this.buildResponse({
       rawId: response.id,
       model: response.model,
@@ -131,8 +177,32 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
       content: this.convertProviderContent(response.content),
       messageId: response.id,
       usage: {
-        inputTokens: response.usage.input_tokens,
+        inputTokens: totalInputTokens,
         outputTokens: response.usage.output_tokens,
+        cachedInputTokens: response.usage.cache_read_input_tokens || undefined,
+        cacheCreationInputTokens: response.usage.cache_creation_input_tokens || undefined,
+        cacheCreationDetails:
+          response.usage.cache_creation &&
+          (response.usage.cache_creation.ephemeral_5m_input_tokens > 0 ||
+            response.usage.cache_creation.ephemeral_1h_input_tokens > 0)
+          ? {
+              shortTtlInputTokens:
+                response.usage.cache_creation.ephemeral_5m_input_tokens,
+              extendedTtlInputTokens:
+                response.usage.cache_creation.ephemeral_1h_input_tokens,
+            }
+          : undefined,
+        reasoningTokens,
+        nativeToolCalls:
+          response.usage.server_tool_use &&
+          (response.usage.server_tool_use.web_search_requests > 0 ||
+            response.usage.server_tool_use.web_fetch_requests > 0)
+          ? {
+              web_search: response.usage.server_tool_use.web_search_requests ?? 0,
+              web_fetch: response.usage.server_tool_use.web_fetch_requests ?? 0,
+            }
+          : undefined,
+        serviceTier: response.usage.service_tier ?? undefined,
       },
     });
 
@@ -152,6 +222,8 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
         explanation: rawDetails.explanation ?? null,
       };
     }
+    const nativeToolEvents = this.extractNativeToolEvents(response.content);
+    if (nativeToolEvents.length > 0) built.native_tool_events = nativeToolEvents;
 
     return built;
   }
@@ -181,7 +253,11 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
 
     for (const block of blocks as Anthropic.ContentBlock[]) {
       if (block.type === 'text') {
-        content.push(this.createText(block.text));
+        const text = this.createText(block.text);
+        if ('citations' in block && Array.isArray(block.citations)) {
+          (text as Content & { annotations?: unknown[] }).annotations = block.citations;
+        }
+        content.push(text);
       } else if (block.type === 'tool_use') {
         content.push(this.createToolUse(block.id, block.name, block.input as Record<string, unknown>));
       } else if (block.type === 'thinking') {
@@ -473,5 +549,78 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
 
     const standardTools = convertToolsToStandardFormat(tools);
     return standardTools.map((tool) => this.transformTool(tool));
+  }
+
+  private convertNativeTools(options: TextGenerateOptions): unknown[] {
+    return (options.native_tools ?? []).map((tool) => {
+      const extra = tool.options ?? {};
+      switch (tool.capability) {
+        case 'web_search':
+          return { ...extra, type: 'web_search_20260209', name: 'web_search' };
+        case 'web_fetch':
+          return { ...extra, type: 'web_fetch_20260309', name: 'web_fetch' };
+        case 'code_execution':
+          return { ...extra, type: 'code_execution_20260120', name: 'code_execution' };
+        case 'remote_mcp':
+          return {
+            ...extra,
+            type: 'mcp_toolset',
+            mcp_server_name: tool.server.name,
+            ...(tool.server.allowedTools
+              ? {
+                  default_config: { enabled: false },
+                  configs: Object.fromEntries(
+                    tool.server.allowedTools.map((name) => [name, { enabled: true }]),
+                  ),
+                }
+              : {}),
+          };
+        default:
+          return extra;
+      }
+    });
+  }
+
+  private extractNativeToolEvents(
+    blocks: Anthropic.ContentBlock[],
+  ): NonNullable<LLMResponse['native_tool_events']> {
+    const events: NonNullable<LLMResponse['native_tool_events']> = [];
+    for (const block of blocks as unknown as Array<Record<string, unknown>>) {
+      const type = String(block.type ?? '');
+      const capability = type.includes('web_search')
+        ? 'web_search'
+        : type.includes('web_fetch')
+          ? 'web_fetch'
+          : type.includes('code_execution')
+            ? 'code_execution'
+            : type.includes('mcp_') || type === 'server_tool_use' && block.name === 'mcp'
+              ? 'remote_mcp'
+              : type === 'server_tool_use' && typeof block.name === 'string'
+                ? block.name
+                : undefined;
+      if (!capability) continue;
+      const rawError = block.error ?? (block.is_error ? block.content : undefined);
+      events.push({
+        capability,
+        ...(typeof block.id === 'string'
+          ? { id: block.id }
+          : typeof block.tool_use_id === 'string'
+            ? { id: block.tool_use_id }
+            : {}),
+        status: rawError ? 'failed' : type.endsWith('_result') ? 'completed' : 'in_progress',
+        ...(rawError
+          ? {
+              error: {
+                message:
+                  typeof rawError === 'object' && rawError && 'message' in rawError
+                    ? String((rawError as { message?: unknown }).message)
+                    : String(rawError),
+                details: rawError,
+              },
+            }
+          : {}),
+      });
+    }
+    return events;
   }
 }

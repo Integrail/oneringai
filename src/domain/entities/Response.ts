@@ -17,6 +17,25 @@ export interface TokenUsage {
   output_tokens_details?: {
     reasoning_tokens: number;
   };
+  /** Input tokens served from a provider prompt/context cache. */
+  cached_input_tokens?: number;
+  /** Input tokens written into a provider prompt/context cache. */
+  cache_creation_input_tokens?: number;
+  cache_creation_details?: {
+    short_ttl_input_tokens?: number;
+    extended_ttl_input_tokens?: number;
+  };
+  /** Provider-hosted tool usage that may be billed separately. */
+  native_tool_calls?: Record<string, number | undefined>;
+  processing_mode?: 'interactive' | 'batch';
+  service_tier?: string;
+}
+
+export interface NativeToolEvent {
+  capability: string;
+  id?: string;
+  status?: string;
+  error?: { code?: string; message: string; details?: unknown };
 }
 
 /**
@@ -66,6 +85,10 @@ export interface LLMResponse {
     message: string;
   };
   metadata?: Record<string, string>;
+  /** How a requested structured response was enforced. */
+  structured_output_enforcement?: 'native' | 'prompt' | 'repair';
+  /** Provider-hosted tool lifecycle/error details, when the provider returns them. */
+  native_tool_events?: NativeToolEvent[];
   /** Raw provider stop reason (e.g. 'end_turn', 'max_tokens', 'refusal'), when known. */
   stop_reason?: string;
   /**

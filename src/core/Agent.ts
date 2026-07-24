@@ -50,6 +50,11 @@ import {
   toProviderResponseFormat,
   buildStructuredInstructionSuffix,
 } from './StructuredOutput.js';
+import type {
+  DataHandlingPolicy,
+  NativeToolRequest,
+  PromptCachePolicy,
+} from '../domain/interfaces/IAdvancedInference.js';
 
 /**
  * Session configuration for Agent (same as BaseSessionConfig)
@@ -80,6 +85,13 @@ export interface AgentConfig extends BaseAgentConfig {
 
   /** Vendor-specific options (e.g., Google's thinkingLevel: 'low' | 'high') */
   vendorOptions?: Record<string, unknown>;
+
+  /** Provider-neutral prompt caching policy. */
+  promptCache?: PromptCachePolicy;
+
+  /** Provider-hosted tools, separate from client-executed ToolFunctions. */
+  nativeTools?: NativeToolRequest[];
+  dataHandling?: DataHandlingPolicy;
 
   /**
    * Optional unified context management.
@@ -156,6 +168,13 @@ export interface RunOptions {
 
   /** Vendor-specific options */
   vendorOptions?: Record<string, unknown>;
+
+  /** Per-run override for provider prompt caching. */
+  promptCache?: PromptCachePolicy;
+
+  /** Per-run override for provider-hosted tools. */
+  nativeTools?: NativeToolRequest[];
+  dataHandling?: DataHandlingPolicy;
 
   /**
    * Vendor-agnostic structured (JSON) output. When set, the final answer is
@@ -673,20 +692,24 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     response: AgentResponse,
     toolCalls: ToolCall[],
     toolResults: ToolResult[],
-    prepared: { input: InputItem[] }
+    prepared: { input: InputItem[] },
+    requestOptions?: TextGenerateOptions,
   ): void {
     if (!this.executionContext) return;
 
-    // Store iteration record
-    this.executionContext.addIteration({
-      iteration,
-      request: {
+    const { credential_context: _credentialContext, ...recordedRequest } =
+      requestOptions ?? {
         model: this.model,
         input: prepared.input,
         instructions: this._config.instructions,
         tools: this.getEnabledToolDefinitions(),
-        temperature: this._config.temperature,
-      },
+        temperature: this._runOptions?.temperature ?? this._config.temperature,
+      };
+
+    // Store iteration record
+    this.executionContext.addIteration({
+      iteration,
+      request: { ...recordedRequest, input: prepared.input },
       response,
       toolCalls,
       toolResults,
@@ -700,7 +723,32 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       inputTokens: this.executionContext.metrics.inputTokens + (response.usage?.input_tokens || 0),
       outputTokens: this.executionContext.metrics.outputTokens + (response.usage?.output_tokens || 0),
       totalTokens: this.executionContext.metrics.totalTokens + (response.usage?.total_tokens || 0),
+      cachedInputTokens:
+        (this.executionContext.metrics.cachedInputTokens ?? 0) +
+        (response.usage?.cached_input_tokens ?? 0),
+      cacheCreationInputTokens:
+        (this.executionContext.metrics.cacheCreationInputTokens ?? 0) +
+        (response.usage?.cache_creation_input_tokens ?? 0),
+      reasoningTokens:
+        (this.executionContext.metrics.reasoningTokens ?? 0) +
+        (response.usage?.output_tokens_details?.reasoning_tokens ?? 0),
+      nativeToolCalls: this.mergeNativeToolMetrics(
+        this.executionContext.metrics.nativeToolCalls ?? {},
+        response.usage?.native_tool_calls,
+      ),
     });
+  }
+
+  private mergeNativeToolMetrics(
+    current: Record<string, number>,
+    next?: Record<string, number | undefined>,
+  ): Record<string, number> {
+    if (!next) return current;
+    const merged = { ...current };
+    for (const [name, count] of Object.entries(next)) {
+      merged[name] = (merged[name] ?? 0) + (count ?? 0);
+    }
+    return merged;
   }
 
   /**
@@ -841,6 +889,36 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       if (options?.responseFormat) {
         const format = options.responseFormat;
         const beforeText = finalResponse.output_text;
+        const hasTools =
+          this.getEnabledToolDefinitions().length +
+            ((this._runOptions?.nativeTools ?? this._config.nativeTools)?.length ?? 0) >
+          0;
+        const strategy = resolveStructuredStrategy(
+          format,
+          this._provider.getModelCapabilities(this.model),
+          this.connector.vendor,
+          hasTools,
+          this._provider.getAdvancedCapabilities?.(this.model),
+        );
+        let beforeRepair = finalResponse.output_text;
+        let enforcement: 'native' | 'prompt' | 'repair' = strategy;
+
+        // A prompt fallback cannot constrain the tool-producing turn. Always
+        // run one explicitly constrained, tool-free formatting pass instead of
+        // accepting JSON that happened to parse by chance.
+        if (strategy === 'prompt' && hasTools) {
+          const constrained = await this._generateStructuredToolFree(
+            'Reformat the following answer as the final response. Preserve its meaning and ' +
+              'return only the requested JSON value.\n\n' +
+              (finalResponse.output_text ?? ''),
+            format,
+          );
+          finalResponse.output = constrained.output;
+          finalResponse.output_text = constrained.output_text;
+          this.mergeStructuredUsage(finalResponse, constrained);
+          beforeRepair = constrained.output_text;
+          enforcement = 'prompt';
+        }
         await this.coerceStructuredOutput(finalResponse, format, (input) =>
           this._generateStructuredToolFree(input, format),
         );
@@ -850,6 +928,8 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         if (finalResponse.output_text !== beforeText) {
           this._agentContext.replaceLastAssistantResponse(finalResponse.output);
         }
+        if (finalResponse.output_text !== beforeRepair) enforcement = 'repair';
+        finalResponse.structured_output_enforcement = enforcement;
       }
 
       await this._finalizeExecution(executionId, startTime, finalResponse, 'run');
@@ -963,7 +1043,8 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       );
 
       // Generate LLM response
-      const response = await this.generateWithHooks(prepared.input, iteration, executionId);
+      const generated = await this.generateWithHooks(prepared.input, iteration, executionId);
+      const response = generated.response;
 
       if (!response || !response.output) {
         this._logger.warn({ executionId, iteration }, 'Empty or malformed response from LLM');
@@ -1031,6 +1112,15 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         // Accept the response
         emptyRetryCount = 0;
         this._agentContext.addAssistantResponse(response.output);
+        this._recordIterationMetrics(
+          iteration,
+          iterationStartTime,
+          response,
+          [],
+          [],
+          prepared,
+          generated.options,
+        );
         this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
         finalResponse = response;
         break;
@@ -1061,6 +1151,19 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       // Add tool results to AgentContext
       this._agentContext.addToolResults(toolResults);
 
+      // The tool-producing LLM call is a completed iteration even if a tool
+      // subsequently suspends the run.
+      this._recordIterationMetrics(
+        iteration,
+        iterationStartTime,
+        response,
+        toolCalls,
+        toolResults,
+        prepared,
+        generated.options,
+      );
+      this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
+
       // If a tool signaled suspension, do final wrap-up and return
       if (suspendSignal) {
         this._logger.info(
@@ -1070,15 +1173,34 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
         // Final LLM call WITHOUT tools (mirrors max-iterations wrap-up)
         const suspendPrepared = await this._agentContext.prepare();
-        const suspendResponse = await this._provider.generate({
+        const suspendStartTime = Date.now();
+        const suspendOptions: TextGenerateOptions = {
           model: this.model,
           input: suspendPrepared.input,
           instructions: this._config.instructions,
           tools: [], // No tools — force text-only wrap-up
-          temperature: this._config.temperature,
-          vendorOptions: this._config.vendorOptions,
-        });
+          temperature: this._runOptions?.temperature ?? this._config.temperature,
+          thinking: this._runOptions?.thinking ?? this._config.thinking,
+          vendorOptions: this._runOptions?.vendorOptions
+            ? { ...this._config.vendorOptions, ...this._runOptions.vendorOptions }
+            : this._config.vendorOptions,
+          prompt_cache: this._runOptions?.promptCache ?? this._config.promptCache,
+          data_handling: this._runOptions?.dataHandling ?? this._config.dataHandling,
+          credential_context: { userId: this.userId, connectorRegistry: this._config.registry },
+          skipContextLimitCheck: true,
+        };
+        this._applyInlineResponseFormat(suspendOptions);
+        const suspendResponse = await this._provider.generate(suspendOptions);
         this._agentContext.addAssistantResponse(suspendResponse.output);
+        this._recordIterationMetrics(
+          iteration + 1,
+          suspendStartTime,
+          suspendResponse,
+          [],
+          [],
+          suspendPrepared,
+          suspendOptions,
+        );
 
         // Generate session ID if not already set
         const sessionId = this._agentContext.sessionId ?? `suspended-${randomUUID()}`;
@@ -1128,12 +1250,6 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         break;
       }
 
-      // Record iteration metrics
-      this._recordIterationMetrics(iteration, iterationStartTime, response, toolCalls, toolResults, prepared);
-
-      // Emit iteration complete
-      this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
-
       iteration++;
     }
 
@@ -1147,17 +1263,36 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
       // Prepare context and generate final response WITHOUT tools
       const prepared = await this._agentContext.prepare();
-      const wrapUpResponse = await this._provider.generate({
+      const wrapUpStartTime = Date.now();
+      const wrapUpOptions: TextGenerateOptions = {
         model: this.model,
         input: prepared.input,
         instructions: this._config.instructions,
         tools: [], // No tools - force text-only response
-        temperature: this._config.temperature,
-        vendorOptions: this._config.vendorOptions,
-      });
+        temperature: this._runOptions?.temperature ?? this._config.temperature,
+        thinking: this._runOptions?.thinking ?? this._config.thinking,
+        vendorOptions: this._runOptions?.vendorOptions
+          ? { ...this._config.vendorOptions, ...this._runOptions.vendorOptions }
+          : this._config.vendorOptions,
+        prompt_cache: this._runOptions?.promptCache ?? this._config.promptCache,
+        data_handling: this._runOptions?.dataHandling ?? this._config.dataHandling,
+        credential_context: { userId: this.userId, connectorRegistry: this._config.registry },
+        skipContextLimitCheck: true,
+      };
+      this._applyInlineResponseFormat(wrapUpOptions);
+      const wrapUpResponse = await this._provider.generate(wrapUpOptions);
 
       // Add the wrap-up response to context
       this._agentContext.addAssistantResponse(wrapUpResponse.output);
+      this._recordIterationMetrics(
+        iteration,
+        wrapUpStartTime,
+        wrapUpResponse,
+        [],
+        [],
+        prepared,
+        wrapUpOptions,
+      );
 
       // Emit event for max iterations reached
       this.emit('execution:maxIterations', {
@@ -1322,10 +1457,19 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     // Warn loudly rather than silently returning prose.
     if (options?.responseFormat) {
       const caps = this._provider.getModelCapabilities(this.model);
-      const hasTools = this.getEnabledToolDefinitions().length > 0;
+      const hasTools =
+        this.getEnabledToolDefinitions().length +
+          ((options.nativeTools ?? this._config.nativeTools)?.length ?? 0) >
+        0;
       if (
         hasTools &&
-        resolveStructuredStrategy(options.responseFormat, caps, this.connector.vendor, hasTools) === 'prompt'
+        resolveStructuredStrategy(
+          options.responseFormat,
+          caps,
+          this.connector.vendor,
+          hasTools,
+          this._provider.getAdvancedCapabilities?.(this.model),
+        ) === 'prompt'
       ) {
         this._logger.warn(
           { model: this.model, vendor: this.connector.vendor },
@@ -1656,6 +1800,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
           vendorOptions: this._runOptions?.vendorOptions
             ? { ...this._config.vendorOptions, ...this._runOptions.vendorOptions }
             : this._config.vendorOptions,
+          prompt_cache: this._runOptions?.promptCache ?? this._config.promptCache,
+          data_handling: this._runOptions?.dataHandling ?? this._config.dataHandling,
+          credential_context: { userId: this.userId, connectorRegistry: this._config.registry },
           skipContextLimitCheck: true,
         };
         this._applyInlineResponseFormat(wrapUpOptions);
@@ -1745,8 +1892,15 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     if (!format) return;
 
     const caps = this._provider.getModelCapabilities(this.model);
-    const hasTools = (generateOptions.tools?.length ?? 0) > 0;
-    const strategy = resolveStructuredStrategy(format, caps, this.connector.vendor, hasTools);
+    const hasTools =
+      (generateOptions.tools?.length ?? 0) + (generateOptions.native_tools?.length ?? 0) > 0;
+    const strategy = resolveStructuredStrategy(
+      format,
+      caps,
+      this.connector.vendor,
+      hasTools,
+      this._provider.getAdvancedCapabilities?.(this.model),
+    );
 
     if (strategy === 'native') {
       generateOptions.response_format = toProviderResponseFormat(
@@ -1770,7 +1924,13 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     format: ResponseFormat,
   ): Promise<AgentResponse> {
     const caps = this._provider.getModelCapabilities(this.model);
-    const strategy = resolveStructuredStrategy(format, caps, this.connector.vendor, false);
+    const strategy = resolveStructuredStrategy(
+      format,
+      caps,
+      this.connector.vendor,
+      false,
+      this._provider.getAdvancedCapabilities?.(this.model),
+    );
     const baseInstructions = this._config.instructions ?? '';
 
     const generateOptions: TextGenerateOptions = {
@@ -1785,6 +1945,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       vendorOptions: this._runOptions?.vendorOptions
         ? { ...this._config.vendorOptions, ...this._runOptions.vendorOptions }
         : this._config.vendorOptions,
+      prompt_cache: this._runOptions?.promptCache ?? this._config.promptCache,
+      data_handling: this._runOptions?.dataHandling ?? this._config.dataHandling,
+      credential_context: { userId: this.userId, connectorRegistry: this._config.registry },
       skipContextLimitCheck: true,
     };
     if (strategy === 'native') {
@@ -1793,7 +1956,37 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       ) as TextGenerateOptions['response_format'];
     }
 
-    return this._provider.generate(generateOptions);
+    const startedAt = Date.now();
+    const response = await this._provider.generate(generateOptions);
+    this._recordAuxiliaryLLMMetrics(response, Date.now() - startedAt);
+    return response;
+  }
+
+  /** Account for structured-output formatting/repair calls outside the main loop. */
+  private _recordAuxiliaryLLMMetrics(response: AgentResponse, duration: number): void {
+    if (!this.executionContext) return;
+    this.executionContext.updateMetrics({
+      llmDuration: this.executionContext.metrics.llmDuration + duration,
+      inputTokens:
+        this.executionContext.metrics.inputTokens + (response.usage?.input_tokens ?? 0),
+      outputTokens:
+        this.executionContext.metrics.outputTokens + (response.usage?.output_tokens ?? 0),
+      totalTokens:
+        this.executionContext.metrics.totalTokens + (response.usage?.total_tokens ?? 0),
+      cachedInputTokens:
+        (this.executionContext.metrics.cachedInputTokens ?? 0) +
+        (response.usage?.cached_input_tokens ?? 0),
+      cacheCreationInputTokens:
+        (this.executionContext.metrics.cacheCreationInputTokens ?? 0) +
+        (response.usage?.cache_creation_input_tokens ?? 0),
+      reasoningTokens:
+        (this.executionContext.metrics.reasoningTokens ?? 0) +
+        (response.usage?.output_tokens_details?.reasoning_tokens ?? 0),
+      nativeToolCalls: this.mergeNativeToolMetrics(
+        this.executionContext.metrics.nativeToolCalls ?? {},
+        response.usage?.native_tool_calls,
+      ),
+    });
   }
 
   // ===== LLM Generation with Hooks =====
@@ -1805,7 +1998,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     input: InputItem[],
     iteration: number,
     executionId: string
-  ): Promise<AgentResponse> {
+  ): Promise<{ response: AgentResponse; options: TextGenerateOptions }> {
     const llmStartTime = Date.now();
 
     // Prepare options (per-call RunOptions override agent-level config)
@@ -1821,6 +2014,10 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       vendorOptions: ro?.vendorOptions
         ? { ...this._config.vendorOptions, ...ro.vendorOptions }
         : this._config.vendorOptions,
+      prompt_cache: ro?.promptCache ?? this._config.promptCache,
+      native_tools: ro?.nativeTools ?? this._config.nativeTools,
+      data_handling: ro?.dataHandling ?? this._config.dataHandling,
+      credential_context: { userId: this.userId, connectorRegistry: this._config.registry },
       // Context is already managed by AgentContextNextGen.prepare() — skip provider-level check
       skipContextLimitCheck: true,
     };
@@ -1886,7 +2083,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         duration: llmDuration,
       }, {});
 
-      return response;
+      return { response, options: generateOptions };
     } catch (error) {
       // Emit LLM error
       this.emit('llm:error', {
@@ -1925,6 +2122,10 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       vendorOptions: sro?.vendorOptions
         ? { ...this._config.vendorOptions, ...sro.vendorOptions }
         : this._config.vendorOptions,
+      prompt_cache: sro?.promptCache ?? this._config.promptCache,
+      native_tools: sro?.nativeTools ?? this._config.nativeTools,
+      data_handling: sro?.dataHandling ?? this._config.dataHandling,
+      credential_context: { userId: this.userId, connectorRegistry: this._config.registry },
       // Context is already managed by AgentContextNextGen.prepare() — skip provider-level check
       skipContextLimitCheck: true,
     };
@@ -1993,6 +2194,19 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         this.executionContext.metrics.inputTokens += streamState.usage.input_tokens;
         this.executionContext.metrics.outputTokens += streamState.usage.output_tokens;
         this.executionContext.metrics.totalTokens += streamState.usage.total_tokens;
+        this.executionContext.metrics.cachedInputTokens =
+          (this.executionContext.metrics.cachedInputTokens ?? 0) +
+          (streamState.usage.cached_input_tokens ?? 0);
+        this.executionContext.metrics.cacheCreationInputTokens =
+          (this.executionContext.metrics.cacheCreationInputTokens ?? 0) +
+          (streamState.usage.cache_creation_input_tokens ?? 0);
+        this.executionContext.metrics.reasoningTokens =
+          (this.executionContext.metrics.reasoningTokens ?? 0) +
+          (streamState.usage.output_tokens_details?.reasoning_tokens ?? 0);
+        this.executionContext.metrics.nativeToolCalls = this.mergeNativeToolMetrics(
+          this.executionContext.metrics.nativeToolCalls ?? {},
+          streamState.usage.native_tool_calls,
+        );
       }
 
       // Execute after:llm hook with a placeholder response for streaming

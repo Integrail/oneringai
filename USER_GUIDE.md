@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
 **Version:** 0.10.3
-**Last Updated:** 2026-07-06
+**Last Updated:** 2026-07-24
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -13,12 +13,13 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 2. [Core Concepts](#core-concepts)
 3. [Basic Text Generation](#basic-text-generation)
    - [Structured Output (JSON)](#structured-output-json) — vendor-agnostic `responseFormat`, native or prompt fallback
-4. [Connectors & Authentication](#connectors--authentication)
-5. [Agent Features](#agent-features)
+4. [Advanced Inference](#advanced-inference) — prompt caching, async batches, provider-hosted tools, telemetry, and data policy
+5. [Connectors & Authentication](#connectors--authentication)
+6. [Agent Features](#agent-features)
    - [Instruction Templates](#instruction-templates) — `{{DATE}}`, `{{AGENT_ID}}`, custom `{{COMMAND:arg}}` with extensible registry
    - Multi-User Support (`userId`)
    - Auth Identities (`identities`)
-6. [Tools & Function Calling](#tools--function-calling)
+7. [Tools & Function Calling](#tools--function-calling)
     - Built-in Tools Overview (160+ tools across 18 categories)
     - Developer Tools (Filesystem & Shell — 11 tools)
     - [Custom Tool Generation](#custom-tool-generation) — Agents create, test, and persist their own tools
@@ -33,38 +34,38 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - [Twilio Connector Tools](#twilio-connector-tools) — SMS and WhatsApp (send_sms, send_whatsapp, list_messages, get_message)
     - [Unified Calendar Tool](#unified-calendar-tool) — Cross-provider meeting slot finder (Google + Microsoft)
     - [Multi-Account Connectors](#multi-account-connectors) — Multiple accounts per vendor with automatic routing
-7. [Dynamic Tool Management](#dynamic-tool-management)
-8. [Session Persistence](#session-persistence)
+8. [Dynamic Tool Management](#dynamic-tool-management)
+9. [Session Persistence](#session-persistence)
    - [Centralized Storage Registry](#centralized-storage-registry) — One `configure()` for all backends, multi-tenant `StorageContext`
-9. [Context Management](#context-management)
+10. [Context Management](#context-management)
    - Strategy Deep Dive (Algorithmic, Custom)
    - Token Estimation
    - Lifecycle Hooks
-10. [Unified Store Tools](#unified-store-tools)
+11. [Unified Store Tools](#unified-store-tools)
     - Generic CRUD Interface (store_get, store_set, store_delete, store_list, store_action)
     - Available Stores (memory, context, instructions, user_info, workspace)
     - Custom Store Plugins
-11. [Shared Workspace](#shared-workspace)
+12. [Shared Workspace](#shared-workspace)
     - Multi-Agent Coordination
     - Entry Model and Actions
-12. [InContextMemory](#in-context-memory)
+13. [InContextMemory](#in-context-memory)
     - Setup and Configuration
     - Priority-Based Eviction
     - Tools (store_set/store_delete/store_list with store="whiteboard")
     - UI Display (`showInUI`) and User Pinning
     - Use Cases and Best Practices
-13. [Persistent Instructions](#persistent-instructions)
+14. [Persistent Instructions](#persistent-instructions)
     - Setup and Configuration
     - Tools (store_set/store_delete/store_list/store_action with store="instructions")
     - Storage and Persistence
     - Use Cases and Best Practices
-14. [User Info](#user-info-nextgen-plugin) — ⚠️ deprecated, prefer Self-Learning Memory
+15. [User Info](#user-info-nextgen-plugin) — ⚠️ deprecated, prefer Self-Learning Memory
     - Setup and Configuration
     - Context Injection (auto-rendered in system message)
     - Tools (store_set/store_get/store_delete/store_action with store="user_info", plus todo_add, todo_update, todo_remove)
     - Storage and Multi-User Isolation
     - Use Cases and Best Practices
-15. [Self-Learning Memory](#self-learning-memory-nextgen-plugin) — `MemoryPluginNextGen` + `MemoryWritePluginNextGen` + 11 `memory_*` tools (entities, facts, graph, semantic search, profile auto-regen, three-principal permissions)
+16. [Self-Learning Memory](#self-learning-memory-nextgen-plugin) — `MemoryPluginNextGen` + `MemoryWritePluginNextGen` + 11 `memory_*` tools (entities, facts, graph, semantic search, profile auto-regen, three-principal permissions)
     - What it is — entities + facts data model
     - When to use which plugin (working / in-context / memory / memoryWrite / session ingestor)
     - Quick Start (in-process, dev)
@@ -79,7 +80,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Security invariants (no ghost-writes, contextId downgrade, numeric clamping)
     - Using the tools without the plugin
     - Direct `MemorySystem` access
-16. [Routine Execution](#routine-execution)
+17. [Routine Execution](#routine-execution)
     - Overview and Architecture
     - Quick Start
     - RoutineDefinition and Tasks
@@ -90,44 +91,44 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Custom Prompts
     - Callbacks and Progress Tracking
     - Complete Example
-17. [Async (Non-Blocking) Tools](#async-non-blocking-tools)
+18. [Async (Non-Blocking) Tools](#async-non-blocking-tools)
     - How It Works (Lifecycle)
     - Auto-Continue vs Manual Mode
     - Configuration (AsyncToolConfig)
     - Events
     - Public API
     - Edge Cases
-18. [Long-Running Sessions (Suspend/Resume)](#long-running-sessions-suspendresume)
+19. [Long-Running Sessions (Suspend/Resume)](#long-running-sessions-suspendresume)
     - Creating Suspend Tools (SuspendSignal)
     - Running and Detecting Suspension
     - Resuming with Agent.hydrate()
     - Correlation Storage
     - Multi-Step Workflows
-19. [MCP (Model Context Protocol)](#mcp-model-context-protocol)
-20. [Multimodal (Vision)](#multimodal-vision)
-21. [Audio (TTS/STT)](#audio-ttsstt)
-22. [Image Generation](#image-generation)
-23. [Embeddings](#embeddings)
-24. [Video Generation](#video-generation)
-25. [Custom Media Storage](#custom-media-storage)
+20. [MCP (Model Context Protocol)](#mcp-model-context-protocol)
+21. [Multimodal (Vision)](#multimodal-vision)
+22. [Audio (TTS/STT)](#audio-ttsstt)
+23. [Image Generation](#image-generation)
+24. [Embeddings](#embeddings)
+25. [Video Generation](#video-generation)
+26. [Custom Media Storage](#custom-media-storage)
     - IMediaStorage Interface
     - Custom S3 Backend Example
     - FileMediaStorage Default
-26. [Web Search](#web-search)
-27. [Streaming](#streaming)
-28. [External API Integration](#external-api-integration)
-29. [Vendor Templates](#vendor-templates)
+27. [Web Search](#web-search)
+28. [Streaming](#streaming)
+29. [External API Integration](#external-api-integration)
+30. [Vendor Templates](#vendor-templates)
     - Quick Setup for 45+ Services
     - Authentication Methods
     - Complete Vendor Reference
-30. [OAuth for External APIs](#oauth-for-external-apis)
-31. [Model Registry](#model-registry)
-32. [Scoped Connector Registry](#scoped-connector-registry)
+31. [OAuth for External APIs](#oauth-for-external-apis)
+32. [Model Registry](#model-registry)
+33. [Scoped Connector Registry](#scoped-connector-registry)
     - Access Control Policies
     - Multi-Tenant Isolation
     - Using with Agent and ConnectorTools
-33. [Agent Registry](#agent-registry) — Global tracking, deep inspection, parent/child hierarchy, event fan-in, external control
-34. [Agent Orchestrator](#agent-orchestrator) — Multi-agent teams with shared workspace, delegation, and async execution
+34. [Agent Registry](#agent-registry) — Global tracking, deep inspection, parent/child hierarchy, event fan-in, external control
+35. [Agent Orchestrator](#agent-orchestrator) — Multi-agent teams with shared workspace, delegation, and async execution
     - Quick Start
     - Architecture
     - OrchestratorConfig
@@ -140,8 +141,8 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Worker Agent Lifecycle
     - Custom System Prompt
     - Per-Type Configuration
-35. [Advanced Features](#advanced-features)
-36. [Production Deployment](#production-deployment)
+36. [Advanced Features](#advanced-features)
+37. [Production Deployment](#production-deployment)
 
 ---
 
@@ -299,7 +300,7 @@ console.log(agent.getTemperature()); // 0.9
 
 ### Structured Output (JSON)
 
-Request JSON output with one vendor-agnostic option, `responseFormat`. The library translates it to each vendor's **native** structured-output mechanism where the model supports it — OpenAI (`text.format`), Google/Vertex (`responseJsonSchema`) — and falls back to a strict prompt instruction otherwise. It then parses (and, on parse failure, re-asks once for) the output and attaches the result to `response.output_parsed`. The raw JSON string is still available on `response.output_text`.
+Request JSON output with one vendor-agnostic option, `responseFormat`. The library translates it to each vendor's **native** structured-output mechanism where the model supports it — OpenAI (`text.format`), current supported Anthropic models (`output_config.format`), and Google/Vertex (`responseJsonSchema`) — and falls back to a strict prompt instruction otherwise. It then parses (and, on parse failure, re-asks once for) the output and attaches the result to `response.output_parsed`. The raw JSON string is still available on `response.output_text`.
 
 > **Validation contract:** on the *native* path the vendor enforces the schema server-side. On the *prompt-fallback* path the library guarantees **valid, parseable JSON** but does **not** itself validate schema conformance — it instructs the model to conform and trusts it. Validate `output_parsed` yourself if you need a hard guarantee. (This is a deliberate choice to avoid a JSON-schema-validator dependency.)
 
@@ -350,12 +351,689 @@ console.log(direct.output_parsed); // ['red', 'green', 'blue']
 |--------|----------|
 | Scope | JSON only (`json_object`, `json_schema`) |
 | Schema validation | Native path: enforced server-side by the vendor. Prompt-fallback path: **parseability only** — schema conformance is requested but not validated by the library (validate `output_parsed` yourself if required) |
-| `run()` tool loops | Constrains the **final** answer. OpenAI composes native JSON with tool calls directly; otherwise the constraint is applied on a final tool-free pass so tool use isn't suppressed mid-loop |
+| `run()` tool loops | Constrains the **final** answer. OpenAI composes natively and Google composition is model-specific. Anthropic conservatively uses a final tool-free pass whenever tools are present because citation-producing server tools conflict with JSON outputs |
 | Streaming | `stream()` / `streamDirect()` stream raw text and don't attach `output_parsed` (parse the accumulated text yourself). Enforced only where it applies inline (native, or prompt fallback with no tools); `stream()` has no final reformat pass, so **with tools on a prompt-fallback vendor the output isn't guaranteed to be JSON** (a warning is logged) — use `run()` for that case |
 | Parse failure | After **one** tool-free re-ask, throws `StructuredOutputError` (carrying raw output + schema) and logs it — never a silent failure |
 | Where to set it | `RunOptions.responseFormat` (`run`/`stream`) and `DirectCallOptions.responseFormat` (`runDirect`/`streamDirect`); the `ResponseFormat` type is exported from the package root |
 
-> **Per-vendor:** OpenAI and Google/Vertex use native schema output for models the registry marks as structured-output capable; unregistered models fall back to the prompt path. **Anthropic uses the prompt fallback** — the registry can't reliably distinguish which Claude models support native `output_config.format` (it flags older models too), so the fallback, which works uniformly on every Claude model, is used. Native schema output can't be combined with tool calls on Google/Vertex, hence the final tool-free pass in `run()`.
+> **Per-vendor:** OpenAI, current supported Anthropic families, and Google/Vertex use native schema output when the concrete model supports it. Older or unknown Claude models use the prompt fallback; Anthropic `json_object` also remains prompt-based because its native contract is schema-based. Tool composition is model-specific—when it is unavailable, `run()` performs the final tool-free pass described above. Non-streaming formatted responses report `structured_output_enforcement` as `native`, `prompt`, or `repair`.
+
+---
+
+## Advanced Inference
+
+Advanced inference is the provider-neutral layer for capabilities that go beyond a basic interactive
+text request:
+
+- prompt/context caching;
+- asynchronous provider batch jobs;
+- tools executed by the model provider;
+- detailed cache, reasoning, tool, tier, and processing-mode telemetry;
+- explicit host authorization for retention-sensitive or third-party features.
+
+The API is normalized, but support is not assumed to be uniform. Every request is checked against
+the concrete provider and model before provider inference. Unknown model families fail closed for
+provider-hosted tools and asynchronous batches.
+
+### Four API surfaces
+
+Advanced options appear on four related surfaces. Agent-facing calls use camelCase; the low-level
+provider/batch contract uses snake_case.
+
+| Surface | Configuration | Behavior |
+|---------|---------------|----------|
+| `Agent.create()` | `promptCache`, `nativeTools`, `dataHandling` | Defaults for context-managed `run()` / `stream()` calls |
+| `agent.run()` / `agent.stream()` | Same camelCase fields in `RunOptions` | Per-call replacement of the agent defaults; participates in context and the agentic loop |
+| `agent.runDirect()` / `agent.streamDirect()` | Same camelCase fields in `DirectCallOptions` | Stateless single provider call; pass advanced options explicitly, and handle any native tool output yourself |
+| `agent.getBatchProvider()` | `TextGenerateOptions`: `prompt_cache`, `native_tools`, `data_handling`, `response_format` | Durable provider batch submission; the host owns job persistence and polling |
+
+`RunOptions` take precedence over agent-level values. `vendorOptions` are shallow-merged; advanced
+objects and arrays are replaced as whole values. Pass `nativeTools: []` or
+`promptCache: { mode: 'off' }` to suppress an agent-level request for one context-managed call.
+Direct calls intentionally use only `DirectCallOptions` for per-call inference settings; they do not
+inherit the agent's instructions, temperature, or advanced request defaults.
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai-main',
+  model: 'gpt-5.4',
+  promptCache: { mode: 'auto', key: 'assistant-v4' },
+  dataHandling: { allowProviderCaching: true },
+});
+
+// Uses the agent defaults.
+await agent.run('Analyze the attached policy');
+
+// Replaces the cache policy for this call.
+await agent.run('Handle a sensitive one-off request', {
+  promptCache: { mode: 'off' },
+});
+```
+
+### Capability discovery
+
+Always discover executable behavior from the agent/provider pair before enabling a feature in a UI
+or workflow:
+
+```typescript
+const capabilities = agent.getAdvancedCapabilities();
+
+if (capabilities.promptCaching.mode !== 'unsupported') {
+  console.log('TTL choices:', capabilities.promptCaching.ttlModes);
+}
+
+if (capabilities.nativeTools.includes('file_search')) {
+  // Show vector-store selection in the UI.
+}
+
+const batch = agent.getBatchProvider();
+if (capabilities.batch.supported && batch) {
+  console.log('Maximum requests:', capabilities.batch.maxRequests);
+  console.log('Completion window:', capabilities.batch.completionWindow);
+}
+```
+
+The returned contract is:
+
+```typescript
+interface AdvancedTextCapabilities {
+  promptCaching: {
+    mode: 'unsupported' | 'implicit' | 'request_controlled' | 'explicit_resource';
+    ttlModes: Array<'short' | 'extended'>;
+    reportsCacheUsage: boolean;
+  };
+  batch: {
+    supported: boolean;
+    cancellable: boolean;
+    maxRequests?: number;
+    completionWindow?: string;
+  };
+  structuredOutput: {
+    jsonObject: 'native' | 'prompt';
+    jsonSchema: 'native' | 'prompt';
+    nativeWithTools: boolean;
+  };
+  nativeTools: Array<
+    'web_search' | 'web_fetch' | 'code_execution' | 'file_search' | 'remote_mcp'
+  >;
+  nativeToolOptions: { remoteMcpApproval: boolean };
+  dataHandling: {
+    promptCaching: 'none' | 'provider_managed';
+    batch: 'none' | 'provider_retained';
+    remoteMcp: 'none' | 'third_party';
+  };
+}
+```
+
+`Model.features.promptCaching`, `batchAPI`, and `structuredOutput` describe the model catalog.
+`getAdvancedCapabilities()` is more restrictive: it also verifies that the chosen adapter has a
+wire mapping and usage/result conversion for that model family.
+
+#### Provider orientation matrix
+
+| Capability | OpenAI | Anthropic | Google |
+|------------|--------|-----------|--------|
+| Prompt caching | Implicit; normalized key/retention controls where supported | Request-controlled cache markers; short and extended TTL | Implicit hit reporting; normalized TTL control unavailable |
+| Async text batch | Model-gated, up to capability-reported limit | Model-gated, up to capability-reported limit | Model-gated inline batch; one model per submission |
+| Web search | Supported on declared Responses families | Supported on declared server-tool families | Supported on Gemini 2.5/3 text families |
+| Web fetch | No standalone normalized tool | Supported on declared server-tool families | URL Context on Gemini 2.5/3 text families |
+| Code execution | Code Interpreter | Server-side code execution | Gemini code execution |
+| File search | Vector-store file search | Not normalized | Not normalized |
+| Remote MCP | Supported without host-managed approval continuation | Supported on declared families; no normalized approval continuation | Not normalized |
+| Native schema + tools | Supported when schema output is supported | Conservative final tool-free formatting for every tool mix | Gemini 3 text families only; otherwise final tool-free formatting |
+
+This matrix is explanatory and can become stale as vendors change. Runtime code should branch on
+the capability object, never the table.
+
+### Prompt caching
+
+#### Policy contract
+
+```typescript
+type PromptCachePolicy =
+  | { mode: 'off' }
+  | {
+      mode: 'auto';
+      ttl?: 'short' | 'extended';
+      key?: string;
+      strict?: boolean;
+    };
+```
+
+`mode: 'auto'` asks OneRingAI to use the provider's supported caching mechanism. The meaning of the
+optional fields is deliberately normalized:
+
+| Field | Meaning |
+|-------|---------|
+| `ttl: 'short'` | Use the provider's default/short-lived cache behavior |
+| `ttl: 'extended'` | Request the provider's supported extended retention mode |
+| `key` | Stable routing/affinity key where the provider exposes one |
+| `strict: true` | Reject unsupported caching or TTL before inference instead of degrading |
+
+Without `strict`, an unsupported cache request is removed and the call proceeds normally. If
+caching is supported but the requested TTL is not, OneRingAI removes only the TTL and preserves the
+remaining cache request/key.
+
+```typescript
+const response = await agent.run(largeInput, {
+  promptCache: {
+    mode: 'auto',
+    ttl: 'extended',
+    key: 'contracts-workflow-v7',
+    strict: true,
+  },
+  dataHandling: { allowProviderCaching: true },
+});
+
+console.log({
+  cacheHitTokens: response.usage.cached_input_tokens,
+  cacheWriteTokens: response.usage.cache_creation_input_tokens,
+  cacheWriteByTtl: response.usage.cache_creation_details,
+});
+```
+
+`mode: 'off'` has a precise, limited meaning: **OneRingAI will not send provider cache controls for
+that call.** OpenAI and Google can apply prompt caching implicitly to eligible ordinary requests;
+the library cannot turn that provider behavior off. `allowProviderCaching: false` or omission also
+blocks only caching explicitly requested/configured by this library. If policy requires a guarantee
+of no provider-side caching, enforce it through the provider account/product configuration or choose
+a provider/deployment with the required data posture.
+
+#### Provider behavior
+
+- **Anthropic:** `auto` emits an ephemeral cache control marker. `extended` selects the provider's
+  extended TTL; usage can report both short- and extended-TTL cache creation.
+- **OpenAI:** eligible prompts benefit from implicit caching. A normalized `key` and supported
+  extended retention are mapped to Responses API controls.
+- **Google:** eligible prompts may report implicit cached-content tokens. Explicit cached-content
+  resource creation/lifecycle is not hidden behind this request policy and is not currently part of
+  the normalized contract.
+
+Prompt caching is prefix-oriented. Place stable instructions, policy text, schemas, and reference
+material before the changing user-specific suffix. OneRingAI preserves caller order and does not
+rewrite a prompt to improve hit rate.
+
+Cache state belongs to the selected provider account/connector. OneRingAI does not implement a
+cross-user semantic response cache and does not reuse provider credentials across connectors.
+
+### Provider-hosted tools
+
+Provider-hosted tools are different from `ToolFunction`s. A `ToolFunction` runs in your process under
+`ToolManager`; a native tool is sent to and executed by the selected LLM provider.
+
+```typescript
+type NativeToolRequest =
+  | { capability: 'web_search'; options?: Record<string, unknown> }
+  | { capability: 'web_fetch'; options?: Record<string, unknown> }
+  | { capability: 'code_execution'; options?: Record<string, unknown> }
+  | { capability: 'file_search'; options: { vectorStoreIds: string[]; [key: string]: unknown } }
+  | {
+      capability: 'remote_mcp';
+      server: {
+        name: string;
+        url: string;
+        authorization?: { connector: string; accountId?: string };
+        allowedTools?: string[];
+        requireApproval?: 'always' | 'never';
+      };
+      options?: Record<string, unknown>;
+    };
+```
+
+The `options` object is a provider-specific escape hatch for settings belonging to that normalized
+tool. Fixed normalized fields win over conflicting values in `options`.
+
+#### Web search, fetch, and code execution
+
+```typescript
+const response = await agent.run('Compare the latest three releases and cite sources', {
+  nativeTools: [
+    { capability: 'web_search', options: { max_uses: 4 } },
+    { capability: 'web_fetch' },
+    { capability: 'code_execution' },
+  ],
+  dataHandling: { allowProviderTools: true },
+});
+
+for (const item of response.output) {
+  // Provider citations are retained on output-text annotations where available.
+}
+console.log(response.usage.native_tool_calls);
+console.log(response.native_tool_events);
+```
+
+Unsupported tools fail with `ProviderCapabilityNotSupportedError`; OneRingAI never silently swaps a
+native tool for a client-side search, fetch, shell, or MCP implementation.
+
+#### File search
+
+The normalized file-search contract currently targets OpenAI provider vector stores:
+
+```typescript
+await agent.run('Find the termination clause', {
+  nativeTools: [{
+    capability: 'file_search',
+    options: { vectorStoreIds: ['vs_contracts'] },
+  }],
+  dataHandling: { allowProviderTools: true },
+});
+```
+
+At least one `vectorStoreIds` entry is required. Validation happens before provider execution.
+
+#### Remote MCP with connector-first authentication
+
+Remote MCP never accepts a raw token in `RunOptions`. Reference a named connector instead:
+
+```typescript
+Connector.create({
+  name: 'crm-mcp',
+  vendor: Vendor.Custom,
+  auth: { type: 'api_key', apiKey: process.env.CRM_MCP_TOKEN! },
+});
+
+const response = await agent.run('Find Acme and summarize the open opportunities', {
+  nativeTools: [{
+    capability: 'remote_mcp',
+    server: {
+      name: 'crm',
+      url: 'https://mcp.example.com',
+      authorization: { connector: 'crm-mcp' },
+      allowedTools: ['find_customer', 'list_opportunities'],
+      requireApproval: 'never',
+    },
+  }],
+  dataHandling: { allowThirdPartyTools: true },
+});
+```
+
+The security sequence is intentional:
+
+1. Check the concrete model supports `remote_mcp`.
+2. Require `allowThirdPartyTools: true`.
+3. Reject `requireApproval: 'always'` unless the adapter exposes a host-managed continuation.
+4. Validate the server URL and require HTTPS.
+5. Resolve the named connector through the agent's scoped `IConnectorRegistry`.
+6. Fetch the token for the current `userId`/`accountId` immediately before request conversion.
+7. Send the resolved token only in the provider wire request.
+
+Consequently, a rejected request does not fetch or refresh the connector token. A scoped registry
+cannot fall back to a globally registered connector with the same name.
+
+`requireApproval: 'always'` requires `remoteMcpApproval: true`; otherwise it is rejected before
+credential resolution. `never` is the normalized no-approval execution path. OpenAI's provider
+default requires approval, so omission is normalized to `never` until OneRingAI exposes the
+`mcp_approval_response` continuation lifecycle.
+
+#### Native-tool results and streaming
+
+Non-streaming responses may include:
+
+```typescript
+interface NativeToolEvent {
+  capability: string;
+  id?: string;
+  status?: string;
+  error?: { code?: string; message: string; details?: unknown };
+}
+```
+
+`native_tool_events` is diagnostic, not a host execution queue. Provider-native lifecycle and error
+details vary by vendor. Streaming reports detailed usage on the terminal `response_complete` event,
+but does not synthesize non-streaming `native_tool_events` for every intermediate provider event.
+
+### Asynchronous text batches
+
+Batch inference is intended for large offline workloads where provider latency is acceptable in
+exchange for asynchronous processing and, where applicable, discounted token pricing.
+
+#### Lifecycle
+
+```typescript
+interface IAsyncTextBatchProvider<TOptions, TResponse> {
+  submitBatch(
+    requests: Array<{ customId: string; options: TOptions }>,
+    options?: BatchSubmitOptions,
+  ): Promise<BatchHandle>;
+  getBatch(id: string): Promise<BatchHandle>;
+  cancelBatch(id: string): Promise<BatchHandle>;
+  getBatchResults(id: string): AsyncIterable<BatchTextResult<TResponse>>;
+}
+```
+
+```typescript
+const batch = agent.getBatchProvider();
+const caps = agent.getAdvancedCapabilities();
+if (!caps.batch.supported || !batch) {
+  throw new Error('No executable batch adapter for this provider/model');
+}
+
+// This Agent-bound surface injects the Agent's userId and scoped connector
+// registry into every batch item before any remote-MCP credential is resolved.
+
+const handle = await batch.submitBatch(
+  [
+    {
+      customId: 'document-001',
+      options: {
+        model: agent.model,
+        input: 'Summarize document 001',
+        prompt_cache: { mode: 'auto', ttl: 'extended' },
+        data_handling: { allowProviderCaching: true },
+      },
+    },
+    {
+      customId: 'document-002',
+      options: {
+        model: agent.model,
+        input: 'Summarize document 002',
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'summary',
+            schema: {
+              type: 'object',
+              properties: { summary: { type: 'string' } },
+              required: ['summary'],
+              additionalProperties: false,
+            },
+          },
+        },
+      },
+    },
+  ],
+  {
+    completionWindow: caps.batch.completionWindow,
+    metadata: { workflow: 'document-summaries' },
+    dataHandling: { allowBatchRetention: true },
+  },
+);
+
+await batchStore.save({
+  provider: handle.provider,
+  providerBatchId: handle.id,
+  submittedAt: new Date().toISOString(),
+  state: handle.state,
+});
+```
+
+The host must persist the handle before treating submission as complete. OneRingAI does not include a
+job scheduler, polling daemon, database, webhook receiver, or dead-letter queue.
+
+#### Normalized states
+
+| State | Meaning | Typical host action |
+|-------|---------|---------------------|
+| `queued` | Accepted but not processing | Persist and poll later |
+| `in_progress` | Provider is processing items | Continue bounded polling |
+| `completed` | Provider processing ended; individual items may still contain errors | Read and persist every result |
+| `cancelling` | Cancellation requested but not terminal | Poll until terminal |
+| `cancelled` | Provider reports cancellation | Read any available partial results |
+| `expired` | Provider retention/processing window expired | Read available results, then dead-letter missing work |
+| `failed` | Job-level failure | Inspect provider status and reconcile |
+
+`requestCounts` can include total, processing, succeeded, failed, cancelled, and expired counts.
+Do not infer that `state: 'completed'` means every item succeeded.
+
+#### Correlated results
+
+`customId` is the stable application correlation key. It must be non-empty and unique within one
+submission.
+
+```typescript
+for await (const item of batch.getBatchResults(handle.id)) {
+  if (item.response) {
+    await resultStore.saveSuccess(item.customId, {
+      providerRequestId: item.providerRequestId,
+      text: item.response.output_text,
+      usage: item.response.usage,
+    });
+  } else {
+    await resultStore.saveFailure(item.customId, item.error);
+  }
+}
+```
+
+Each `BatchTextResult` has either `response` or `error`. Item errors preserve normalized code,
+message, optional HTTP status, and provider-native diagnostic details. Result iteration can therefore
+produce successes and failures together.
+
+Successful batch responses set `usage.processing_mode = 'batch'`. This lets callers feed actual
+usage directly into `calculateCost`.
+
+#### Ambiguous submission safety
+
+Batch creation is paid and is not safely retryable without reconciliation. A connection can fail
+after the provider accepted the job but before the client received its ID.
+
+```typescript
+try {
+  const handle = await batch.submitBatch(requests, {
+    dataHandling: { allowBatchRetention: true },
+  });
+  await batchStore.save(handle);
+} catch (error) {
+  if (error instanceof ProviderAmbiguousOperationError) {
+    await recoveryQueue.save({
+      provider: error.providerName,
+      operation: error.operation,
+      recoveryMetadata: error.recoveryMetadata,
+    });
+    // Reconcile provider-side jobs/files before deciding whether to resubmit.
+    throw error;
+  }
+  throw error;
+}
+```
+
+OneRingAI disables SDK retries at known non-idempotent batch-creation boundaries. Do not wrap
+`submitBatch` in a generic retry policy. OpenAI recovery metadata includes the uploaded input-file ID
+when upload succeeded but batch creation became ambiguous; other providers retain submitted
+correlation IDs/model information where available.
+
+#### Validation before submission
+
+Before the paid boundary, OneRingAI validates:
+
+- non-empty request list;
+- unique, non-empty `customId` values;
+- provider/model batch support;
+- supported completion window;
+- `allowBatchRetention: true`;
+- provider request options, native tools, data policy, and context limits;
+- structured-output schema shape and native-vs-prompt strategy;
+- named remote-MCP credentials, after all non-secret checks pass.
+
+Anthropic and OpenAI can accept model choices supported by their provider batch contract. Google's
+normalized inline batch requires one model for the whole submission. Provider-specific maximums are
+reported in `capabilities.batch.maxRequests` when known.
+
+### Data-handling policy
+
+Advanced features can change where request data is processed or retained. OneRingAI therefore uses
+explicit, fail-closed permissions:
+
+```typescript
+interface DataHandlingPolicy {
+  allowProviderCaching?: boolean;
+  allowBatchRetention?: boolean;
+  allowProviderTools?: boolean;
+  allowThirdPartyTools?: boolean;
+}
+```
+
+| Permission | Required for | Omitted/false behavior |
+|------------|--------------|------------------------|
+| `allowProviderCaching` | `promptCache.mode: 'auto'` | Explicit cache request is rejected |
+| `allowBatchRetention` | `submitBatch` | Submission is rejected |
+| `allowProviderTools` | Native web search/fetch, code execution, file search | Tool request is rejected |
+| `allowThirdPartyTools` | Remote MCP | MCP request is rejected before credentials are resolved |
+
+These booleans authorize OneRingAI features; they are not a compliance engine. They do not override
+provider account settings, regional routing, abuse monitoring, ordinary API retention, or implicit
+prompt caching. Hosts should derive them from authenticated tenant policy rather than accepting them
+directly from untrusted end-user input.
+
+A conservative host pattern is:
+
+```typescript
+const policy: DataHandlingPolicy = {
+  allowProviderCaching: tenant.aiPolicy.promptCaching,
+  allowBatchRetention: tenant.aiPolicy.asyncRetention,
+  allowProviderTools: tenant.aiPolicy.providerTools,
+  allowThirdPartyTools: tenant.aiPolicy.thirdPartyMcp,
+};
+
+await agent.run(userPrompt, { nativeTools: approvedNativeTools, dataHandling: policy });
+```
+
+### Detailed usage and cost estimation
+
+`LLMResponse.usage` retains detailed provider telemetry without discarding the common token totals:
+
+```typescript
+interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cached_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_creation_details?: {
+    short_ttl_input_tokens?: number;
+    extended_ttl_input_tokens?: number;
+  };
+  output_tokens_details?: { reasoning_tokens: number };
+  native_tool_calls?: Record<string, number | undefined>;
+  processing_mode?: 'interactive' | 'batch';
+  service_tier?: string;
+}
+```
+
+Fields are absent when a provider does not report them; absence means unknown, not zero. Streaming
+converters retain the same fields on the terminal `response_complete` event, and `StreamState`
+accumulates them across agent iterations.
+
+Agent execution metrics expose cumulative `cachedInputTokens`, `cacheCreationInputTokens`,
+`reasoningTokens`, and `nativeToolCalls`. Structured-output formatting/repair generations contribute
+to both response usage and execution metrics.
+
+```typescript
+const response = await agent.run('Analyze all records', options);
+const usage = response.usage;
+
+const estimatedCost = calculateCost(
+  agent.model,
+  usage.input_tokens,
+  usage.output_tokens,
+  {
+    cachedInputTokens: usage.cached_input_tokens,
+    cacheCreationInputTokens: usage.cache_creation_input_tokens,
+    cacheCreationDetails: usage.cache_creation_details && {
+      shortTtlInputTokens: usage.cache_creation_details.short_ttl_input_tokens,
+      extendedTtlInputTokens: usage.cache_creation_details.extended_ttl_input_tokens,
+    },
+    processingMode: usage.processing_mode,
+  },
+);
+
+console.log({ estimatedCost, metrics: agent.getMetrics() });
+```
+
+`input_tokens` is normalized to total processed input on every adapter; for Anthropic this includes
+the provider's uncached, cache-read, and cache-creation buckets. `calculateCost` splits those buckets
+instead of pricing the whole prompt at one rate and applies Anthropic's short/extended cache-write
+multipliers when the creation breakdown is supplied.
+`processingMode: 'batch'` applies the normalized batch discount only for registered OpenAI,
+Anthropic, and Google models that advertise batch support. It returns `null` when the model or the
+requested pricing mode is not represented safely in the registry.
+
+Native-tool fees and non-token provider charges are reported as counts where possible but are not
+automatically added to token cost estimates.
+
+### Structured output interaction
+
+Advanced capability discovery also describes how structured output composes with tools:
+
+- `jsonObject` / `jsonSchema` report `native` or `prompt` for the concrete model.
+- `nativeWithTools` reports whether the provider can enforce the native format while tools are
+  offered in that request.
+- `run()` can perform a final constrained, tool-free formatting pass when composition is unavailable.
+- `stream()` cannot replace already-streamed text, so it logs a warning when tools prevent inline
+  enforcement. Use `run()` when valid JSON is mandatory.
+- Low-level and batch `response_format` requests are normalized before provider execution. An
+  unsupported native schema becomes the prompt fallback; a missing/invalid schema fails before batch
+  submission.
+
+Non-streaming formatted responses expose:
+
+```typescript
+response.structured_output_enforcement;
+// 'native' — provider-native format enforcement
+// 'prompt' — strict prompt/final formatting pass
+// 'repair' — at least one bounded repair generation was required
+```
+
+Prompt fallback guarantees parseable JSON, not local JSON Schema validation. Validate
+`output_parsed` in application code when schema conformance is a hard boundary.
+
+### Errors and troubleshooting
+
+#### `ProviderCapabilityNotSupportedError`
+
+Thrown before provider execution when a strict or retention-sensitive request cannot be honored.
+The `capability` property is machine-readable enough to route common cases:
+
+| Capability value pattern | Meaning |
+|--------------------------|---------|
+| `prompt_caching` | Strict caching requested on an unsupported model |
+| `prompt_cache_ttl:<ttl>` | Strict TTL unavailable |
+| `prompt_caching_blocked_by_data_policy` | Missing `allowProviderCaching` |
+| `native_tool:<name>` | Tool unavailable for this provider/model |
+| `native_tool:<name>_blocked_by_data_policy` | Missing `allowProviderTools` |
+| `remote_mcp_blocked_by_data_policy` | Missing `allowThirdPartyTools` |
+| `remote_mcp_invalid_url` / `remote_mcp_requires_https` | Invalid MCP endpoint |
+| `remote_mcp_approval_policy` | Explicit approval choice unsupported |
+| `batch` / `batch_completion_window:<window>` | Batch/model or window unsupported |
+| `batch_blocked_by_data_policy` | Missing `allowBatchRetention` |
+| `structured_output:json_schema_requires_schema` | Malformed low-level schema request |
+
+Prefer capability discovery to exception-driven feature detection. Exceptions remain important for
+race-free enforcement when a caller constructs options dynamically.
+
+#### `ProviderAmbiguousOperationError`
+
+This error means a paid/external mutation may have succeeded. It is intentionally distinct from a
+normal provider failure. Persist `recoveryMetadata`, stop automatic retries, and reconcile.
+
+#### Common mistakes
+
+- **Caching request rejected:** set `dataHandling.allowProviderCaching: true`, or use
+  `promptCache: { mode: 'off' }` if no explicit cache request is desired.
+- **Extended TTL rejected:** inspect `promptCaching.ttlModes`; remove `strict` to allow TTL downgrade.
+- **Native tool rejected:** inspect `nativeTools` for the exact agent model, not just the provider.
+- **Remote MCP connector not found:** ensure the named connector exists in the agent's scoped
+  registry and the current `userId`/`accountId` can obtain a token.
+- **Remote MCP approval rejected:** use `requireApproval: 'never'`; `always` requires an adapter that
+  reports `nativeToolOptions.remoteMcpApproval: true` and exposes a host continuation.
+- **File search rejected:** pass a non-empty `vectorStoreIds` array.
+- **Batch results unavailable:** poll `getBatch` until a terminal state; persist the handle between
+  polls.
+- **Batch duplicate work:** never blindly retry an ambiguous submission.
+- **Streaming JSON invalid with tools:** use non-streaming `run()` so the final tool-free formatting
+  pass can execute.
+- **Usage detail missing:** the provider did not report that field; do not assume zero for billing.
+
+### Production checklist
+
+- Gate UI controls with `getAdvancedCapabilities()`.
+- Derive `dataHandling` from trusted tenant policy.
+- Keep connector tokens out of prompts, logs, and public run options.
+- Persist batch handles and correlation IDs durably.
+- Treat ambiguous batch submissions as reconciliation tasks, not retries.
+- Store every batch item result independently; partial failure is normal.
+- Validate `output_parsed` against your schema when correctness depends on it.
+- Record detailed usage and provider-native tool counts for billing/audit.
+- Re-check provider account retention, residency, and tool terms independently of library policy.
 
 ---
 
@@ -3666,6 +4344,15 @@ interface DirectCallOptions {
 
   /** Vendor-specific options */
   vendorOptions?: Record<string, unknown>;
+
+  /** Provider-neutral prompt-cache policy */
+  promptCache?: PromptCachePolicy;
+
+  /** Provider-hosted tools (not executed by ToolManager) */
+  nativeTools?: NativeToolRequest[];
+
+  /** Explicit permission for retention-sensitive provider features */
+  dataHandling?: DataHandlingPolicy;
 }
 ```
 
@@ -3745,6 +4432,15 @@ interface RunOptions {
   /** Vendor-specific options (shallow-merged with agent-level vendorOptions) */
   vendorOptions?: Record<string, unknown>;
 
+  /** Provider-neutral prompt-cache policy */
+  promptCache?: PromptCachePolicy;
+
+  /** Provider-hosted tools (not executed by ToolManager) */
+  nativeTools?: NativeToolRequest[];
+
+  /** Explicit permission for retention-sensitive provider features */
+  dataHandling?: DataHandlingPolicy;
+
   /** Vendor-agnostic structured (JSON) output override for this call */
   responseFormat?:
     | { type: 'json_object' }
@@ -3773,7 +4469,7 @@ for await (const event of agent.stream('Analyze this', {
 }
 ```
 
-RunOptions take precedence over agent-level config. `vendorOptions` are shallow-merged (per-call keys override agent-level keys).
+RunOptions take precedence over agent-level config. `vendorOptions` are shallow-merged (per-call keys override agent-level keys). Advanced inference options replace their agent-level value as a whole; see [Advanced Inference](#advanced-inference) for the complete contract.
 
 ### Thinking / Reasoning
 
@@ -13694,11 +14390,12 @@ console.log(model.features.output.cpm);       // 14
 const cost = calculateCost('gpt-5.2', 50000, 2000);
 console.log(`Cost: $${cost}`); // $0.1155
 
-// With caching (90% discount)
+// With mixed cached and uncached input, using batch pricing
 const cachedCost = calculateCost('gpt-5.2', 50000, 2000, {
-  useCachedInput: true
+  cachedInputTokens: 30000,
+  processingMode: 'batch',
 });
-console.log(`Cached: $${cachedCost}`); // $0.03675
+console.log(`Optimized: $${cachedCost}`);
 
 // Get all models for a vendor
 const openaiModels = getModelsByVendor(Vendor.OpenAI);
@@ -14934,7 +15631,8 @@ if (!toolManager.isDestroyed) {
    - GPT-5.2/Claude Opus 4.5 for critical tasks
 
 2. **Leverage caching:**
-   - Prompt caching (Anthropic/OpenAI)
+   - Use provider-aware prompt caching where `getAdvancedCapabilities()` reports support
+   - Keep stable prompt prefixes first and record actual cache-hit telemetry
 
 3. **Use streaming:**
    - Better user experience
@@ -14946,7 +15644,8 @@ if (!toolManager.isDestroyed) {
    - Register custom strategies via `StrategyRegistry` for specialized needs
 
 5. **Batch requests:**
-   - Batch API calls where possible
+   - Use `getBatchProvider()` for supported offline workloads
+   - Persist handles and reconcile ambiguous submissions instead of retrying blindly
 
 ---
 

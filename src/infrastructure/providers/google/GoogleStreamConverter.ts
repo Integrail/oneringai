@@ -59,11 +59,12 @@ export class GoogleStreamConverter {
     this.wasThinking = false;
     this.lastFinishReason = undefined;
 
-    let lastUsage: { input_tokens: number; output_tokens: number; total_tokens: number } = {
+    let lastUsage: import('../../../domain/entities/Response.js').TokenUsage = {
       input_tokens: 0,
       output_tokens: 0,
       total_tokens: 0,
     };
+    const nativeToolCalls: Record<string, number> = {};
 
     for await (const chunk of googleStream) {
       if (this.isFirst) {
@@ -81,6 +82,24 @@ export class GoogleStreamConverter {
       const usage = this.extractUsage(chunk);
       if (usage) {
         lastUsage = usage;
+      }
+
+      const candidate = chunk.candidates?.[0];
+      const webSearchCount = candidate?.groundingMetadata?.webSearchQueries?.length ?? 0;
+      if (webSearchCount > 0) {
+        nativeToolCalls.web_search = Math.max(
+          nativeToolCalls.web_search ?? 0,
+          webSearchCount,
+        );
+      }
+      if ((candidate?.urlContextMetadata?.urlMetadata?.length ?? 0) > 0) {
+        nativeToolCalls.web_fetch = 1;
+      }
+      const codeExecutionCount =
+        candidate?.content?.parts?.filter((part) => Boolean(part.executableCode)).length ?? 0;
+      if (codeExecutionCount > 0) {
+        nativeToolCalls.code_execution =
+          (nativeToolCalls.code_execution ?? 0) + codeExecutionCount;
       }
 
       const events = this.convertChunk(chunk);
@@ -118,6 +137,9 @@ export class GoogleStreamConverter {
     const rawStatus = mapGoogleStatus(this.lastFinishReason);
     const finalStatus: 'completed' | 'failed' | 'incomplete' =
       rawStatus === 'completed' ? 'completed' : rawStatus === 'failed' ? 'failed' : 'incomplete';
+    if (Object.keys(nativeToolCalls).length > 0) {
+      lastUsage.native_tool_calls = nativeToolCalls;
+    }
     yield {
       type: StreamEventType.RESPONSE_COMPLETE,
       response_id: this.responseId,
@@ -131,7 +153,7 @@ export class GoogleStreamConverter {
   /**
    * Extract usage from Google chunk
    */
-  private extractUsage(chunk: GenerateContentResponse): { input_tokens: number; output_tokens: number; total_tokens: number } | null {
+  private extractUsage(chunk: GenerateContentResponse): import('../../../domain/entities/Response.js').TokenUsage | null {
     const usage = chunk.usageMetadata;
     if (!usage) return null;
 
@@ -139,6 +161,12 @@ export class GoogleStreamConverter {
       input_tokens: usage.promptTokenCount || 0,
       output_tokens: usage.candidatesTokenCount || 0,
       total_tokens: usage.totalTokenCount || 0,
+      ...(usage.cachedContentTokenCount !== undefined && {
+        cached_input_tokens: usage.cachedContentTokenCount,
+      }),
+      ...((usage as any).thoughtsTokenCount !== undefined && {
+        output_tokens_details: { reasoning_tokens: (usage as any).thoughtsTokenCount },
+      }),
     };
   }
 

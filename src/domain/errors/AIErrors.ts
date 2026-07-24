@@ -146,6 +146,41 @@ export class ModelNotSupportedError extends AIError {
   }
 }
 
+export class ProviderCapabilityNotSupportedError extends AIError {
+  constructor(
+    public readonly providerName: string,
+    public readonly model: string,
+    public readonly capability: string,
+  ) {
+    super(
+      `${providerName}: model '${model}' does not support requested capability '${capability}'`,
+      'PROVIDER_CAPABILITY_NOT_SUPPORTED',
+      400,
+    );
+    this.name = 'ProviderCapabilityNotSupportedError';
+    Object.setPrototypeOf(this, ProviderCapabilityNotSupportedError.prototype);
+  }
+}
+
+/** A paid/external submission may have succeeded even though no handle was received. */
+export class ProviderAmbiguousOperationError extends AIError {
+  constructor(
+    public readonly providerName: string,
+    public readonly operation: string,
+    public readonly recoveryMetadata?: Record<string, unknown>,
+    originalError?: Error,
+  ) {
+    super(
+      `${providerName}: ${operation} outcome is ambiguous; reconcile before retrying`,
+      'PROVIDER_AMBIGUOUS_OPERATION',
+      502,
+      originalError,
+    );
+    this.name = 'ProviderAmbiguousOperationError';
+    Object.setPrototypeOf(this, ProviderAmbiguousOperationError.prototype);
+  }
+}
+
 export class InvalidConfigError extends AIError {
   constructor(message: string) {
     super(message, 'INVALID_CONFIG', 400);

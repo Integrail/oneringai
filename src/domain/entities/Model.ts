@@ -2877,21 +2877,86 @@ export function calculateCost(
   model: string,
   inputTokens: number,
   outputTokens: number,
-  options?: { useCachedInput?: boolean }
+  options?: {
+    /** @deprecated Prefer cachedInputTokens for mixed cached/uncached requests. */
+    useCachedInput?: boolean;
+    cachedInputTokens?: number;
+    cacheCreationInputTokens?: number;
+    cacheCreationDetails?: {
+      shortTtlInputTokens?: number;
+      extendedTtlInputTokens?: number;
+    };
+    processingMode?: 'interactive' | 'batch';
+  }
 ): number | null {
   const modelInfo = getModelInfo(model);
   if (!modelInfo) {
     return null;
   }
 
-  const inputCPM = options?.useCachedInput && modelInfo.features.input.cpmCached !== undefined
-    ? modelInfo.features.input.cpmCached
-    : modelInfo.features.input.cpm;
+  const normalizedInputTokens = Math.max(inputTokens, 0);
+  const cachedInputTokens = Math.min(
+    Math.max(options?.cachedInputTokens ?? (options?.useCachedInput ? inputTokens : 0), 0),
+    normalizedInputTokens,
+  );
+  const describedCacheCreationTokens =
+    (options?.cacheCreationDetails?.shortTtlInputTokens ?? 0) +
+    (options?.cacheCreationDetails?.extendedTtlInputTokens ?? 0);
+  const cacheCreationInputTokens = Math.min(
+    Math.max(options?.cacheCreationInputTokens ?? describedCacheCreationTokens, 0),
+    normalizedInputTokens - cachedInputTokens,
+  );
+  const uncachedInputTokens = Math.max(
+    0,
+    normalizedInputTokens - cachedInputTokens - cacheCreationInputTokens,
+  );
+  const cachedInputCPM =
+    modelInfo.features.input.cpmCached ?? modelInfo.features.input.cpm;
 
   const outputCPM = modelInfo.features.output.cpm;
 
-  const inputCost = (inputTokens / 1_000_000) * inputCPM;
-  const outputCost = (outputTokens / 1_000_000) * outputCPM;
+  let cacheCreationCost =
+    (cacheCreationInputTokens / 1_000_000) * modelInfo.features.input.cpm;
+  if (modelInfo.provider === Vendor.Anthropic && cacheCreationInputTokens > 0) {
+    const shortTokens = Math.min(
+      Math.max(options?.cacheCreationDetails?.shortTtlInputTokens ?? 0, 0),
+      cacheCreationInputTokens,
+    );
+    const extendedTokens = Math.min(
+      Math.max(options?.cacheCreationDetails?.extendedTtlInputTokens ?? 0, 0),
+      cacheCreationInputTokens - shortTokens,
+    );
+    // Anthropic's default cache write is the short (5 minute) tier. Treat any
+    // unclassified creation tokens as short writes rather than underpricing.
+    const unspecifiedTokens = cacheCreationInputTokens - shortTokens - extendedTokens;
+    cacheCreationCost =
+      ((shortTokens + unspecifiedTokens) / 1_000_000) *
+        modelInfo.features.input.cpm *
+        1.25 +
+      (extendedTokens / 1_000_000) * modelInfo.features.input.cpm * 2;
+  }
 
-  return inputCost + outputCost;
+  const inputCost =
+    (uncachedInputTokens / 1_000_000) * modelInfo.features.input.cpm +
+    (cachedInputTokens / 1_000_000) * cachedInputCPM +
+    cacheCreationCost;
+  const outputCost = (outputTokens / 1_000_000) * outputCPM;
+  let processingDiscount = 1;
+  if (options?.processingMode === 'batch') {
+    if (!modelInfo.features.batchAPI) return null;
+    // These normalized batch adapters have a documented 50% token-price
+    // contract. Do not project that discount onto unrelated vendors merely
+    // because their registry entry advertises some form of batch API.
+    const discountedBatchProviders = new Set<string>([
+      Vendor.OpenAI,
+      Vendor.Anthropic,
+      Vendor.Google,
+    ]);
+    if (!discountedBatchProviders.has(modelInfo.provider)) {
+      return null;
+    }
+    processingDiscount = 0.5;
+  }
+
+  return (inputCost + outputCost) * processingDiscount;
 }

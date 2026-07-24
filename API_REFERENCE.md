@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-07-06
+**Generated:** 2026-07-24
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -19,16 +19,16 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Task Agents](#task-agents) (115 items)
 - [Context Management](#context-management) (14 items)
 - [Session Management](#session-management) (46 items)
-- [Tools & Function Calling](#tools-function-calling) (179 items)
+- [Tools & Function Calling](#tools-function-calling) (182 items)
 - [Streaming](#streaming) (29 items)
 - [Model Registry](#model-registry) (17 items)
 - [OAuth & External APIs](#oauth-external-apis) (41 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
-- [Errors](#errors) (37 items)
+- [Errors](#errors) (39 items)
 - [Utilities](#utilities) (10 items)
-- [Interfaces](#interfaces) (63 items)
+- [Interfaces](#interfaces) (75 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (693 items)
+- [Other](#other) (694 items)
 
 ## Core
 
@@ -36,7 +36,7 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:197`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:216`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
 
@@ -500,7 +500,7 @@ getMetrics()
 getSummary()
 ```
 
-**Returns:** `{ executionId: string; startTime: Date; currentIteration: number; paused: boolean; cancelled: boolean; metrics: { totalDuration: number; llmDuration: number; toolDuration: number; hookDuration: number; iterationCount: number; toolCallCount: number; toolSuccessCount: number; toolFailureCount: number; toolTimeoutCount: number; inputTokens: number; outputTokens: number; totalTokens: number; errors: { type: string; message: string; timestamp: Date; }[]; }; totalDuration: number; } | null`
+**Returns:** `{ executionId: string; startTime: Date; currentIteration: number; paused: boolean; cancelled: boolean; metrics: { totalDuration: number; llmDuration: number; toolDuration: number; hookDuration: number; iterationCount: number; toolCallCount: number; toolSuccessCount: number; toolFailureCount: number; toolTimeoutCount: number; inputTokens: number; outputTokens: number; totalTokens: number; cachedInputTokens?: number | undefined; cacheCreationInputTokens?: number | undefined; reasoningTokens?: number | undefined; nativeToolCalls?: Record&lt;string, number&gt; | undefined; errors: { type: string; message: string; timestamp: Date; }[]; }; totalDuration: number; } | null`
 
 #### `getAuditTrail()`
 
@@ -1649,7 +1649,7 @@ refresh-grant tokens on every authorize URL — no migration required. |
 
 ### AgentConfig `interface`
 
-📍 [`src/core/Agent.ts:62`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:67`](src/core/Agent.ts)
 
 Agent configuration - extends BaseAgentConfig with Agent-specific options
 
@@ -1669,6 +1669,9 @@ Agent configuration - extends BaseAgentConfig with Agent-specific options
     effort?: 'low' | 'medium' | 'high';
   };` | Vendor-agnostic thinking/reasoning configuration |
 | `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Vendor-specific options (e.g., Google's thinkingLevel: 'low' | 'high') |
+| `promptCache?` | `promptCache?: PromptCachePolicy;` | Provider-neutral prompt caching policy. |
+| `nativeTools?` | `nativeTools?: NativeToolRequest[];` | Provider-hosted tools, separate from client-executed ToolFunctions. |
+| `dataHandling?` | `dataHandling?: DataHandlingPolicy;` | - |
 | `context?` | `context?: AgentContextNextGen | AgentContextNextGenConfig;` | Optional unified context management.
 When provided (as AgentContextNextGen instance or config), Agent will:
 - Track conversation history
@@ -1846,7 +1849,7 @@ Fetch options with additional connector-specific settings
 
 ### RunOptions `interface`
 
-📍 [`src/core/Agent.ts:144`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:156`](src/core/Agent.ts)
 
 Per-call options for run() and stream().
 These override the agent-level config for this single invocation.
@@ -1865,6 +1868,9 @@ These override the agent-level config for this single invocation.
   };` | Vendor-agnostic thinking/reasoning configuration |
 | `temperature?` | `temperature?: number;` | Temperature for generation |
 | `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Vendor-specific options |
+| `promptCache?` | `promptCache?: PromptCachePolicy;` | Per-run override for provider prompt caching. |
+| `nativeTools?` | `nativeTools?: NativeToolRequest[];` | Per-run override for provider-hosted tools. |
+| `dataHandling?` | `dataHandling?: DataHandlingPolicy;` | - |
 | `responseFormat?` | `responseFormat?: ResponseFormat;` | Vendor-agnostic structured (JSON) output. When set, the final answer is
 constrained to JSON — via the vendor's native mechanism where supported,
 otherwise a strict prompt instruction — and parsed into
@@ -1888,7 +1894,7 @@ type AgentEventListener = (agentId: string, agentName: string, event: string, da
 
 ### AgentSessionConfig `type`
 
-📍 [`src/core/Agent.ts:57`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:62`](src/core/Agent.ts)
 
 Session configuration for Agent (same as BaseSessionConfig)
 
@@ -9897,7 +9903,7 @@ async shutdown(): Promise&lt;void&gt;
 
 ### ParallelTasksError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:264`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:299`](src/domain/errors/AIErrors.ts)
 
 Error thrown when multiple tasks fail in parallel execution (fail-all mode)
 
@@ -10091,7 +10097,7 @@ finalizePlanning(): void
 
 ### TaskTimeoutError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:217`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:252`](src/domain/errors/AIErrors.ts)
 
 Error thrown when a task execution times out
 
@@ -10119,7 +10125,7 @@ constructor(
 
 ### TaskValidationError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:236`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:271`](src/domain/errors/AIErrors.ts)
 
 Error thrown when task completion validation fails
 
@@ -12799,7 +12805,7 @@ Set to false to skip re-check for performance if you know condition won't change
 
 ### TaskFailure `interface`
 
-📍 [`src/domain/errors/AIErrors.ts:255`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:290`](src/domain/errors/AIErrors.ts)
 
 Task failure info for parallel execution
 
@@ -17444,7 +17450,7 @@ static forIdentities(
 
 ### InvalidToolArgumentsError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:157`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:192`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -20615,6 +20621,24 @@ MCP Tool call result
 
 ---
 
+### NativeToolEvent `interface`
+
+📍 [`src/domain/entities/Response.ts:34`](src/domain/entities/Response.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `capability` | `capability: string;` | - |
+| `id?` | `id?: string;` | - |
+| `status?` | `status?: string;` | - |
+| `error?` | `error?: { code?: string; message: string; details?: unknown };` | - |
+
+</details>
+
+---
+
 ### OrchestrationToolsContext `interface`
 
 📍 [`src/core/orchestrator/tools.ts:21`](src/core/orchestrator/tools.ts)
@@ -21450,6 +21474,34 @@ type DefaultAllowlistedTool = (typeof DEFAULT_ALLOWLIST)[number]
 
 ```typescript
 type DesktopToolName = (typeof DESKTOP_TOOL_NAMES)[number]
+```
+
+---
+
+### NativeToolCapability `type`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:25`](src/domain/interfaces/IAdvancedInference.ts)
+
+```typescript
+type NativeToolCapability = | 'web_search'
+  | 'web_fetch'
+  | 'code_execution'
+  | 'file_search'
+  | 'remote_mcp'
+```
+
+---
+
+### NativeToolRequest `type`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:66`](src/domain/interfaces/IAdvancedInference.ts)
+
+```typescript
+type NativeToolRequest = | { capability: 'web_search'; options?: Record&lt;string, unknown&gt; }
+  | { capability: 'web_fetch'; options?: Record&lt;string, unknown&gt; }
+  | { capability: 'code_execution'; options?: Record&lt;string, unknown&gt; }
+  | { capability: 'file_search'; options: FileSearchOptions }
+  | { capability: 'remote_mcp'; server: RemoteMcpDescriptor; options?: Record&lt;string, unknown&gt; }
 ```
 
 ---
@@ -23286,7 +23338,7 @@ Get summary statistics
 getStatistics()
 ```
 
-**Returns:** `{ responseId: string; model: string; status: "in_progress" | "completed" | "failed" | "incomplete"; iterations: number; totalChunks: number; totalTextDeltas: number; totalToolCalls: number; textItemsCount: number; toolCallBuffersCount: number; completedToolCallsCount: number; durationMs: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; }`
+**Returns:** `{ responseId: string; model: string; status: "in_progress" | "completed" | "failed" | "incomplete"; iterations: number; totalChunks: number; totalTextDeltas: number; totalToolCalls: number; textItemsCount: number; toolCallBuffersCount: number; completedToolCallsCount: number; durationMs: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; cached_input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_creation_details?: { short_ttl_input_tokens?: number | undefined; extended_ttl_input_tokens?: number | undefined; } | undefined; native_tool_calls?: Record&lt;string, number | undefined&gt; | undefined; processing_mode?: "interactive" | "batch" | undefined; service_tier?: string | undefined; }; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; }`
 
 #### `hasText()`
 
@@ -23326,7 +23378,7 @@ Create a snapshot for checkpointing (error recovery)
 createSnapshot()
 ```
 
-**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; reasoningBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;; completedToolCalls: ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; status: "in_progress" | "completed" | "failed" | "incomplete"; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; startTime: Date; endTime: Date | undefined; }`
+**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; reasoningBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;; completedToolCalls: ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; cached_input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_creation_details?: { short_ttl_input_tokens?: number | undefined; extended_ttl_input_tokens?: number | undefined; } | undefined; native_tool_calls?: Record&lt;string, number | undefined&gt; | undefined; processing_mode?: "interactive" | "batch" | undefined; service_tier?: string | undefined; }; status: "in_progress" | "completed" | "failed" | "incomplete"; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; startTime: Date; endTime: Date | undefined; }`
 
 </details>
 
@@ -24228,7 +24280,7 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
 ### ModelCapabilities `interface`
 
-📍 [`src/domain/interfaces/ITextProvider.ts:41`](src/domain/interfaces/ITextProvider.ts)
+📍 [`src/domain/interfaces/ITextProvider.ts:61`](src/domain/interfaces/ITextProvider.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -27720,7 +27772,7 @@ Get vendor template information for display
 
 ### VendorLogo `interface`
 
-📍 [`src/connectors/vendors/logos.ts:170`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:184`](src/connectors/vendors/logos.ts)
 
 Vendor logo information
 
@@ -28009,7 +28061,7 @@ export function generateEncryptionKey(): string
 
 ### getAllVendorLogos `function`
 
-📍 [`src/connectors/vendors/logos.ts:284`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:298`](src/connectors/vendors/logos.ts)
 
 Get all available vendor logos
 
@@ -28072,7 +28124,7 @@ export function getVendorAuthTemplate(
 
 ### getVendorColor `function`
 
-📍 [`src/connectors/vendors/logos.ts:274`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:288`](src/connectors/vendors/logos.ts)
 
 Get the brand color for a vendor
 
@@ -28096,7 +28148,7 @@ export function getVendorInfo(vendorId: string): VendorInfo | undefined
 
 ### getVendorLogo `function`
 
-📍 [`src/connectors/vendors/logos.ts:213`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:227`](src/connectors/vendors/logos.ts)
 
 Get logo for a vendor
 
@@ -28118,7 +28170,7 @@ if (logo) {
 
 ### getVendorLogoCdnUrl `function`
 
-📍 [`src/connectors/vendors/logos.ts:316`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:330`](src/connectors/vendors/logos.ts)
 
 Get CDN URL for a vendor's logo
 
@@ -28130,7 +28182,7 @@ export function getVendorLogoCdnUrl(vendorId: string, color?: string): string | 
 
 ### getVendorLogoSvg `function`
 
-📍 [`src/connectors/vendors/logos.ts:256`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:270`](src/connectors/vendors/logos.ts)
 
 Get SVG content for a vendor logo
 
@@ -28154,7 +28206,7 @@ export function getVendorTemplate(vendorId: string): VendorTemplate | undefined
 
 ### hasVendorLogo `function`
 
-📍 [`src/connectors/vendors/logos.ts:186`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:200`](src/connectors/vendors/logos.ts)
 
 Check if a vendor has a logo available
 
@@ -28214,7 +28266,7 @@ export function listVendorsByCategory(category: string): VendorInfo[]
 
 ### listVendorsWithLogos `function`
 
-📍 [`src/connectors/vendors/logos.ts:300`](src/connectors/vendors/logos.ts)
+📍 [`src/connectors/vendors/logos.ts:314`](src/connectors/vendors/logos.ts)
 
 List vendor IDs that have logos available
 
@@ -28249,6 +28301,11 @@ Mapping from our vendor IDs to Simple Icons slugs
 | `salesforce` | `'salesforce'` | - |
 | `hubspot` | `'hubspot'` | - |
 | `pipedrive` | `'pipedrive'` | - |
+| `'cal-com'` | `'caldotcom'` | - |
+| `calendly` | `'calendly'` | - |
+| `heyreach` | `null` | - |
+| `emailbison` | `null` | - |
+| `clay` | `null` | - |
 | `github` | `'github'` | - |
 | `gitlab` | `'gitlab'` | - |
 | `bitbucket` | `'bitbucket'` | - |
@@ -29024,6 +29081,10 @@ Circuit breaker metrics
 | `inputTokens` | `inputTokens: number;` | - |
 | `outputTokens` | `outputTokens: number;` | - |
 | `totalTokens` | `totalTokens: number;` | - |
+| `cachedInputTokens?` | `cachedInputTokens?: number;` | Optional for source compatibility; ExecutionContext instances always initialize this to 0. |
+| `cacheCreationInputTokens?` | `cacheCreationInputTokens?: number;` | Optional for source compatibility; ExecutionContext instances always initialize this to 0. |
+| `reasoningTokens?` | `reasoningTokens?: number;` | Optional for source compatibility; ExecutionContext instances always initialize this to 0. |
+| `nativeToolCalls?` | `nativeToolCalls?: Record&lt;string, number&gt;;` | Optional for source compatibility; ExecutionContext instances always initialize this to {}. |
 | `errors` | `errors: Array&lt;{ type: string; message: string; timestamp: Date }&gt;;` | - |
 
 </details>
@@ -29437,7 +29498,7 @@ constructor(
 
 ### ContextOverflowError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:351`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:386`](src/domain/errors/AIErrors.ts)
 
 Error thrown when context cannot be reduced to fit within limits
 after all graceful degradation levels have been exhausted.
@@ -29493,7 +29554,7 @@ getTopConsumers(count = 5): Array&lt;
 
 ### DependencyCycleError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:197`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:232`](src/domain/errors/AIErrors.ts)
 
 Error thrown when a dependency cycle is detected in a plan
 
@@ -29735,7 +29796,7 @@ constructor(factId: FactId, supersededBy: FactId)
 
 ### InvalidConfigError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:149`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:184`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -30036,6 +30097,36 @@ constructor()
 
 ---
 
+### ProviderAmbiguousOperationError `class`
+
+📍 [`src/domain/errors/AIErrors.ts:166`](src/domain/errors/AIErrors.ts)
+
+A paid/external submission may have succeeded even though no handle was received.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    public readonly providerName: string,
+    public readonly operation: string,
+    public readonly recoveryMetadata?: Record&lt;string, unknown&gt;,
+    originalError?: Error,
+  )
+```
+
+**Parameters:**
+- `providerName`: `string`
+- `operation`: `string`
+- `recoveryMetadata`: `Record&lt;string, unknown&gt; | undefined` *(optional)*
+- `originalError`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
 ### ProviderAuthError `class`
 
 📍 [`src/domain/errors/AIErrors.ts:30`](src/domain/errors/AIErrors.ts)
@@ -30052,6 +30143,32 @@ constructor(providerName: string, message: string = 'Authentication failed')
 **Parameters:**
 - `providerName`: `string`
 - `message`: `string` *(optional)* (default: `'Authentication failed'`)
+
+</details>
+
+---
+
+### ProviderCapabilityNotSupportedError `class`
+
+📍 [`src/domain/errors/AIErrors.ts:149`](src/domain/errors/AIErrors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    public readonly providerName: string,
+    public readonly model: string,
+    public readonly capability: string,
+  )
+```
+
+**Parameters:**
+- `providerName`: `string`
+- `model`: `string`
+- `capability`: `string`
 
 </details>
 
@@ -30085,7 +30202,7 @@ constructor(
 
 ### ProviderError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:174`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:209`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -30258,7 +30375,7 @@ constructor(reason: string)
 
 ### StructuredOutputError `class`
 
-📍 [`src/core/StructuredOutput.ts:75`](src/core/StructuredOutput.ts)
+📍 [`src/core/StructuredOutput.ts:77`](src/core/StructuredOutput.ts)
 
 Thrown when the model's output cannot be parsed as valid JSON after all
 repair attempts. Carries the raw output + requested format for debugging —
@@ -30390,7 +30507,7 @@ constructor(message: string)
 
 ### ContextOverflowBudget `interface`
 
-📍 [`src/domain/errors/AIErrors.ts:339`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:374`](src/domain/errors/AIErrors.ts)
 
 Detailed budget information for context overflow diagnosis
 
@@ -30809,6 +30926,46 @@ agent.run([
 
 TypeScript interfaces for extensibility
 
+### AdvancedTextCapabilities `interface`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:73`](src/domain/interfaces/IAdvancedInference.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `promptCaching` | `promptCaching: {
+    mode: PromptCachingMode;
+    ttlModes: Array&lt;'short' | 'extended'&gt;;
+    reportsCacheUsage: boolean;
+  };` | - |
+| `batch` | `batch: {
+    supported: boolean;
+    cancellable: boolean;
+    maxRequests?: number;
+    completionWindow?: string;
+  };` | - |
+| `structuredOutput` | `structuredOutput: {
+    jsonObject: 'native' | 'prompt';
+    jsonSchema: 'native' | 'prompt';
+    nativeWithTools: boolean;
+  };` | - |
+| `nativeTools` | `nativeTools: NativeToolCapability[];` | - |
+| `nativeToolOptions` | `nativeToolOptions: {
+    /** Whether the adapter can surface and resume a host-managed MCP approval. */
+    remoteMcpApproval: boolean;
+  };` | - |
+| `dataHandling` | `dataHandling: {
+    promptCaching: 'none' | 'provider_managed';
+    batch: 'none' | 'provider_retained';
+    remoteMcp: 'none' | 'third_party';
+  };` | - |
+
+</details>
+
+---
+
 ### AgentDefinitionListOptions `interface`
 
 📍 [`src/domain/interfaces/IAgentDefinitionStorage.ts:177`](src/domain/interfaces/IAgentDefinitionStorage.ts)
@@ -30866,6 +31023,92 @@ Agent definition summary for listing
 | `createdAt` | `createdAt: Date;` | When created |
 | `updatedAt` | `updatedAt: Date;` | When last updated |
 | `metadata?` | `metadata?: AgentDefinitionMetadata;` | Optional metadata |
+
+</details>
+
+---
+
+### BatchHandle `interface`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:123`](src/domain/interfaces/IAdvancedInference.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+| `provider` | `provider: string;` | - |
+| `state` | `state: BatchProcessingState;` | - |
+| `createdAt?` | `createdAt?: Date;` | - |
+| `expiresAt?` | `expiresAt?: Date;` | - |
+| `requestCounts?` | `requestCounts?: {
+    total: number;
+    processing?: number;
+    succeeded?: number;
+    failed?: number;
+    cancelled?: number;
+    expired?: number;
+  };` | - |
+| `rawStatus?` | `rawStatus?: string;` | - |
+| `metadata?` | `metadata?: Record&lt;string, string&gt;;` | - |
+
+</details>
+
+---
+
+### BatchSubmitOptions `interface`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:117`](src/domain/interfaces/IAdvancedInference.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `metadata?` | `metadata?: Record&lt;string, string&gt;;` | - |
+| `completionWindow?` | `completionWindow?: string;` | - |
+| `dataHandling?` | `dataHandling?: DataHandlingPolicy;` | - |
+
+</details>
+
+---
+
+### BatchTextRequest `interface`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:111`](src/domain/interfaces/IAdvancedInference.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `customId` | `customId: string;` | Stable host correlation key. Must be unique within one submission. |
+| `options` | `options: TOptions;` | - |
+
+</details>
+
+---
+
+### BatchTextResult `interface`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:141`](src/domain/interfaces/IAdvancedInference.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `customId` | `customId: string;` | - |
+| `response?` | `response?: TResponse;` | - |
+| `error?` | `error?: {
+    code?: string;
+    message: string;
+    statusCode?: number;
+    /** Provider-native item error for diagnostics/recovery. */
+    details?: unknown;
+  };` | - |
+| `providerRequestId?` | `providerRequestId?: string;` | - |
 
 </details>
 
@@ -30934,6 +31177,26 @@ Summary of a stored correlation
 
 ---
 
+### DataHandlingPolicy `interface`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:46`](src/domain/interfaces/IAdvancedInference.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `allowProviderCaching?` | `allowProviderCaching?: boolean;` | Permit OneRingAI to request/configure provider-managed prompt cache state.
+This is not a guarantee that an implicitly-caching provider stores nothing
+when the option is false or omitted. |
+| `allowBatchRetention?` | `allowBatchRetention?: boolean;` | Permit provider-retained asynchronous batch inputs/results. |
+| `allowProviderTools?` | `allowProviderTools?: boolean;` | Permit tools executed and retained within the selected LLM provider. |
+| `allowThirdPartyTools?` | `allowThirdPartyTools?: boolean;` | Permit data to be sent to a configured third-party remote MCP server. |
+
+</details>
+
+---
+
 ### EmbeddingOptions `interface`
 
 📍 [`src/domain/interfaces/IEmbeddingProvider.ts:10`](src/domain/interfaces/IEmbeddingProvider.ts)
@@ -30971,6 +31234,21 @@ Response from an embedding request
     promptTokens: number;
     totalTokens: number;
   };` | Token usage |
+
+</details>
+
+---
+
+### FileSearchOptions `interface`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:61`](src/domain/interfaces/IAdvancedInference.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `vectorStoreIds` | `vectorStoreIds: string[];` | Provider vector stores to search. Required by the normalized file-search contract. |
 
 </details>
 
@@ -31280,6 +31558,65 @@ destroy(): Promise&lt;void&gt;;
 | Property | Type | Description |
 |----------|------|-------------|
 | `isDestroyed` | `readonly isDestroyed: boolean;` | Returns true if destroy() has been called. |
+
+</details>
+
+---
+
+### IAsyncTextBatchProvider `interface`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:154`](src/domain/interfaces/IAdvancedInference.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `submitBatch()`
+
+```typescript
+submitBatch(
+    requests: Array&lt;BatchTextRequest&lt;TOptions&gt;&gt;,
+    options?: BatchSubmitOptions,
+  ): Promise&lt;BatchHandle&gt;;
+```
+
+**Parameters:**
+- `requests`: `BatchTextRequest&lt;TOptions&gt;[]`
+- `options`: `BatchSubmitOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;BatchHandle&gt;`
+
+#### `getBatch()`
+
+```typescript
+getBatch(id: string): Promise&lt;BatchHandle&gt;;
+```
+
+**Parameters:**
+- `id`: `string`
+
+**Returns:** `Promise&lt;BatchHandle&gt;`
+
+#### `cancelBatch()`
+
+```typescript
+cancelBatch(id: string): Promise&lt;BatchHandle&gt;;
+```
+
+**Parameters:**
+- `id`: `string`
+
+**Returns:** `Promise&lt;BatchHandle&gt;`
+
+#### `getBatchResults()`
+
+```typescript
+getBatchResults(id: string): AsyncIterable&lt;BatchTextResult&lt;TResponse&gt;&gt;;
+```
+
+**Parameters:**
+- `id`: `string`
+
+**Returns:** `AsyncIterable&lt;BatchTextResult&lt;TResponse&gt;&gt;`
 
 </details>
 
@@ -33042,7 +33379,7 @@ translate?(options: STTOptions): Promise&lt;STTResponse&gt;;
 
 ### ITextProvider `interface`
 
-📍 [`src/domain/interfaces/ITextProvider.ts:51`](src/domain/interfaces/ITextProvider.ts)
+📍 [`src/domain/interfaces/ITextProvider.ts:71`](src/domain/interfaces/ITextProvider.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -33087,6 +33424,19 @@ getModelCapabilities(model: string): ModelCapabilities;
 
 **Returns:** `ModelCapabilities`
 
+#### `getAdvancedCapabilities()?`
+
+Executable advanced capabilities for a concrete model/provider pair.
+
+```typescript
+getAdvancedCapabilities?(model: string): AdvancedTextCapabilities;
+```
+
+**Parameters:**
+- `model`: `string`
+
+**Returns:** `AdvancedTextCapabilities`
+
 #### `listModels()`
 
 List available models from the provider's API
@@ -33096,6 +33446,15 @@ listModels(): Promise&lt;string[]&gt;;
 ```
 
 **Returns:** `Promise&lt;string[]&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `batch?` | `readonly batch?: IAsyncTextBatchProvider&lt;TextGenerateOptions, LLMResponse&gt;;` | Optional asynchronous batch surface. Present only when implemented by the provider. |
 
 </details>
 
@@ -33410,6 +33769,27 @@ Base provider interface
 
 ---
 
+### RemoteMcpDescriptor `interface`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:32`](src/domain/interfaces/IAdvancedInference.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | - |
+| `url` | `url: string;` | - |
+| `authorization?` | `authorization?: { connector: string; accountId?: string };` | Named OneRingAI Connector used as the single source of authentication. |
+| `allowedTools?` | `allowedTools?: string[];` | - |
+| `requireApproval?` | `requireApproval?: 'always' | 'never';` | Provider-side approval policy. `always` requires an adapter with a
+host-managed approval continuation; `never` disables provider approval.
+Omitted uses the adapter's executable default (OpenAI normalizes to `never`). |
+
+</details>
+
+---
+
 ### ScheduleHandle `interface`
 
 📍 [`src/domain/interfaces/IScheduler.ts:10`](src/domain/interfaces/IScheduler.ts)
@@ -33618,7 +33998,7 @@ Used by edit UIs to re-populate form fields without needing to decrypt config.au
 
 ### TextGenerateOptions `interface`
 
-📍 [`src/domain/interfaces/ITextProvider.ts:11`](src/domain/interfaces/ITextProvider.ts)
+📍 [`src/domain/interfaces/ITextProvider.ts:19`](src/domain/interfaces/ITextProvider.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -33639,6 +34019,12 @@ Used by edit UIs to re-populate form fields without needing to decrypt config.au
 | `parallel_tool_calls?` | `parallel_tool_calls?: boolean;` | - |
 | `previous_response_id?` | `previous_response_id?: string;` | - |
 | `metadata?` | `metadata?: Record&lt;string, string&gt;;` | - |
+| `prompt_cache?` | `prompt_cache?: PromptCachePolicy;` | Provider-neutral prompt-cache policy. Unsupported strict requests fail
+before execution. `mode: 'off'` suppresses library-requested cache controls
+but cannot disable provider-implicit caching. |
+| `native_tools?` | `native_tools?: NativeToolRequest[];` | Provider-hosted tools. These are not executed by ToolManager. |
+| `data_handling?` | `data_handling?: DataHandlingPolicy;` | Host policy for retention-sensitive provider features. |
+| `credential_context?` | `credential_context?: { userId?: string; connectorRegistry?: IConnectorRegistry };` | - |
 | `thinking?` | `thinking?: {
     enabled: boolean;
     /** Budget in tokens for thinking (Anthropic & Google) */
@@ -33699,6 +34085,22 @@ Word-level timestamp
 
 ---
 
+### BatchProcessingState `type`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:102`](src/domain/interfaces/IAdvancedInference.ts)
+
+```typescript
+type BatchProcessingState = | 'queued'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelling'
+  | 'cancelled'
+  | 'expired'
+  | 'failed'
+```
+
+---
+
 ### ConnectorAccessContext `type`
 
 📍 [`src/domain/interfaces/IConnectorAccessPolicy.ts:15`](src/domain/interfaces/IConnectorAccessPolicy.ts)
@@ -33737,6 +34139,43 @@ type MCPClientConnectionState = | 'disconnected'
   | 'connected'
   | 'reconnecting'
   | 'failed'
+```
+
+---
+
+### PromptCachePolicy `type`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:7`](src/domain/interfaces/IAdvancedInference.ts)
+
+Provider-neutral contracts for advanced text-inference capabilities.
+
+These types deliberately contain no host persistence or product semantics.
+
+```typescript
+type PromptCachePolicy = | {
+      /**
+       * Do not request or configure provider caching through OneRingAI.
+       * This cannot disable caching that a provider applies implicitly to all
+       * eligible requests; consult getAdvancedCapabilities().promptCaching.
+       */
+      mode: 'off';
+    }
+  | {
+      mode: 'auto';
+      ttl?: 'short' | 'extended';
+      key?: string;
+      strict?: boolean;
+    }
+```
+
+---
+
+### PromptCachingMode `type`
+
+📍 [`src/domain/interfaces/IAdvancedInference.ts:23`](src/domain/interfaces/IAdvancedInference.ts)
+
+```typescript
+type PromptCachingMode = 'unsupported' | 'implicit' | 'request_controlled' | 'explicit_resource'
 ```
 
 ---
@@ -34027,7 +34466,7 @@ protected getMaxRetries(): number
 
 ### BaseTextProvider `class`
 
-📍 [`src/infrastructure/providers/base/BaseTextProvider.ts:15`](src/infrastructure/providers/base/BaseTextProvider.ts)
+📍 [`src/infrastructure/providers/base/BaseTextProvider.ts:22`](src/infrastructure/providers/base/BaseTextProvider.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -34106,6 +34545,17 @@ abstract getModelCapabilities(model: string): ModelCapabilities;
 
 **Returns:** `ModelCapabilities`
 
+#### `getAdvancedCapabilities()`
+
+```typescript
+getAdvancedCapabilities(model: string): AdvancedTextCapabilities
+```
+
+**Parameters:**
+- `model`: `string`
+
+**Returns:** `AdvancedTextCapabilities`
+
 #### `executeWithCircuitBreaker()`
 
 Execute with circuit breaker protection (helper for subclasses)
@@ -34160,6 +34610,30 @@ protected applyContextLimitGuardrail(options: TextGenerateOptions): TextGenerate
 - `options`: `TextGenerateOptions`
 
 **Returns:** `TextGenerateOptions`
+
+#### `resolveAdvancedCredentials()`
+
+```typescript
+protected async resolveAdvancedCredentials(
+    options: TextGenerateOptions,
+  ): Promise&lt;TextGenerateOptions&gt;
+```
+
+**Parameters:**
+- `options`: `TextGenerateOptions`
+
+**Returns:** `Promise&lt;TextGenerateOptions&gt;`
+
+#### `assertAdvancedOptionsSupported()`
+
+```typescript
+protected assertAdvancedOptionsSupported(options: TextGenerateOptions): void
+```
+
+**Parameters:**
+- `options`: `TextGenerateOptions`
+
+**Returns:** `void`
 
 #### `listModels()`
 
@@ -35950,7 +36424,7 @@ destroy(): void
 
 ### ExecutionContext `class`
 
-📍 [`src/capabilities/agents/ExecutionContext.ts:76`](src/capabilities/agents/ExecutionContext.ts)
+📍 [`src/capabilities/agents/ExecutionContext.ts:84`](src/capabilities/agents/ExecutionContext.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -36092,7 +36566,7 @@ Get execution summary
 getSummary()
 ```
 
-**Returns:** `{ executionId: string; startTime: Date; currentIteration: number; paused: boolean; cancelled: boolean; metrics: { totalDuration: number; llmDuration: number; toolDuration: number; hookDuration: number; iterationCount: number; toolCallCount: number; toolSuccessCount: number; toolFailureCount: number; toolTimeoutCount: number; inputTokens: number; outputTokens: number; totalTokens: number; errors: { type: string; message: string; timestamp: Date; }[]; }; totalDuration: number; }`
+**Returns:** `{ executionId: string; startTime: Date; currentIteration: number; paused: boolean; cancelled: boolean; metrics: { totalDuration: number; llmDuration: number; toolDuration: number; hookDuration: number; iterationCount: number; toolCallCount: number; toolSuccessCount: number; toolFailureCount: number; toolTimeoutCount: number; inputTokens: number; outputTokens: number; totalTokens: number; cachedInputTokens?: number | undefined; cacheCreationInputTokens?: number | undefined; reasoningTokens?: number | undefined; nativeToolCalls?: Record&lt;string, number&gt; | undefined; errors: { type: string; message: string; timestamp: Date; }[]; }; totalDuration: number; }`
 
 </details>
 
@@ -41608,7 +42082,7 @@ All voice processing operates on these frames.
 
 ### AuditEntry `interface`
 
-📍 [`src/capabilities/agents/ExecutionContext.ts:59`](src/capabilities/agents/ExecutionContext.ts)
+📍 [`src/capabilities/agents/ExecutionContext.ts:67`](src/capabilities/agents/ExecutionContext.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -42913,7 +43387,7 @@ If omitted, result is stored as `__prestep_{name}` or `__poststep_{name}`. |
 
 ### DirectCallOptions `interface`
 
-📍 [`src/core/BaseAgent.ts:270`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:277`](src/core/BaseAgent.ts)
 
 Options for direct LLM calls (bypassing AgentContext).
 
@@ -42938,6 +43412,9 @@ otherwise a strict prompt instruction — and parsed into
     effort?: 'low' | 'medium' | 'high';
   };` | Vendor-agnostic thinking/reasoning configuration |
 | `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Vendor-specific options |
+| `promptCache?` | `promptCache?: PromptCachePolicy;` | Provider-neutral prompt caching policy. |
+| `nativeTools?` | `nativeTools?: NativeToolRequest[];` | Provider-hosted tools, separate from client-executed ToolFunctions. |
+| `dataHandling?` | `dataHandling?: DataHandlingPolicy;` | - |
 | `skipContextLimitCheck?` | `skipContextLimitCheck?: boolean;` | Skip pre-flight context limit check. Default: false (check is ON) |
 
 </details>
@@ -47308,7 +47785,7 @@ optional fields (`identifiers`, `aliases`, `metadata`, `permissions`,
 
 ### LLMResponse `interface`
 
-📍 [`src/domain/entities/Response.ts:37`](src/domain/entities/Response.ts)
+📍 [`src/domain/entities/Response.ts:56`](src/domain/entities/Response.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47340,6 +47817,8 @@ See `src/core/StructuredOutput.ts`. |
     message: string;
   };` | - |
 | `metadata?` | `metadata?: Record&lt;string, string&gt;;` | - |
+| `structured_output_enforcement?` | `structured_output_enforcement?: 'native' | 'prompt' | 'repair';` | How a requested structured response was enforced. |
+| `native_tool_events?` | `native_tool_events?: NativeToolEvent[];` | Provider-hosted tool lifecycle/error details, when the provider returns them. |
 | `stop_reason?` | `stop_reason?: string;` | Raw provider stop reason (e.g. 'end_turn', 'max_tokens', 'refusal'), when known. |
 | `stop_details?` | `stop_details?: ProviderStopDetails;` | Structured stop detail accompanying a terminal stop reason. Anthropic
 populates this for refusals — names which safety classifier fired. Undefined
@@ -48966,7 +49445,7 @@ cannot reference them in the updated profile, only remove existing mentions. |
 
 ### ProviderStopDetails `interface`
 
-📍 [`src/domain/entities/Response.ts:28`](src/domain/entities/Response.ts)
+📍 [`src/domain/entities/Response.ts:47`](src/domain/entities/Response.ts)
 
 Structured stop detail from a provider. Currently populated for Anthropic
 refusals (`{ type: 'refusal', category, explanation }`) — `category` names
@@ -50278,7 +50757,7 @@ Complete service definition - single source of truth
 
 ### ServiceInfo `interface`
 
-📍 [`src/domain/entities/Services.ts:498`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:539`](src/domain/entities/Services.ts)
 
 Service info lookup (derived from SERVICE_DEFINITIONS)
 
@@ -51623,6 +52102,37 @@ Text pipeline configuration — STT → Agent → TTS
 
 ---
 
+### TokenUsage `interface`
+
+📍 [`src/domain/entities/Response.ts:13`](src/domain/entities/Response.ts)
+
+Token usage statistics
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `input_tokens` | `input_tokens: number;` | - |
+| `output_tokens` | `output_tokens: number;` | - |
+| `total_tokens` | `total_tokens: number;` | - |
+| `output_tokens_details?` | `output_tokens_details?: {
+    reasoning_tokens: number;
+  };` | - |
+| `cached_input_tokens?` | `cached_input_tokens?: number;` | Input tokens served from a provider prompt/context cache. |
+| `cache_creation_input_tokens?` | `cache_creation_input_tokens?: number;` | Input tokens written into a provider prompt/context cache. |
+| `cache_creation_details?` | `cache_creation_details?: {
+    short_ttl_input_tokens?: number;
+    extended_ttl_input_tokens?: number;
+  };` | - |
+| `native_tool_calls?` | `native_tool_calls?: Record&lt;string, number | undefined&gt;;` | Provider-hosted tool usage that may be billed separately. |
+| `processing_mode?` | `processing_mode?: 'interactive' | 'batch';` | - |
+| `service_tier?` | `service_tier?: string;` | - |
+
+</details>
+
+---
+
 ### TranscriptMessage `interface`
 
 📍 [`src/capabilities/voice/types.ts:261`](src/capabilities/voice/types.ts)
@@ -52308,7 +52818,7 @@ type AgenticLoopEventName = keyof AgenticLoopEvents
 
 ### AgentResponse `type`
 
-📍 [`src/domain/entities/Response.ts:97`](src/domain/entities/Response.ts)
+📍 [`src/domain/entities/Response.ts:120`](src/domain/entities/Response.ts)
 
 ```typescript
 type AgentResponse = LLMResponse
@@ -52835,7 +53345,7 @@ type InputItem = Message | CompactionItem
 
 ### JSONSchema `type`
 
-📍 [`src/core/StructuredOutput.ts:34`](src/core/StructuredOutput.ts)
+📍 [`src/core/StructuredOutput.ts:36`](src/core/StructuredOutput.ts)
 
 A JSON Schema object (draft-07 subset — see per-vendor limitations).
 
@@ -53256,7 +53766,7 @@ type ResolvedContextFeatures = Required&lt;KnownContextFeatures&gt; & Record&lt;
 
 ### ResponseFormat `type`
 
-📍 [`src/core/StructuredOutput.ts:39`](src/core/StructuredOutput.ts)
+📍 [`src/core/StructuredOutput.ts:41`](src/core/StructuredOutput.ts)
 
 Vendor-agnostic structured-output request. Identical across all vendors.
 
@@ -53449,7 +53959,7 @@ type ServiceCategory = | 'major-vendors'
 
 ### ServiceType `type`
 
-📍 [`src/domain/entities/Services.ts:469`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:510`](src/domain/entities/Services.ts)
 
 Service type - union of all service IDs
 
@@ -53507,7 +54017,7 @@ type StorageContext = Record&lt;string, unknown&gt;
 
 ### StructuredParseResult `type`
 
-📍 [`src/core/StructuredOutput.ts:209`](src/core/StructuredOutput.ts)
+📍 [`src/core/StructuredOutput.ts:211`](src/core/StructuredOutput.ts)
 
 ```typescript
 type StructuredParseResult = | { ok: true; value: unknown }
@@ -53986,7 +54496,7 @@ export function defaultSkepticPrompt(ctx: SkepticPromptContext): string
 
 ### detectServiceFromURL `function`
 
-📍 [`src/domain/entities/Services.ts:547`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:588`](src/domain/entities/Services.ts)
 
 Detect service type from a URL
 
@@ -54464,7 +54974,7 @@ export function getAccountSid(connector: Connector): string
 
 ### getAllServiceIds `function`
 
-📍 [`src/domain/entities/Services.ts:583`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:624`](src/domain/entities/Services.ts)
 
 Get all service IDs
 
@@ -54598,7 +55108,7 @@ export function getRoutineProgress(execution: RoutineExecution): number
 
 ### getServiceDefinition `function`
 
-📍 [`src/domain/entities/Services.ts:569`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:610`](src/domain/entities/Services.ts)
 
 Get service definition by service type
 
@@ -54610,7 +55120,7 @@ export function getServiceDefinition(serviceType: string): ServiceDefinition | u
 
 ### getServiceInfo `function`
 
-📍 [`src/domain/entities/Services.ts:562`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:603`](src/domain/entities/Services.ts)
 
 Get service info by service type
 
@@ -54622,7 +55132,7 @@ export function getServiceInfo(serviceType: string): ServiceInfo | undefined
 
 ### getServicesByCategory `function`
 
-📍 [`src/domain/entities/Services.ts:576`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:617`](src/domain/entities/Services.ts)
 
 Get all services in a category
 
@@ -54729,7 +55239,7 @@ export function isExcludedExtension(
 
 ### isKnownService `function`
 
-📍 [`src/domain/entities/Services.ts:590`](src/domain/entities/Services.ts)
+📍 [`src/domain/entities/Services.ts:631`](src/domain/entities/Services.ts)
 
 Check if a service ID is known
 
@@ -55174,7 +55684,7 @@ export function parseSkepticOutput(
 
 ### parseStructuredOutput `function`
 
-📍 [`src/core/StructuredOutput.ts:222`](src/core/StructuredOutput.ts)
+📍 [`src/core/StructuredOutput.ts:224`](src/core/StructuredOutput.ts)
 
 Parse an LLM response into a JSON value, reusing the library's permissive
 repair strategies (markdown-fence stripping, trailing commas, etc.).

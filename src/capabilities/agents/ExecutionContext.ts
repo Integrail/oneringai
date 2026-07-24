@@ -51,6 +51,14 @@ export interface ExecutionMetrics {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  /** Optional for source compatibility; ExecutionContext instances always initialize this to 0. */
+  cachedInputTokens?: number;
+  /** Optional for source compatibility; ExecutionContext instances always initialize this to 0. */
+  cacheCreationInputTokens?: number;
+  /** Optional for source compatibility; ExecutionContext instances always initialize this to 0. */
+  reasoningTokens?: number;
+  /** Optional for source compatibility; ExecutionContext instances always initialize this to {}. */
+  nativeToolCalls?: Record<string, number>;
 
   // Errors
   errors: Array<{ type: string; message: string; timestamp: Date }>;
@@ -111,6 +119,10 @@ export class ExecutionContext {
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
+    cachedInputTokens: 0,
+    cacheCreationInputTokens: 0,
+    reasoningTokens: 0,
+    nativeToolCalls: {},
     errors: [],
   };
 

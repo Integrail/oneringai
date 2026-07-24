@@ -7,6 +7,14 @@ import { LLMResponse } from '../entities/Response.js';
 import { InputItem } from '../entities/Message.js';
 import { Tool } from '../entities/Tool.js';
 import { StreamEvent } from '../entities/StreamEvent.js';
+import type {
+  AdvancedTextCapabilities,
+  IAsyncTextBatchProvider,
+  NativeToolRequest,
+  PromptCachePolicy,
+  DataHandlingPolicy,
+} from './IAdvancedInference.js';
+import type { IConnectorRegistry } from './IConnectorRegistry.js';
 
 export interface TextGenerateOptions {
   model: string;
@@ -23,6 +31,18 @@ export interface TextGenerateOptions {
   parallel_tool_calls?: boolean;
   previous_response_id?: string;
   metadata?: Record<string, string>;
+  /**
+   * Provider-neutral prompt-cache policy. Unsupported strict requests fail
+   * before execution. `mode: 'off'` suppresses library-requested cache controls
+   * but cannot disable provider-implicit caching.
+   */
+  prompt_cache?: PromptCachePolicy;
+  /** Provider-hosted tools. These are not executed by ToolManager. */
+  native_tools?: NativeToolRequest[];
+  /** Host policy for retention-sensitive provider features. */
+  data_handling?: DataHandlingPolicy;
+  /** @internal Identity context for resolving named connector credentials. */
+  credential_context?: { userId?: string; connectorRegistry?: IConnectorRegistry };
   /** Vendor-agnostic thinking/reasoning configuration */
   thinking?: {
     enabled: boolean;
@@ -64,6 +84,12 @@ export interface ITextProvider extends IProvider {
    * Get model capabilities
    */
   getModelCapabilities(model: string): ModelCapabilities;
+
+  /** Executable advanced capabilities for a concrete model/provider pair. */
+  getAdvancedCapabilities?(model: string): AdvancedTextCapabilities;
+
+  /** Optional asynchronous batch surface. Present only when implemented by the provider. */
+  readonly batch?: IAsyncTextBatchProvider<TextGenerateOptions, LLMResponse>;
 
   /**
    * List available models from the provider's API

@@ -92,6 +92,11 @@ export class GoogleConverter {
       };
     }
 
+    const nativeTools = this.convertNativeTools(options);
+    if (nativeTools.length > 0) {
+      request.tools = [...(request.tools ?? []), ...nativeTools];
+    }
+
     // Add generation config — drop temperature for models that don't accept it
     const supportsTemperature =
       getModelInfo(options.model)?.features.parameters?.temperature !== false;
@@ -420,6 +425,12 @@ export class GoogleConverter {
 
     // Convert Google parts to our content
     const content = this.convertGeminiPartsToContent(geminiContent?.parts || []);
+    const groundingChunks = candidate?.groundingMetadata?.groundingChunks ?? [];
+    const parts = geminiContent?.parts ?? [];
+    this.attachGroundingCitations(content, parts, candidate?.groundingMetadata, groundingChunks);
+    const codeExecutions = parts.filter((part: any) => part.executableCode).length;
+    const urlMetadata = candidate?.urlContextMetadata?.urlMetadata ?? [];
+    const webFetchCalls = urlMetadata.length > 0 ? 1 : 0;
 
     // Debug output
     if (process.env.DEBUG_GOOGLE) {
@@ -427,7 +438,7 @@ export class GoogleConverter {
       console.error('[DEBUG] Raw parts:', JSON.stringify(geminiContent?.parts, null, 2));
     }
 
-    return buildLLMResponse({
+    const built = buildLLMResponse({
       provider: 'google',
       model: response.modelVersion || 'gemini',
       status: mapGoogleStatus(candidate?.finishReason),
@@ -437,7 +448,133 @@ export class GoogleConverter {
         inputTokens: response.usageMetadata?.promptTokenCount || 0,
         outputTokens: response.usageMetadata?.candidatesTokenCount || 0,
         totalTokens: response.usageMetadata?.totalTokenCount || 0,
+        cachedInputTokens: response.usageMetadata?.cachedContentTokenCount ?? undefined,
+        reasoningTokens: response.usageMetadata?.thoughtsTokenCount ?? undefined,
+        nativeToolCalls:
+          candidate?.groundingMetadata?.webSearchQueries?.length ||
+          codeExecutions ||
+          webFetchCalls
+            ? {
+                ...(candidate?.groundingMetadata?.webSearchQueries?.length
+                  ? { web_search: candidate.groundingMetadata.webSearchQueries.length }
+                  : {}),
+                ...(codeExecutions ? { code_execution: codeExecutions } : {}),
+                ...(webFetchCalls ? { web_fetch: webFetchCalls } : {}),
+              }
+            : undefined,
       },
+    });
+    const nativeToolEvents: NonNullable<LLMResponse['native_tool_events']> = [];
+    if (candidate?.groundingMetadata?.webSearchQueries?.length) {
+      nativeToolEvents.push({ capability: 'web_search', status: 'completed' });
+    }
+    if (webFetchCalls) {
+      const failed = urlMetadata.some(
+        (metadata: any) =>
+          metadata.urlRetrievalStatus &&
+          metadata.urlRetrievalStatus !== 'URL_RETRIEVAL_STATUS_SUCCESS',
+      );
+      nativeToolEvents.push({
+        capability: 'web_fetch',
+        status: failed ? 'failed' : 'completed',
+        ...(failed
+          ? {
+              error: {
+                message: 'One or more Google URL Context fetches failed',
+                details: urlMetadata,
+              },
+            }
+          : {}),
+      });
+    }
+    for (const part of parts as Array<Record<string, unknown>>) {
+      if (part.executableCode) {
+        nativeToolEvents.push({ capability: 'code_execution', status: 'in_progress' });
+      }
+      if (part.codeExecutionResult) {
+        const result = part.codeExecutionResult as Record<string, unknown>;
+        const failed = result.outcome === 'OUTCOME_FAILED';
+        nativeToolEvents.push({
+          capability: 'code_execution',
+          status: failed ? 'failed' : 'completed',
+          ...(failed
+            ? {
+                error: {
+                  message: String(result.output ?? 'Google code execution failed'),
+                  details: result,
+                },
+              }
+            : {}),
+        });
+      }
+    }
+    if (nativeToolEvents.length > 0) built.native_tool_events = nativeToolEvents;
+    return built;
+  }
+
+  private attachGroundingCitations(
+    content: Content[],
+    parts: Array<Record<string, unknown>>,
+    groundingMetadata: any,
+    groundingChunks: any[],
+  ): void {
+    const supports = groundingMetadata?.groundingSupports ?? [];
+    const annotationsByPart = new Map<number, unknown[]>();
+    for (const support of supports) {
+      const partIndex = support.segment?.partIndex ?? 0;
+      const annotations = annotationsByPart.get(partIndex) ?? [];
+      for (const chunkIndex of support.groundingChunkIndices ?? []) {
+        const web = groundingChunks[chunkIndex]?.web;
+        if (!web?.uri) continue;
+        annotations.push({
+          type: 'url_citation',
+          url: web.uri,
+          title: web.title,
+          start_index: support.segment?.startIndex,
+          end_index: support.segment?.endIndex,
+        });
+      }
+      annotationsByPart.set(partIndex, annotations);
+    }
+
+    let contentIndex = 0;
+    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+      const part = parts[partIndex]!;
+      const producesContent =
+        (typeof part.text === 'string' && part.text.length > 0) || Boolean(part.functionCall);
+      if (!producesContent) continue;
+      const item = content[contentIndex++];
+      if (item?.type !== ContentType.OUTPUT_TEXT) continue;
+      const annotations = annotationsByPart.get(partIndex);
+      if (annotations?.length) item.annotations = annotations;
+    }
+
+    // Older responses may omit groundingSupports. Preserve the citations, but
+    // attach them once rather than claiming every text block used every source.
+    if (supports.length === 0) {
+      const fallback = groundingChunks
+        .map((chunk: any) => chunk.web)
+        .filter((web: any) => web?.uri)
+        .map((web: any) => ({ type: 'url_citation', url: web.uri, title: web.title }));
+      const firstText = content.find((item) => item.type === ContentType.OUTPUT_TEXT);
+      if (firstText?.type === ContentType.OUTPUT_TEXT && fallback.length > 0) {
+        firstText.annotations = fallback;
+      }
+    }
+  }
+
+  private convertNativeTools(options: TextGenerateOptions): unknown[] {
+    return (options.native_tools ?? []).map((tool) => {
+      switch (tool.capability) {
+        case 'web_search':
+          return { googleSearch: tool.options ?? {} };
+        case 'web_fetch':
+          return { urlContext: tool.options ?? {} };
+        case 'code_execution':
+          return { codeExecution: tool.options ?? {} };
+        default:
+          return tool.options ?? {};
+      }
     });
   }
 

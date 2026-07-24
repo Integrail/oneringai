@@ -169,6 +169,8 @@ export class OpenAIResponsesConverter {
     const content: any[] = [];
     let outputText = '';
     let messageId: string | undefined;
+    const nativeToolCalls: Record<string, number> = {};
+    const nativeToolEvents: NonNullable<LLMResponse['native_tool_events']> = [];
 
     // Process all output items
     for (const item of response.output || []) {
@@ -224,6 +226,18 @@ export class OpenAIResponsesConverter {
             });
           }
         }
+      } else if (item.type === 'web_search_call') {
+        nativeToolCalls.web_search = (nativeToolCalls.web_search ?? 0) + 1;
+        nativeToolEvents.push(this.toNativeToolEvent('web_search', item));
+      } else if (item.type === 'file_search_call') {
+        nativeToolCalls.file_search = (nativeToolCalls.file_search ?? 0) + 1;
+        nativeToolEvents.push(this.toNativeToolEvent('file_search', item));
+      } else if (item.type === 'code_interpreter_call') {
+        nativeToolCalls.code_execution = (nativeToolCalls.code_execution ?? 0) + 1;
+        nativeToolEvents.push(this.toNativeToolEvent('code_execution', item));
+      } else if (item.type === 'mcp_call') {
+        nativeToolCalls.remote_mcp = (nativeToolCalls.remote_mcp ?? 0) + 1;
+        nativeToolEvents.push(this.toNativeToolEvent('remote_mcp', item));
       }
     }
 
@@ -264,12 +278,47 @@ export class OpenAIResponsesConverter {
         input_tokens: response.usage?.input_tokens || 0,
         output_tokens: response.usage?.output_tokens || 0,
         total_tokens: response.usage?.total_tokens || 0,
+        ...((response.usage as any)?.input_tokens_details?.cached_tokens != null && {
+          cached_input_tokens: (response.usage as any).input_tokens_details.cached_tokens,
+        }),
         ...((response.usage as any)?.output_tokens_details?.reasoning_tokens != null && {
           output_tokens_details: {
             reasoning_tokens: (response.usage as any).output_tokens_details.reasoning_tokens,
           },
         }),
+        ...(Object.keys(nativeToolCalls).length > 0 && {
+          native_tool_calls: nativeToolCalls,
+        }),
       },
+      ...(nativeToolEvents.length > 0 && { native_tool_events: nativeToolEvents }),
+    };
+  }
+
+  private toNativeToolEvent(
+    capability: string,
+    item: unknown,
+  ): NonNullable<LLMResponse['native_tool_events']>[number] {
+    const raw = item as Record<string, unknown>;
+    const error = raw.error;
+    return {
+      capability,
+      ...(typeof raw.id === 'string' ? { id: raw.id } : {}),
+      ...(typeof raw.status === 'string' ? { status: raw.status } : {}),
+      ...(error
+        ? {
+            error: {
+              code:
+                typeof error === 'object' && error && 'code' in error
+                  ? String((error as { code?: unknown }).code)
+                  : undefined,
+              message:
+                typeof error === 'object' && error && 'message' in error
+                  ? String((error as { message?: unknown }).message)
+                  : String(error),
+              details: error,
+            },
+          }
+        : {}),
     };
   }
 
@@ -301,6 +350,52 @@ export class OpenAIResponsesConverter {
 
       // Built-in tools (web_search, file_search, etc.)
       return tool as ResponsesAPI.Tool;
+    });
+  }
+
+  convertNativeTools(tools: import('../../../domain/interfaces/IAdvancedInference.js').NativeToolRequest[]): ResponsesAPI.Tool[] {
+    return tools.map((tool) => {
+      const extra = tool.options ?? {};
+      switch (tool.capability) {
+        case 'web_search':
+          return { ...extra, type: 'web_search' } as ResponsesAPI.Tool;
+        case 'file_search':
+          {
+            const { vectorStoreIds, ...providerOptions } = extra as Record<string, unknown> & {
+              vectorStoreIds?: string[];
+            };
+            return {
+              ...providerOptions,
+              type: 'file_search',
+              ...(vectorStoreIds ? { vector_store_ids: vectorStoreIds } : {}),
+            } as ResponsesAPI.Tool;
+          }
+        case 'code_execution':
+          return {
+            ...extra,
+            type: 'code_interpreter',
+            container: { type: 'auto' },
+          } as ResponsesAPI.Tool;
+        case 'remote_mcp': {
+          const resolvedToken = (
+            tool.server as typeof tool.server & { resolvedAuthorizationToken?: string }
+          ).resolvedAuthorizationToken;
+          return {
+            ...extra,
+            type: 'mcp',
+            server_label: tool.server.name,
+            server_url: tool.server.url,
+            ...(resolvedToken ? { authorization: resolvedToken } : {}),
+            ...(tool.server.allowedTools ? { allowed_tools: tool.server.allowedTools } : {}),
+            // OpenAI otherwise defaults remote MCP to approval-required. The
+            // normalized adapter cannot resume an approval request yet, so an
+            // omitted policy uses the only executable end-to-end mode.
+            require_approval: tool.server.requireApproval ?? 'never',
+          } as ResponsesAPI.Tool;
+        }
+        case 'web_fetch':
+          throw new Error('OpenAI has no standalone native web_fetch tool');
+      }
     });
   }
 

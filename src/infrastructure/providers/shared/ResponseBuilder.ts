@@ -23,6 +23,16 @@ export interface UsageStats {
   inputTokens: number;
   outputTokens: number;
   totalTokens?: number;
+  cachedInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  cacheCreationDetails?: {
+    shortTtlInputTokens?: number;
+    extendedTtlInputTokens?: number;
+  };
+  reasoningTokens?: number;
+  nativeToolCalls?: Record<string, number>;
+  processingMode?: 'interactive' | 'batch';
+  serviceTier?: string;
 }
 
 /**
@@ -98,6 +108,24 @@ export function buildLLMResponse(options: ResponseBuilderOptions): LLMResponse {
       input_tokens: usage.inputTokens,
       output_tokens: usage.outputTokens,
       total_tokens: usage.totalTokens ?? (usage.inputTokens + usage.outputTokens),
+      ...(usage.cachedInputTokens !== undefined && {
+        cached_input_tokens: usage.cachedInputTokens,
+      }),
+      ...(usage.cacheCreationInputTokens !== undefined && {
+        cache_creation_input_tokens: usage.cacheCreationInputTokens,
+      }),
+      ...(usage.cacheCreationDetails && {
+        cache_creation_details: {
+          short_ttl_input_tokens: usage.cacheCreationDetails.shortTtlInputTokens,
+          extended_ttl_input_tokens: usage.cacheCreationDetails.extendedTtlInputTokens,
+        },
+      }),
+      ...(usage.reasoningTokens !== undefined && {
+        output_tokens_details: { reasoning_tokens: usage.reasoningTokens },
+      }),
+      ...(usage.nativeToolCalls && { native_tool_calls: usage.nativeToolCalls }),
+      ...(usage.processingMode && { processing_mode: usage.processingMode }),
+      ...(usage.serviceTier && { service_tier: usage.serviceTier }),
     },
   };
 }

@@ -11,6 +11,7 @@
  */
 
 import { StreamEvent, StreamEventType, ProviderStopDetails } from '../../../domain/entities/StreamEvent.js';
+import type { TokenUsage } from '../../../domain/entities/Response.js';
 
 /**
  * Buffer for accumulating tool call arguments during streaming
@@ -24,7 +25,7 @@ export interface ToolCallBuffer {
 /**
  * Usage statistics tracked during streaming
  */
-export interface StreamUsage {
+export interface StreamUsage extends Partial<TokenUsage> {
   inputTokens: number;
   outputTokens: number;
 }
@@ -293,6 +294,23 @@ export abstract class BaseStreamConverter<TEvent = unknown> {
         input_tokens: this.usage.inputTokens,
         output_tokens: this.usage.outputTokens,
         total_tokens: this.usage.inputTokens + this.usage.outputTokens,
+        ...(this.usage.cached_input_tokens !== undefined && {
+          cached_input_tokens: this.usage.cached_input_tokens,
+        }),
+        ...(this.usage.cache_creation_input_tokens !== undefined && {
+          cache_creation_input_tokens: this.usage.cache_creation_input_tokens,
+        }),
+        ...(this.usage.cache_creation_details && {
+          cache_creation_details: this.usage.cache_creation_details,
+        }),
+        ...(this.usage.native_tool_calls && {
+          native_tool_calls: this.usage.native_tool_calls,
+        }),
+        ...(this.usage.output_tokens_details && {
+          output_tokens_details: this.usage.output_tokens_details,
+        }),
+        ...(this.usage.processing_mode && { processing_mode: this.usage.processing_mode }),
+        ...(this.usage.service_tier && { service_tier: this.usage.service_tier }),
       },
       iterations: 1,
       stop_reason: stopReason,
@@ -309,6 +327,30 @@ export abstract class BaseStreamConverter<TEvent = unknown> {
     }
     if (outputTokens !== undefined) {
       this.usage.outputTokens = outputTokens;
+    }
+  }
+
+  protected updateDetailedUsage(usage: Partial<TokenUsage>): void {
+    if (usage.cached_input_tokens !== undefined) {
+      this.usage.cached_input_tokens = usage.cached_input_tokens;
+    }
+    if (usage.cache_creation_input_tokens !== undefined) {
+      this.usage.cache_creation_input_tokens = usage.cache_creation_input_tokens;
+    }
+    if (usage.cache_creation_details !== undefined) {
+      this.usage.cache_creation_details = usage.cache_creation_details;
+    }
+    if (usage.native_tool_calls !== undefined) {
+      this.usage.native_tool_calls = usage.native_tool_calls;
+    }
+    if (usage.output_tokens_details !== undefined) {
+      this.usage.output_tokens_details = usage.output_tokens_details;
+    }
+    if (usage.processing_mode !== undefined) {
+      this.usage.processing_mode = usage.processing_mode;
+    }
+    if (usage.service_tier !== undefined) {
+      this.usage.service_tier = usage.service_tier;
     }
   }
 

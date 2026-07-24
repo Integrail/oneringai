@@ -52,6 +52,52 @@ describe('AnthropicStreamConverter', () => {
       expect(results[0].response_id).toBe('msg_123');
       expect(results[0].model).toBe('claude-3-opus-20240229');
     });
+
+    it('normalizes Anthropic cache buckets into total streaming input usage', async () => {
+      const events = [
+        {
+          type: 'message_start',
+          message: {
+            id: 'msg_cached',
+            type: 'message',
+            role: 'assistant',
+            content: [],
+            model: 'claude-opus-4-6',
+            stop_reason: null,
+            stop_sequence: null,
+            usage: {
+              input_tokens: 10,
+              output_tokens: 0,
+              cache_read_input_tokens: 80,
+              cache_creation_input_tokens: 10,
+              cache_creation: {
+                ephemeral_5m_input_tokens: 10,
+                ephemeral_1h_input_tokens: 0,
+              },
+              server_tool_use: null,
+              service_tier: 'standard',
+              inference_geo: null,
+            },
+          },
+        },
+        { type: 'message_stop' },
+      ] as unknown as Anthropic.MessageStreamEvent[];
+
+      const results: any[] = [];
+      for await (const event of converter.convertStream(createMockStream(events), 'claude-opus-4-6')) {
+        results.push(event);
+      }
+
+      const complete = results.find((event) => event.type === StreamEventType.RESPONSE_COMPLETE);
+      expect(complete.usage).toEqual(
+        expect.objectContaining({
+          input_tokens: 100,
+          cached_input_tokens: 80,
+          cache_creation_input_tokens: 10,
+          total_tokens: 100,
+        }),
+      );
+    });
   });
 
   describe('content_block_delta Event (Text)', () => {

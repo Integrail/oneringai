@@ -52,6 +52,7 @@
   "files": [
     "dist",
     "README.md",
+    "USER_GUIDE.md",
     "LICENSE"
   ],
   "scripts": {
@@ -69,7 +70,7 @@
     "test:unit:coverage": "vitest run tests/unit --coverage",
     "test:integration": "vitest run tests/integration",
     "test:oauth": "vitest run tests/unit/oauth",
-    "lint": "eslint src",
+    "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build && npm run typecheck && npm run test:unit && npm run docs",
@@ -169,6 +170,8 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^9.9.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
     "@types/jsdom": "^27.0.0",
     "@types/node": "^20.11.0",
     "@types/pngjs": "^6.0.5",

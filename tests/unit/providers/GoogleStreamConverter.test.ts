@@ -280,6 +280,45 @@ describe('GoogleStreamConverter', () => {
       expect(complete.usage.output_tokens).toBe(0);
       expect(complete.usage.total_tokens).toBe(0);
     });
+
+    it('should retain provider-hosted tool counts without double-counting code results', async () => {
+      const chunks = [
+        {
+          candidates: [
+            {
+              content: {
+                role: 'model',
+                parts: [
+                  { executableCode: { language: 'PYTHON', code: 'print(1)' } },
+                  { codeExecutionResult: { outcome: 'OUTCOME_OK', output: '1' } },
+                ],
+              },
+              groundingMetadata: { webSearchQueries: ['query'] },
+              urlContextMetadata: {
+                urlMetadata: [
+                  {
+                    retrievedUrl: 'https://example.com',
+                    urlRetrievalStatus: 'URL_RETRIEVAL_STATUS_SUCCESS',
+                  },
+                ],
+              },
+            },
+          ],
+          usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 1, totalTokenCount: 3 },
+        } as unknown as GenerateContentResponse,
+      ];
+      const results: any[] = [];
+      for await (const event of converter.convertStream(createMockStream(chunks), 'gemini-3.1-pro-preview')) {
+        results.push(event);
+      }
+
+      const complete = results.find((event) => event.type === StreamEventType.RESPONSE_COMPLETE);
+      expect(complete.usage.native_tool_calls).toEqual({
+        web_search: 1,
+        web_fetch: 1,
+        code_execution: 1,
+      });
+    });
   });
 
   describe('Completion', () => {

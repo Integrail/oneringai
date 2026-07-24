@@ -245,6 +245,20 @@ export class OpenAIResponsesStreamConverter {
         case 'response.completed': {
           const completedEvent = event as ResponsesAPI.ResponseCompletedEvent;
           const response = completedEvent.response;
+          const nativeToolCalls: Record<string, number> = {};
+          for (const item of response.output ?? []) {
+            const capability =
+              item.type === 'web_search_call'
+                ? 'web_search'
+                : item.type === 'file_search_call'
+                  ? 'file_search'
+                  : item.type === 'code_interpreter_call'
+                    ? 'code_execution'
+                    : item.type === 'mcp_call'
+                      ? 'remote_mcp'
+                      : undefined;
+            if (capability) nativeToolCalls[capability] = (nativeToolCalls[capability] ?? 0) + 1;
+          }
 
           // Map ResponseStatus to our status type
           let status: 'completed' | 'failed' | 'incomplete' = 'completed';
@@ -262,10 +276,16 @@ export class OpenAIResponsesStreamConverter {
               input_tokens: response.usage?.input_tokens || 0,
               output_tokens: response.usage?.output_tokens || 0,
               total_tokens: response.usage?.total_tokens || 0,
+              ...((response.usage as any)?.input_tokens_details?.cached_tokens != null && {
+                cached_input_tokens: (response.usage as any).input_tokens_details.cached_tokens,
+              }),
               ...((response.usage as any)?.output_tokens_details?.reasoning_tokens != null && {
                 output_tokens_details: {
                   reasoning_tokens: (response.usage as any).output_tokens_details.reasoning_tokens,
                 },
+              }),
+              ...(Object.keys(nativeToolCalls).length > 0 && {
+                native_tool_calls: nativeToolCalls,
               }),
             },
             iterations: 1,

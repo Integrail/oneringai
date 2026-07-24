@@ -5,8 +5,8 @@
  * `agent.run()` / `agent.runDirect()` (and their streaming variants). The
  * library then either
  *   1. converts it to the vendor's *native* structured-output mechanism when
- *      the model/vendor supports it (OpenAI `text.format`, Google/Vertex
- *      `responseJsonSchema`), or
+ *      the model/vendor supports it (OpenAI `text.format`, Anthropic
+ *      `output_config.format`, Google/Vertex `responseJsonSchema`), or
  *   2. falls back to a strict prompt instruction that asks the model to emit
  *      raw JSON, then parses/repairs the result.
  *
@@ -19,14 +19,16 @@
  * trusts it. Callers needing hard schema validation should validate
  * `output_parsed` themselves. (Deliberate choice: no schema-validator dependency.)
  *
- * **Anthropic** routes to the prompt fallback, not a native mechanism — see the
- * capability note in `AnthropicTextProvider.getModelCapabilities`.
+ * **Anthropic** uses its native mechanism only for model families explicitly
+ * allowed by `AnthropicTextProvider.getModelCapabilities`; older/unknown
+ * models retain the prompt fallback.
  *
  * Scope: JSON output only (`json_object` and `json_schema`).
  */
 
 import { parseJsonPermissive } from '../utils/jsonRepair.js';
 import type { ModelCapabilities } from '../domain/interfaces/ITextProvider.js';
+import type { AdvancedTextCapabilities } from '../domain/interfaces/IAdvancedInference.js';
 import { Vendor } from './Vendor.js';
 import { AIError } from '../domain/errors/AIErrors.js';
 
@@ -94,8 +96,8 @@ export class StructuredOutputError extends AIError {
  * - OpenAI (Responses API `text.format`) composes fine with tools → NOT listed
  *   here: OpenAI uses its native schema even inside a tool loop, no extra call.
  * - Google/Vertex `responseJsonSchema` cannot be combined with function tools.
- * - Anthropic is listed for completeness, but currently reports
- *   `supportsJSONSchema: false` and so always takes the prompt fallback anyway.
+ * - Anthropic is kept conservative because citation-producing server tools are
+ *   incompatible with `output_config.format`; final formatting is tool-free.
  */
 const FORMAT_TOOL_EXCLUSIVE: ReadonlySet<string> = new Set<string>([
   Vendor.Anthropic,
@@ -111,16 +113,10 @@ const FORMAT_TOOL_EXCLUSIVE: ReadonlySet<string> = new Set<string>([
 const NO_NATIVE_JSON_OBJECT: ReadonlySet<string> = new Set<string>([Vendor.Anthropic]);
 
 /**
- * Vendors for which the library does not (yet) emit native schema output, so
- * `json_schema` always uses the prompt fallback regardless of the capabilities
- * reported for the model. Anthropic's converter intentionally does not map
- * `response_format` (its `output_config.format` support can't be gated safely —
- * see `AnthropicTextProvider.getModelCapabilities`), so returning `'native'`
- * here would produce an unconstrained request. Keeping Anthropic in this set
- * makes `resolveStructuredStrategy` agree with the converter even if a provider
- * misreports `supportsJSONSchema: true`.
+ * Vendors for which the library does not emit native schema output. This is
+ * currently empty; model-specific gating belongs in provider capabilities.
  */
-const NO_NATIVE_JSON_SCHEMA: ReadonlySet<string> = new Set<string>([Vendor.Anthropic]);
+const NO_NATIVE_JSON_SCHEMA: ReadonlySet<string> = new Set<string>();
 
 export type StructuredStrategy = 'native' | 'prompt';
 
@@ -134,21 +130,27 @@ export function resolveStructuredStrategy(
   caps: ModelCapabilities,
   vendor: Vendor | undefined,
   hasTools: boolean,
+  advanced?: AdvancedTextCapabilities,
 ): StructuredStrategy {
   const v = vendor ?? '';
 
   // Native schema + tools don't compose on some vendors — fall back to prompt.
-  if (hasTools && FORMAT_TOOL_EXCLUSIVE.has(v)) {
+  if (
+    hasTools &&
+    (advanced ? !advanced.structuredOutput.nativeWithTools : FORMAT_TOOL_EXCLUSIVE.has(v))
+  ) {
     return 'prompt';
   }
 
   if (format.type === 'json_object') {
+    if (advanced?.structuredOutput.jsonObject === 'prompt') return 'prompt';
     if (!caps.supportsJSON) return 'prompt';
     if (NO_NATIVE_JSON_OBJECT.has(v)) return 'prompt';
     return 'native';
   }
 
   // json_schema
+  if (advanced?.structuredOutput.jsonSchema === 'prompt') return 'prompt';
   if (NO_NATIVE_JSON_SCHEMA.has(v)) return 'prompt';
   if (!caps.supportsJSONSchema) return 'prompt';
   return 'native';

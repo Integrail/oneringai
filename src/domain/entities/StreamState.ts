@@ -257,6 +257,7 @@ export class StreamState {
       // Calculate total if not provided
       this.usage.total_tokens = this.usage.input_tokens + this.usage.output_tokens;
     }
+    this.copyDetailedUsage(usage, false);
   }
 
   /**
@@ -313,6 +314,46 @@ export class StreamState {
       // Recalculate total
       this.usage.total_tokens = this.usage.input_tokens + this.usage.output_tokens;
     }
+    this.copyDetailedUsage(usage, true);
+  }
+
+  private copyDetailedUsage(usage: Partial<TokenUsage>, accumulate: boolean): void {
+    for (const key of ['cached_input_tokens', 'cache_creation_input_tokens'] as const) {
+      const value = usage[key];
+      if (value !== undefined) {
+        this.usage[key] = accumulate ? (this.usage[key] ?? 0) + value : value;
+      }
+    }
+    const reasoning = usage.output_tokens_details?.reasoning_tokens;
+    if (reasoning !== undefined) {
+      this.usage.output_tokens_details = {
+        reasoning_tokens: accumulate
+          ? (this.usage.output_tokens_details?.reasoning_tokens ?? 0) + reasoning
+          : reasoning,
+      };
+    }
+    if (usage.cache_creation_details) {
+      const prior = accumulate ? this.usage.cache_creation_details : undefined;
+      this.usage.cache_creation_details = {
+        short_ttl_input_tokens:
+          (prior?.short_ttl_input_tokens ?? 0) +
+          (usage.cache_creation_details.short_ttl_input_tokens ?? 0),
+        extended_ttl_input_tokens:
+          (prior?.extended_ttl_input_tokens ?? 0) +
+          (usage.cache_creation_details.extended_ttl_input_tokens ?? 0),
+      };
+    }
+    if (usage.native_tool_calls) {
+      const prior = accumulate ? this.usage.native_tool_calls : undefined;
+      this.usage.native_tool_calls = { ...(prior ?? {}) };
+      for (const [name, count] of Object.entries(usage.native_tool_calls)) {
+        const key = name as keyof NonNullable<TokenUsage['native_tool_calls']>;
+        this.usage.native_tool_calls[key] =
+          (this.usage.native_tool_calls[key] ?? 0) + (count ?? 0);
+      }
+    }
+    if (usage.processing_mode) this.usage.processing_mode = usage.processing_mode;
+    if (usage.service_tier) this.usage.service_tier = usage.service_tier;
   }
 
   /**

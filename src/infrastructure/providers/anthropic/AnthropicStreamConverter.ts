@@ -94,7 +94,13 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
 
     // Capture input_tokens from message_start (only place it's available)
     if (event.message.usage) {
-      this.updateUsage(event.message.usage.input_tokens, undefined);
+      this.updateUsage(
+        event.message.usage.input_tokens +
+          (event.message.usage.cache_read_input_tokens ?? 0) +
+          (event.message.usage.cache_creation_input_tokens ?? 0),
+        undefined,
+      );
+      this.updateDetailedUsage(this.mapDetailedUsage(event.message.usage));
     }
 
     return [this.emitResponseCreated(this.responseId)];
@@ -188,6 +194,7 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
     // Note: input_tokens is only available in message_start, not in delta
     if (event.usage) {
       this.updateUsage(undefined, event.usage.output_tokens);
+      this.updateDetailedUsage(this.mapDetailedUsage(event.usage));
     }
 
     // Capture stop_reason and stop_details (available in event.delta).
@@ -211,6 +218,41 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
 
     // No events to emit - we'll include usage and status in message_stop
     return [];
+  }
+
+  private mapDetailedUsage(usage: Anthropic.Usage | Anthropic.MessageDeltaUsage) {
+    const cacheCreation = 'cache_creation' in usage ? usage.cache_creation : null;
+    const serverToolUse = usage.server_tool_use;
+    return {
+      cached_input_tokens: usage.cache_read_input_tokens ?? undefined,
+      cache_creation_input_tokens: usage.cache_creation_input_tokens ?? undefined,
+      ...(cacheCreation && {
+        cache_creation_details: {
+          short_ttl_input_tokens: cacheCreation.ephemeral_5m_input_tokens,
+          extended_ttl_input_tokens: cacheCreation.ephemeral_1h_input_tokens,
+        },
+      }),
+      ...(serverToolUse && {
+        native_tool_calls: {
+          web_search: serverToolUse.web_search_requests,
+          web_fetch: serverToolUse.web_fetch_requests,
+        },
+      }),
+      ...((usage as typeof usage & {
+        output_tokens_details?: { thinking_tokens?: number } | null;
+      }).output_tokens_details?.thinking_tokens !== undefined
+        ? {
+            output_tokens_details: {
+              reasoning_tokens: (usage as typeof usage & {
+                output_tokens_details: { thinking_tokens: number };
+              }).output_tokens_details.thinking_tokens,
+            },
+          }
+        : {}),
+      ...('service_tier' in usage && usage.service_tier
+        ? { service_tier: usage.service_tier }
+        : {}),
+    };
   }
 
   /**

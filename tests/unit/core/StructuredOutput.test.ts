@@ -9,6 +9,7 @@ import {
 } from '../../../src/core/StructuredOutput.js';
 import { Vendor } from '../../../src/core/Vendor.js';
 import type { ModelCapabilities } from '../../../src/domain/interfaces/ITextProvider.js';
+import type { AdvancedTextCapabilities } from '../../../src/domain/interfaces/IAdvancedInference.js';
 
 const caps = (over: Partial<ModelCapabilities> = {}): ModelCapabilities => ({
   supportsTools: true,
@@ -30,6 +31,14 @@ const schemaFormat: ResponseFormat = {
   },
 };
 const objectFormat: ResponseFormat = { type: 'json_object' };
+const advanced = (nativeWithTools: boolean): AdvancedTextCapabilities => ({
+  promptCaching: { mode: 'unsupported', ttlModes: [], reportsCacheUsage: false },
+  batch: { supported: false, cancellable: false },
+  structuredOutput: { jsonObject: 'native', jsonSchema: 'native', nativeWithTools },
+  nativeTools: ['web_search'],
+  nativeToolOptions: { remoteMcpApproval: false },
+  dataHandling: { promptCaching: 'none', batch: 'none', remoteMcp: 'none' },
+});
 
 describe('resolveStructuredStrategy', () => {
   it('OpenAI uses native json_schema even with tools present', () => {
@@ -41,11 +50,17 @@ describe('resolveStructuredStrategy', () => {
     expect(resolveStructuredStrategy(objectFormat, caps(), Vendor.OpenAI, false)).toBe('native');
   });
 
-  it('Anthropic always uses the prompt fallback for json_schema (no native mapping)', () => {
-    // Even with supportsJSONSchema:true caps and no tools, Anthropic stays on the
-    // prompt fallback — its converter does not emit native schema output.
-    expect(resolveStructuredStrategy(schemaFormat, caps(), Vendor.Anthropic, false)).toBe('prompt');
+  it('Anthropic uses native json_schema only when provider capabilities allow it', () => {
+    expect(resolveStructuredStrategy(schemaFormat, caps(), Vendor.Anthropic, false)).toBe('native');
     expect(resolveStructuredStrategy(schemaFormat, caps(), Vendor.Anthropic, true)).toBe('prompt');
+    expect(
+      resolveStructuredStrategy(
+        schemaFormat,
+        caps({ supportsJSONSchema: false }),
+        Vendor.Anthropic,
+        false,
+      ),
+    ).toBe('prompt');
   });
 
   it('Anthropic has no native json_object mode -> prompt', () => {
@@ -56,6 +71,15 @@ describe('resolveStructuredStrategy', () => {
     expect(resolveStructuredStrategy(schemaFormat, caps(), Vendor.Google, false)).toBe('native');
     expect(resolveStructuredStrategy(schemaFormat, caps(), Vendor.Google, true)).toBe('prompt');
     expect(resolveStructuredStrategy(schemaFormat, caps(), Vendor.GoogleVertex, true)).toBe('prompt');
+  });
+
+  it('uses executable advanced capabilities for model-specific tool composition', () => {
+    expect(
+      resolveStructuredStrategy(schemaFormat, caps(), Vendor.Google, true, advanced(false)),
+    ).toBe('prompt');
+    expect(
+      resolveStructuredStrategy(schemaFormat, caps(), Vendor.Google, true, advanced(true)),
+    ).toBe('native');
   });
 
   it('falls back to prompt when the model lacks the capability', () => {

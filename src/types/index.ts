@@ -165,7 +165,12 @@ export type {
 } from '../domain/entities/Tool.js';
 
 // Response
-export type { LLMResponse, AgentResponse } from '../domain/entities/Response.js';
+export type {
+  LLMResponse,
+  AgentResponse,
+  NativeToolEvent,
+  TokenUsage,
+} from '../domain/entities/Response.js';
 
 // Connector config types
 export type {
@@ -437,6 +442,8 @@ export {
   ToolTimeoutError,
   ToolNotFoundError,
   ModelNotSupportedError,
+  ProviderCapabilityNotSupportedError,
+  ProviderAmbiguousOperationError,
   InvalidConfigError,
   InvalidToolArgumentsError,
   ProviderError,
@@ -592,6 +599,22 @@ export const DEFAULT_MAX_DELAY_MS = 30000;
 // ============ Provider Interfaces (pure contracts) ============
 export type { IProvider, ProviderCapabilities } from '../domain/interfaces/IProvider.js';
 export type { ITextProvider, TextGenerateOptions, ModelCapabilities } from '../domain/interfaces/ITextProvider.js';
+export type {
+  AdvancedTextCapabilities,
+  DataHandlingPolicy,
+  FileSearchOptions,
+  BatchHandle,
+  BatchProcessingState,
+  BatchSubmitOptions,
+  BatchTextRequest,
+  BatchTextResult,
+  IAsyncTextBatchProvider,
+  NativeToolCapability,
+  NativeToolRequest,
+  PromptCachePolicy,
+  PromptCachingMode,
+  RemoteMcpDescriptor,
+} from '../domain/interfaces/IAdvancedInference.js';
 export type { IToolExecutor } from '../domain/interfaces/IToolExecutor.js';
 export type { IDisposable, IAsyncDisposable } from '../domain/interfaces/IDisposable.js';
 export type { IConnectorRegistry } from '../domain/interfaces/IConnectorRegistry.js';

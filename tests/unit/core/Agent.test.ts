@@ -14,11 +14,19 @@ import { ContentType } from '@/domain/entities/Content.js';
 // Mock the createProvider function
 const mockGenerate = vi.fn();
 const mockStreamGenerate = vi.fn();
+const mockBatchSubmit = vi.fn();
+const mockBatch = {
+  submitBatch: mockBatchSubmit,
+  getBatch: vi.fn(),
+  cancelBatch: vi.fn(),
+  getBatchResults: vi.fn(),
+};
 const mockProvider = {
   name: 'openai',
   capabilities: { text: true, images: true, videos: false, audio: false },
   generate: mockGenerate,
   streamGenerate: mockStreamGenerate,
+  batch: mockBatch,
   getModelCapabilities: vi.fn(() => ({
     supportsTools: true,
     supportsVision: true,
@@ -131,6 +139,39 @@ describe('Agent', () => {
 
       expect(agent.listTools()).toContain('test_tool');
     });
+
+    it('binds batch submissions to the agent user and scoped connector registry', async () => {
+      const scopedRegistry = {
+        get: vi.fn((name: string) => Connector.get(name)),
+      };
+      mockBatchSubmit.mockResolvedValue({ id: 'batch_1', provider: 'openai', state: 'queued' });
+      const agent = Agent.create({
+        connector: 'test-openai',
+        model: 'gpt-4',
+        userId: 'tenant-user',
+        registry: scopedRegistry as any,
+      });
+
+      await agent.getBatchProvider()!.submitBatch(
+        [{ customId: 'one', options: { model: 'gpt-4', input: 'hello' } }],
+        { dataHandling: { allowBatchRetention: true } },
+      );
+
+      expect(mockBatchSubmit).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            customId: 'one',
+            options: expect.objectContaining({
+              credential_context: {
+                userId: 'tenant-user',
+                connectorRegistry: scopedRegistry,
+              },
+            }),
+          }),
+        ],
+        { dataHandling: { allowBatchRetention: true } },
+      );
+    });
   });
 
   describe('run()', () => {
@@ -174,6 +215,25 @@ describe('Agent', () => {
       expect(response.output_text).toBe('Hello! How can I help you?');
     });
 
+    it('should forward advanced inference options to the provider', async () => {
+      await agent.run('Hello', {
+        promptCache: { mode: 'auto', ttl: 'extended', key: 'stable-v1' },
+        nativeTools: [{ capability: 'web_search', options: { max_uses: 2 } }],
+        dataHandling: { allowProviderCaching: true, allowThirdPartyTools: false },
+      });
+
+      expect(mockGenerate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt_cache: { mode: 'auto', ttl: 'extended', key: 'stable-v1' },
+          native_tools: [{ capability: 'web_search', options: { max_uses: 2 } }],
+          data_handling: {
+            allowProviderCaching: true,
+            allowThirdPartyTools: false,
+          },
+        }),
+      );
+    });
+
     it('should run with InputItem array', async () => {
       const response = await agent.run([
         {
@@ -194,6 +254,73 @@ describe('Agent', () => {
         output_tokens: 8,
         total_tokens: 18,
       });
+    });
+
+    it('should retain detailed provider usage in execution metrics', async () => {
+      mockGenerate.mockResolvedValueOnce({
+        id: 'resp_detailed',
+        object: 'response',
+        created_at: Date.now(),
+        status: 'completed',
+        model: 'gpt-4',
+        output: [
+          {
+            type: 'message',
+            role: MessageRole.ASSISTANT,
+            content: [{ type: ContentType.OUTPUT_TEXT, text: 'Done' }],
+          },
+        ],
+        output_text: 'Done',
+        usage: {
+          input_tokens: 10,
+          output_tokens: 8,
+          total_tokens: 18,
+          cached_input_tokens: 7,
+          cache_creation_input_tokens: 2,
+          output_tokens_details: { reasoning_tokens: 3 },
+          native_tool_calls: { web_search: 2 },
+        },
+      });
+
+      await agent.run('Hello');
+
+      expect(agent.getMetrics()).toEqual(
+        expect.objectContaining({
+          cachedInputTokens: 7,
+          cacheCreationInputTokens: 2,
+          reasoningTokens: 3,
+          nativeToolCalls: { web_search: 2 },
+        }),
+      );
+    });
+
+    it('records the actual per-run inference options without credential internals', async () => {
+      const historyAgent = Agent.create({
+        connector: 'test-openai',
+        model: 'gpt-4',
+        historyMode: 'full',
+      });
+      let recordedRequest: Record<string, unknown> | undefined;
+      historyAgent.registerHook('after:execution', ({ context }: any) => {
+        recordedRequest = context.getHistory()[0]?.request;
+      });
+
+      await historyAgent.run('Hello', {
+        temperature: 0.2,
+        promptCache: { mode: 'off' },
+        nativeTools: [{ capability: 'web_search' }],
+        dataHandling: { allowProviderTools: true },
+      });
+
+      expect(recordedRequest).toEqual(
+        expect.objectContaining({
+          temperature: 0.2,
+          prompt_cache: { mode: 'off' },
+          native_tools: [{ capability: 'web_search' }],
+          data_handling: { allowProviderTools: true },
+        }),
+      );
+      expect(recordedRequest).not.toHaveProperty('credential_context');
     });
 
     it('should throw if agent is destroyed', async () => {

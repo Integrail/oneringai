@@ -100,6 +100,6 @@ export abstract class BaseProvider implements IProvider {
    * Get max retries configuration
    */
   protected getMaxRetries(): number {
-    return this.config.maxRetries || 3;
+    return this.config.maxRetries ?? 3;
   }
 }
