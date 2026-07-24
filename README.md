@@ -6,8 +6,20 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 
+## What's new in v0.11.0
+
+This release adds a provider-neutral advanced inference layer across OpenAI, Anthropic, and Google:
+prompt caching, durable asynchronous text batches, provider-hosted web/code/file/MCP tools,
+executable capability discovery, explicit data-handling controls, and detailed cache/reasoning/tool
+telemetry with mixed-cache and batch cost estimation. It also adds Cal.com, Calendly, HeyReach,
+EmailBison, and Clay connector templates, bringing the registry to 50 vendors and 54 logos.
+
+See the [v0.11.0 release notes](./CHANGELOG.md#0110--2026-07-24) for behavior details, safety
+constraints, upgrade guidance, and the complete fix list.
+
 ## Table of Contents
 
+- [What's new in v0.11.0](#whats-new-in-v0110)
 - [Features](#features)
 - [Quick Start](#quick-start) — Installation, basic usage, tools, vision, audio, images, video, search, scraping
 - [Supported Providers](#supported-providers)
@@ -3017,4 +3029,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.10.3 | **Last Updated:** 2026-07-06 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 0.11.0 | **Last Updated:** 2026-07-24 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**

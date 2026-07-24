@@ -53,6 +53,7 @@
     "dist",
     "README.md",
     "USER_GUIDE.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {

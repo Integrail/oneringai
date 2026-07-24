@@ -7,18 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.11.0] — 2026-07-24
+
+Version 0.11.0 introduces a provider-neutral advanced inference layer for production agent
+workloads and expands the connector catalog to 50 vendors. Applications can now request prompt
+caching, submit durable text batches, use provider-hosted tools, discover executable capabilities,
+and account for advanced token usage without embedding provider-specific request contracts in host
+code.
+
+### Highlights
+
+- **One contract across OpenAI, Anthropic, and Google.** Advanced options are available on normal,
+  direct, streaming, and low-level batch paths, with conservative provider/model capability checks
+  at runtime.
+- **Explicit trust boundaries.** Provider caching, retained batch data, provider-hosted tools, and
+  third-party remote MCP calls each require the corresponding `dataHandling` authorization.
+- **Durable batch workflows.** Hosts own persisted batch handles, polling, cancellation, partial
+  results, and recovery from ambiguous submission outcomes; agent-created batch facades preserve
+  the agent's `userId` and scoped connector registry.
+- **Actionable usage economics.** Responses and execution metrics retain cache reads/writes,
+  reasoning tokens, native-tool counts, service tier, and processing mode. Cost estimation handles
+  mixed cached input, Anthropic cache-write TTL multipliers, and supported providers' 50% batch
+  token discount.
+
 ### Added
 
 - **Advanced inference contracts.** Provider-neutral prompt caching, executable model/provider
   capability discovery, detailed cache/reasoning/native-tool usage, and host data-handling policy
-  are available on normal, direct, and streaming Agent calls. `TokenUsage` is exported for hosts
-  that persist or aggregate the detailed telemetry contract directly.
+  are available on normal, direct, and streaming Agent calls. New public contracts include
+  `PromptCachePolicy`, `AdvancedTextCapabilities`, `DataHandlingPolicy`, `NativeToolRequest`, the
+  asynchronous batch types, and `TokenUsage` for hosts that persist detailed telemetry.
 - **Asynchronous text batches for Anthropic, OpenAI, and Google.** One lifecycle covers submit,
-  status, cancellation, and correlated partial results. Ambiguous submissions throw
-  `ProviderAmbiguousOperationError`; SDK retries are disabled at the non-idempotent creation
-  boundary so submissions are never automatically repeated.
+  status, cancellation, and correlated partial results through `agent.getBatchProvider()`.
+  `customId` correlation is preserved for successes and item-level failures. Ambiguous submissions
+  throw `ProviderAmbiguousOperationError` with recovery metadata; SDK retries are disabled at the
+  non-idempotent creation boundary so paid submissions are never automatically repeated.
 - **Provider-hosted tools.** Typed web search/fetch, code execution, file search, and remote MCP
-  requests are mapped per provider and kept distinct from client-executed `ToolFunction`s.
+  requests are mapped per provider and kept distinct from client-executed `ToolFunction`s. Remote
+  MCP credentials remain connector-first and are resolved through the agent's scoped registry.
 
 - **Five new connector vendor templates (50 vendors total, 54 logos).** Each ships a template, a `Services.ts` service definition (auto-detection + generic `<connector>_api` tool), and a logo:
   - **Cal.com** (`cal-com`, productivity) — API v1 key auth via the `apiKey` query parameter (base `https://api.cal.com/v1`); notes cover switching to v2 (`cal-api-version` header). Official simple-icons logo.
@@ -32,11 +60,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Anthropic structured output is model-gated and native where supported.** Current Claude 4.5+
   families use `output_config.format`; older models retain the safe prompt/repair fallback. Returned
-  responses report whether structured output was enforced natively, by prompt, or by repair.
+  responses report whether structured output was enforced natively, by prompt, or by repair. When
+  tools and a non-composable structured-output path are combined, `run()` performs a bounded final
+  tool-free formatting pass without suppressing the agent's earlier tool work.
 - **Token cost estimation supports mixed cached input and batch pricing.** Cache-hit, cache-write,
   reasoning, service-tier, and provider-native tool counters are retained through response and Agent
   metrics. Anthropic input usage is normalized to total processed input, and short/extended cache
   writes use their provider pricing multipliers.
+- **Iteration history is reproducible.** Agent iteration records retain the effective inference
+  options used for each model call, including structured output, cache policy, native tools, and
+  data-handling controls; repair and wrap-up calls contribute to aggregate metrics.
 
 ### Fixed
 
@@ -52,10 +85,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Batch and MCP safety.** Agent batch surfaces now preserve `userId` and scoped connector identity;
   Anthropic remote-MCP batches use the beta batch header correctly; OpenAI no longer advertises an
   unimplemented host-approval continuation and normalizes executable MCP calls to no-approval mode.
-- **Advanced inference documentation now lives entirely in `README.md` and `USER_GUIDE.md`.** Both
+- **Usage normalization.** Anthropic cache-read and cache-creation tokens are included in total
+  processed input without double-counting, reasoning telemetry survives provider conversion, and
+  cache-write pricing uses the appropriate short or extended TTL multiplier.
+
+### Upgrade and operational notes
+
+- **Advanced data movement is opt-in.** Set only the required `dataHandling` flags. A cache mode of
+  `off` prevents OneRingAI from requesting cache controls but cannot disable provider-implicit
+  caching; enforce stronger guarantees through provider account policy.
+- **Persist batch handles before returning control.** Batch creation is non-idempotent. On
+  `ProviderAmbiguousOperationError`, reconcile the supplied recovery metadata with provider-side
+  jobs instead of blindly submitting the batch again.
+- **OpenAI remote MCP approval is fail-closed.** `requireApproval: 'always'` is rejected because the
+  normalized adapter does not expose a host continuation for approval. Omitted approval is
+  normalized to `never`; third-party data authorization is still mandatory.
+- **Cost input semantics are now total processed input.** For Anthropic, `usage.input_tokens`
+  includes uncached input, cache reads, and cache creation. Pass the detailed cache counters to
+  `calculateCost()` so each portion receives the correct rate.
+
+### Documentation
+
+- **Advanced inference documentation now lives in `README.md` and `USER_GUIDE.md`.** Both
   cover executable capability discovery, prompt-cache semantics, asynchronous batch recovery,
   provider-hosted tool security, data-handling policy, detailed usage/cost telemetry, structured
   output interaction, troubleshooting, and production checklists.
+- **Public and internal API references were regenerated** for the new contracts and provider
+  surfaces. `USER_GUIDE.md` is included in the npm package, and this release also begins packaging
+  `CHANGELOG.md` alongside the README and license.
+
+### Validation
+
+- Build, strict TypeScript checking, ESLint, and the complete unit suite pass for the release.
+- Advanced-inference coverage includes provider conversion, capability gating, policy validation,
+  batch lifecycle/recovery, native-tool mapping, structured-output fallback, telemetry, cost
+  estimation, streaming, and Agent iteration accounting.
 
 ## [0.10.3] — 2026-07-06
 
@@ -1822,8 +1886,6 @@ Three-principal permission model layered on top of the existing scope system. Ev
 - Old CRUD tool names removed entirely (not deprecated). Client apps that enable features via `features.workingMemory: true` etc. are unaffected — tools change automatically under the hood.
 - Plugin names, feature flags, programmatic APIs, and session persistence formats are all unchanged.
 
-## [Unreleased]
-
 ### Added
 
 - **AgentRegistry — Global Agent Tracking, Observability & Control** — New static registry (`AgentRegistry`) that automatically tracks all active `Agent` instances. Agents auto-register on creation and auto-unregister on destroy — zero user effort. Provides:
@@ -2504,3 +2566,5 @@ StorageRegistry.setContext({ userId: currentUser.id });
 [0.1.2]: https://github.com/aantich/oneringai/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/aantich/oneringai/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aantich/oneringai/releases/tag/v0.1.0
+[Unreleased]: https://github.com/aantich/oneringai/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/aantich/oneringai/compare/v0.10.3...v0.11.0
