@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Fixed
+
+- **Anthropic structured-output schema portability.** Native JSON schemas now pass through the
+  official Anthropic SDK transformer before becoming `output_config.format.schema`. Unsupported
+  grammar constraints such as `minItems > 1`, `maxItems`, string lengths, and numeric bounds move
+  into descriptions instead of causing provider 400 errors; the caller's original schema is not
+  mutated and remains available for host-side validation.
 
 ## [0.11.0] — 2026-07-24
 

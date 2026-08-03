@@ -12,12 +12,14 @@
  *
  * Either way the parsed value is attached to `response.output_parsed`.
  *
- * **Validation contract:** on the *native* path the vendor enforces the schema
- * server-side. On the *prompt-fallback* path the library guarantees the output
- * is **valid, parseable JSON** (with a bounded re-ask on parse failure) but does
- * NOT itself validate schema conformance — it asks the model to conform and
- * trusts it. Callers needing hard schema validation should validate
- * `output_parsed` themselves. (Deliberate choice: no schema-validator dependency.)
+ * **Validation contract:** on the *native* path the vendor enforces its
+ * supported schema subset server-side. Provider adapters may move unsupported
+ * constraints into descriptions so the native request remains portable. On
+ * the *prompt-fallback* path the library guarantees the output is **valid,
+ * parseable JSON** (with a bounded re-ask on parse failure) but does NOT itself
+ * validate schema conformance. Callers needing the complete original schema
+ * enforced should validate `output_parsed` themselves. (Deliberate choice: no
+ * schema-validator dependency.)
  *
  * **Anthropic** uses its native mechanism only for model families explicitly
  * allowed by `AnthropicTextProvider.getModelCapabilities`; older/unknown

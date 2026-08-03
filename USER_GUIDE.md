@@ -302,7 +302,7 @@ console.log(agent.getTemperature()); // 0.9
 
 Request JSON output with one vendor-agnostic option, `responseFormat`. The library translates it to each vendor's **native** structured-output mechanism where the model supports it — OpenAI (`text.format`), current supported Anthropic models (`output_config.format`), and Google/Vertex (`responseJsonSchema`) — and falls back to a strict prompt instruction otherwise. It then parses (and, on parse failure, re-asks once for) the output and attaches the result to `response.output_parsed`. The raw JSON string is still available on `response.output_text`.
 
-> **Validation contract:** on the *native* path the vendor enforces the schema server-side. On the *prompt-fallback* path the library guarantees **valid, parseable JSON** but does **not** itself validate schema conformance — it instructs the model to conform and trusts it. Validate `output_parsed` yourself if you need a hard guarantee. (This is a deliberate choice to avoid a JSON-schema-validator dependency.)
+> **Validation contract:** on the *native* path the vendor enforces its supported schema subset server-side. Provider adapters may move unsupported constraints into descriptions so the native request remains portable; Anthropic uses its official SDK transformer for this normalization. On the *prompt-fallback* path the library guarantees **valid, parseable JSON** but does **not** itself validate schema conformance. Validate `output_parsed` against the original schema when you need every constraint enforced. (This is a deliberate choice to avoid a JSON-schema-validator dependency.)
 
 Two modes:
 
@@ -350,7 +350,7 @@ console.log(direct.output_parsed); // ['red', 'green', 'blue']
 | Aspect | Behavior |
 |--------|----------|
 | Scope | JSON only (`json_object`, `json_schema`) |
-| Schema validation | Native path: enforced server-side by the vendor. Prompt-fallback path: **parseability only** — schema conformance is requested but not validated by the library (validate `output_parsed` yourself if required) |
+| Schema validation | Native path: the provider-supported subset is enforced server-side; adapters may move unsupported constraints into descriptions. Prompt-fallback path: **parseability only**. Validate `output_parsed` against the original schema when every constraint matters |
 | `run()` tool loops | Constrains the **final** answer. OpenAI composes natively and Google composition is model-specific. Anthropic conservatively uses a final tool-free pass whenever tools are present because citation-producing server tools conflict with JSON outputs |
 | Streaming | `stream()` / `streamDirect()` stream raw text and don't attach `output_parsed` (parse the accumulated text yourself). Enforced only where it applies inline (native, or prompt fallback with no tools); `stream()` has no final reformat pass, so **with tools on a prompt-fallback vendor the output isn't guaranteed to be JSON** (a warning is logged) — use `run()` for that case |
 | Parse failure | After **one** tool-free re-ask, throws `StructuredOutputError` (carrying raw output + schema) and logs it — never a silent failure |

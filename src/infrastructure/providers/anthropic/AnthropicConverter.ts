@@ -9,6 +9,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema.js';
 import { BaseConverter } from '../base/BaseConverter.js';
 import { TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
@@ -145,8 +146,15 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
           ? jsonSchema.schema
           : jsonSchema;
       if (schema && typeof schema === 'object') {
+        // Raw JSON Schema can contain constraints that Anthropic's grammar
+        // compiler does not support (for example minItems > 1, maxItems,
+        // minLength, or numeric bounds). Use the official SDK transformer so
+        // supported constraints remain structural while unsupported ones move
+        // into descriptions as model guidance. The transformer deep-clones the
+        // input, preserving the caller's original schema for host validation.
+        const anthropicSchema = transformJSONSchema(schema as Record<string, unknown>);
         params.output_config = {
-          format: { type: 'json_schema', schema: schema as Record<string, unknown> },
+          format: { type: 'json_schema', schema: anthropicSchema },
         };
       }
     }

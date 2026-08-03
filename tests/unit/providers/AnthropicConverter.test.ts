@@ -242,6 +242,81 @@ describe('AnthropicConverter', () => {
 
       expect(request.max_tokens).toBe(1000);
     });
+
+    it('should transform unsupported native structured-output constraints', () => {
+      const schema = {
+        type: 'object',
+        additionalProperties: false,
+        required: ['steps', 'confidence'],
+        properties: {
+          steps: {
+            type: 'array',
+            minItems: 2,
+            maxItems: 5,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['body'],
+              properties: {
+                body: { type: 'string', minLength: 1 },
+              },
+            },
+          },
+          confidence: { type: 'number', minimum: 0, maximum: 1 },
+        },
+      };
+
+      const request = converter.convertRequest({
+        model: 'claude-sonnet-4-6',
+        input: 'test',
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'answer', schema },
+        },
+      });
+
+      const outputSchema = request.output_config?.format?.schema as any;
+      expect(outputSchema.properties.steps.minItems).toBeUndefined();
+      expect(outputSchema.properties.steps.maxItems).toBeUndefined();
+      expect(outputSchema.properties.steps.description).toContain('minItems: 2');
+      expect(outputSchema.properties.steps.description).toContain('maxItems: 5');
+      expect(outputSchema.properties.steps.items.properties.body.minLength).toBeUndefined();
+      expect(outputSchema.properties.steps.items.properties.body.description).toContain(
+        'minLength: 1',
+      );
+      expect(outputSchema.properties.confidence.minimum).toBeUndefined();
+      expect(outputSchema.properties.confidence.maximum).toBeUndefined();
+      expect(outputSchema.properties.confidence.description).toContain('minimum: 0');
+      expect(outputSchema.properties.confidence.description).toContain('maximum: 1');
+    });
+
+    it('should preserve supported constraints without mutating the caller schema', () => {
+      const schema = {
+        type: 'object',
+        properties: {
+          values: {
+            type: 'array',
+            minItems: 1,
+            items: { type: 'string', format: 'email' },
+          },
+        },
+      };
+      const original = structuredClone(schema);
+
+      const request = converter.convertRequest({
+        model: 'claude-sonnet-4-6',
+        input: 'test',
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'answer', schema },
+        },
+      });
+
+      const outputSchema = request.output_config?.format?.schema as any;
+      expect(outputSchema.properties.values.minItems).toBe(1);
+      expect(outputSchema.properties.values.items.format).toBe('email');
+      expect(schema).toEqual(original);
+    });
   });
 
   describe('convertResponse() - Anthropic API → Our format', () => {
