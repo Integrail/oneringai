@@ -5,7 +5,7 @@
 import { Vendor } from '../../core/Vendor.js';
 import type { IBaseModelDescription, AudioFormat, VendorOptionSchema } from '../types/SharedTypes.js';
 import { createRegistryHelpers } from './RegistryUtils.js';
-import { OPENAI_VOICES, GEMINI_VOICES, GEMINI_TTS_LANGUAGES, COMMON_LANGUAGES, AUDIO_FORMATS, type IVoiceInfo } from './SharedVoices.js';
+import { OPENAI_VOICES, GEMINI_VOICES, XAI_VOICES, GEMINI_TTS_LANGUAGES, COMMON_LANGUAGES, AUDIO_FORMATS, type IVoiceInfo } from './SharedVoices.js';
 
 // Re-export IVoiceInfo for public API
 export type { IVoiceInfo } from './SharedVoices.js';
@@ -98,10 +98,16 @@ export const TTS_MODELS = {
     TTS_1_HD: 'tts-1-hd',
   },
   [Vendor.Google]: {
+    /** Current controllable low-latency Gemini TTS preview. */
+    GEMINI_3_1_FLASH_TTS: 'gemini-3.1-flash-tts-preview',
     /** Gemini 2.5 Flash TTS (optimized for low latency) */
     GEMINI_2_5_FLASH_TTS: 'gemini-2.5-flash-preview-tts',
     /** Gemini 2.5 Pro TTS (optimized for quality) */
     GEMINI_2_5_PRO_TTS: 'gemini-2.5-pro-preview-tts',
+  },
+  [Vendor.Grok]: {
+    /** xAI Text-to-Speech endpoint (the API does not require a model field). */
+    XAI_TTS: 'xai-tts',
   },
 } as const;
 
@@ -217,6 +223,39 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
 
   // ======================== Google ========================
 
+  'gemini-3.1-flash-tts-preview': {
+    name: 'gemini-3.1-flash-tts-preview',
+    displayName: 'Gemini 3.1 Flash TTS Preview',
+    provider: Vendor.Google,
+    description: 'Current low-latency Gemini speech model with steerable prompts and expressive audio tags',
+    isActive: true,
+    lifecycle: 'preview',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['audio_speech', 'generate_content', 'batch'],
+    releaseDate: '2026-04-01',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-tts-preview',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      voices: GEMINI_VOICES,
+      formats: ['wav'],
+      languages: [...GEMINI_TTS_LANGUAGES],
+      speed: { supported: false },
+      features: {
+        streaming: false, ssml: false, emotions: true, voiceCloning: false,
+        wordTimestamps: false, instructionSteering: true,
+      },
+      limits: { maxInputLength: 8192 },
+      vendorOptions: {
+        stylePrompt: { type: 'string', description: 'Natural-language narration and delivery instructions' },
+      },
+    },
+    pricing: { perMInputTokens: 1, perMOutputTokens: 20, currency: 'USD' },
+  },
+
   'gemini-2.5-flash-preview-tts': {
     name: 'gemini-2.5-flash-preview-tts',
     displayName: 'Gemini 2.5 Flash TTS',
@@ -282,6 +321,45 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
       currency: 'USD',
     },
   },
+
+  // ======================== xAI ========================
+
+  'xai-tts': {
+    name: 'xai-tts',
+    displayName: 'xAI Text to Speech',
+    provider: Vendor.Grok,
+    description: 'Expressive multilingual xAI speech synthesis with inline speech tags and telephony codecs',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['audio_speech'],
+    releaseDate: '2026-07-23',
+    sources: {
+      documentation: 'https://docs.x.ai/developers/model-capabilities/audio/text-to-speech',
+      pricing: 'https://docs.x.ai/developers/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      voices: XAI_VOICES,
+      formats: ['mp3', 'wav', 'pcm', 'mulaw', 'alaw'],
+      languages: ['auto', ...COMMON_LANGUAGES.CORE],
+      speed: { supported: true, min: 0.7, max: 1.5, default: 1 },
+      features: {
+        streaming: true, ssml: false, emotions: true, voiceCloning: true,
+        wordTimestamps: true, instructionSteering: true,
+      },
+      limits: { maxInputLength: 15000 },
+      vendorOptions: {
+        language: { type: 'string', description: 'BCP-47 language code or automatic detection', default: 'auto' },
+        output_format: { type: 'object', description: 'xAI codec, sample-rate, and bitrate configuration' },
+        optimize_streaming_latency: { type: 'number', description: 'Latency optimization level', min: 0, max: 2, default: 0 },
+        text_normalization: { type: 'boolean', description: 'Normalize numbers and symbols before synthesis', default: false },
+        with_timestamps: { type: 'boolean', description: 'Return character-level timing metadata', default: false },
+      },
+    },
+    pricing: { per1kCharacters: 0.015, currency: 'USD' },
+  },
 };
 
 // =============================================================================
@@ -293,6 +371,8 @@ const helpers = createRegistryHelpers(TTS_MODEL_REGISTRY);
 export const getTTSModelInfo = helpers.getInfo;
 export const getTTSModelsByVendor = helpers.getByVendor;
 export const getActiveTTSModels = helpers.getActive;
+/** Get active TTS models with a published deprecation notice. */
+export const getDeprecatedTTSModels = helpers.getDeprecated;
 
 /**
  * Get TTS models that support a specific feature

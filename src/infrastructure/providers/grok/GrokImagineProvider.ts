@@ -26,6 +26,7 @@ const GROK_API_BASE_URL = 'https://api.x.ai/v1';
  * Based on actual API spec
  */
 interface GrokVideoRequest {
+  [key: string]: unknown;
   prompt: string;
   model?: string | null;
   duration?: number | null; // Range: 1-15, default: 6
@@ -96,6 +97,12 @@ export class GrokImagineProvider extends BaseMediaProvider implements IVideoProv
     return this.executeWithCircuitBreaker(
       async () => {
         try {
+          if (options.model === 'grok-imagine-video-1.5' && !options.image) {
+            throw new ProviderError(
+              'grok',
+              'grok-imagine-video-1.5 requires an input image; use grok-imagine-video for text-to-video',
+            );
+          }
           this.logOperationStart('video.generate', {
             model: options.model,
             duration: options.duration,
@@ -104,6 +111,7 @@ export class GrokImagineProvider extends BaseMediaProvider implements IVideoProv
           });
 
           const request: GrokVideoRequest = {
+            ...options.vendorOptions,
             prompt: options.prompt,
             model: options.model || 'grok-imagine-video',
             duration: options.duration || 6,
@@ -232,7 +240,7 @@ export class GrokImagineProvider extends BaseMediaProvider implements IVideoProv
    * List available video models
    */
   async listModels(): Promise<string[]> {
-    return ['grok-imagine-video'];
+    return ['grok-imagine-video-1.5', 'grok-imagine-video'];
   }
 
   /**

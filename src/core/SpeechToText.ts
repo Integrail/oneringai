@@ -5,9 +5,16 @@
 
 import { Connector } from './Connector.js';
 import { createSTTProvider } from './createAudioProvider.js';
-import type { ISpeechToTextProvider, STTOptions, STTResponse } from '../domain/interfaces/IAudioProvider.js';
+import type {
+  ISpeechToTextProvider,
+  IStreamingSpeechToTextProvider,
+  STTOptions,
+  STTResponse,
+  STTStreamEvent,
+  STTStreamInput,
+  STTStreamOptions,
+} from '../domain/interfaces/IAudioProvider.js';
 import { getSTTModelInfo, getSTTModelsByVendor, type ISTTModelDescription } from '../domain/entities/STTModel.js';
-import * as fs from 'fs/promises';
 
 /**
  * Configuration for SpeechToText capability
@@ -80,6 +87,8 @@ export class SpeechToText {
     const fullOptions: STTOptions = {
       model: this.config.model ?? this.getDefaultModel(),
       audio,
+      sampleRate: options?.sampleRate,
+      encoding: options?.encoding,
       language: options?.language ?? this.config.language,
       outputFormat: options?.outputFormat,
       includeTimestamps: options?.includeTimestamps,
@@ -92,6 +101,34 @@ export class SpeechToText {
     return this.provider.transcribe(fullOptions);
   }
 
+  /** Whether the current provider exposes live streaming transcription. */
+  supportsStreaming(): boolean {
+    const provider = this.provider as Partial<IStreamingSpeechToTextProvider>;
+    return typeof provider.transcribeStream === 'function'
+      && (provider.supportsStreaming?.() ?? true);
+  }
+
+  /**
+   * Stream raw audio to a live STT session and receive interim/final transcript events.
+   * The caller is responsible for yielding audio in real-time-paced chunks.
+   */
+  transcribeStream(
+    audio: AsyncIterable<STTStreamInput> | Iterable<STTStreamInput>,
+    options: Partial<Omit<STTStreamOptions, 'model' | 'audio'>> = {}
+  ): AsyncIterableIterator<STTStreamEvent> {
+    const provider = this.provider as Partial<IStreamingSpeechToTextProvider>;
+    if (!provider.transcribeStream || !this.supportsStreaming()) {
+      throw new Error('Streaming transcription not supported by this provider');
+    }
+    return provider.transcribeStream({
+      ...options,
+      model: this.config.model ?? this.getDefaultModel(),
+      audio,
+      language: options.language ?? this.config.language,
+      temperature: options.temperature ?? this.config.temperature,
+    });
+  }
+
   /**
    * Transcribe audio file by path
    *
@@ -102,8 +139,7 @@ export class SpeechToText {
     filePath: string,
     options?: Partial<Omit<STTOptions, 'model' | 'audio'>>
   ): Promise<STTResponse> {
-    const audio = await fs.readFile(filePath);
-    return this.transcribe(audio, options);
+    return this.transcribe(filePath, options);
   }
 
   /**
@@ -120,7 +156,6 @@ export class SpeechToText {
   ): Promise<STTResponse> {
     return this.transcribe(audio, {
       ...options,
-      outputFormat: 'verbose_json',
       includeTimestamps: true,
       timestampGranularity: granularity,
     });
@@ -144,6 +179,9 @@ export class SpeechToText {
     const fullOptions: STTOptions = {
       model: this.config.model ?? this.getDefaultModel(),
       audio,
+      sampleRate: options?.sampleRate,
+      encoding: options?.encoding,
+      language: options?.language ?? this.config.language,
       outputFormat: options?.outputFormat,
       prompt: options?.prompt,
       temperature: options?.temperature ?? this.config.temperature,

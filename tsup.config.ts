@@ -15,7 +15,7 @@ export default defineConfig([
     sourcemap: true,
     clean: true,
     treeshake: true,
-    target: 'node18',
+    target: 'node22',
     platform: 'node',
     outDir: 'dist',
     external: ['cross-spawn'],

@@ -1,6 +1,6 @@
 /**
  * OpenAI Image Generation provider
- * Supports: gpt-image-1, dall-e-3, dall-e-2
+ * Supports: GPT Image 2/1.x and legacy DALL-E models
  */
 
 import OpenAI from 'openai';
@@ -63,17 +63,27 @@ export class OpenAIImageProvider extends BaseMediaProvider implements IImageProv
             n: options.n,
           });
 
-          // gpt-image-1 doesn't support response_format parameter
-          const isGptImage = options.model === 'gpt-image-1';
+          const isGptImage = options.model.startsWith('gpt-image-')
+            || options.model === 'chatgpt-image-latest';
+          const vendorOptions = options.vendorOptions ?? {};
+          const normalizedQuality = isGptImage
+            ? options.quality === 'standard'
+              ? 'medium'
+              : options.quality === 'hd'
+                ? 'high'
+                : options.quality
+            : options.quality;
 
           const params: any = {
             model: options.model,
             prompt: options.prompt,
             size: options.size as any,
-            quality: options.quality,
-            style: options.style,
+            quality: normalizedQuality,
             n: options.n || 1,
+            ...vendorOptions,
           };
+
+          if (!isGptImage) params.style = options.style;
 
           // Only add response_format for models that support it
           if (!isGptImage) {
@@ -125,8 +135,8 @@ export class OpenAIImageProvider extends BaseMediaProvider implements IImageProv
           const image = this.prepareImageInput(options.image);
           const mask = options.mask ? this.prepareImageInput(options.mask) : undefined;
 
-          // gpt-image-1 doesn't support response_format parameter
-          const isGptImage = options.model === 'gpt-image-1';
+          const isGptImage = options.model.startsWith('gpt-image-')
+            || options.model === 'chatgpt-image-latest';
 
           const params: any = {
             model: options.model,
@@ -135,6 +145,7 @@ export class OpenAIImageProvider extends BaseMediaProvider implements IImageProv
             mask,
             size: options.size as any,
             n: options.n || 1,
+            ...options.vendorOptions,
           };
 
           // Only add response_format for models that support it
@@ -223,7 +234,7 @@ export class OpenAIImageProvider extends BaseMediaProvider implements IImageProv
    * List available image models
    */
   async listModels(): Promise<string[]> {
-    return ['gpt-image-1', 'dall-e-3', 'dall-e-2'];
+    return ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'];
   }
 
   /**

@@ -3,6 +3,7 @@
  */
 
 import { Content } from './Content.js';
+import type { ReasoningEffort } from '../interfaces/ITextProvider.js';
 
 export enum MessageRole {
   USER = 'user',
@@ -26,7 +27,7 @@ export interface CompactionItem {
 export interface ReasoningItem {
   type: 'reasoning';
   id: string;
-  effort?: 'low' | 'medium' | 'high';
+  effort?: ReasoningEffort;
   summary?: string;
   encrypted_content?: string; // For o-series models
 }

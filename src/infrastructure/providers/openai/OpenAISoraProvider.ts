@@ -72,17 +72,11 @@ export class OpenAISoraProvider extends BaseMediaProvider implements IVideoProvi
             | 'sora-2-pro-2025-10-06'
             | 'sora-2-2025-12-08';
 
-          // Map duration to SDK's seconds parameter (string: '4', '8', '12')
+          // The live API supports 16/20 seconds ahead of the current SDK union.
           const seconds = this.durationToSeconds(options.duration || 4);
 
           // Build request parameters matching OpenAI SDK 6.x VideoCreateParams
-          const params: {
-            prompt: string;
-            model?: typeof model;
-            seconds?: '4' | '8' | '12';
-            size?: '720x1280' | '1280x720' | '1024x1792' | '1792x1024';
-            input_reference?: any;
-          } = {
+          const params: Record<string, unknown> = {
             prompt: options.prompt,
             model,
             seconds,
@@ -100,8 +94,14 @@ export class OpenAISoraProvider extends BaseMediaProvider implements IVideoProvi
             params.input_reference = await this.prepareImageInput(options.image);
           }
 
+          const characters = options.vendorOptions?.characters
+            ?? (options.vendorOptions?.characterId
+              ? [{ id: options.vendorOptions.characterId }]
+              : undefined);
+          if (characters) params.characters = characters;
+
           // Call the OpenAI Videos API
-          const response = await this.client.videos.create(params);
+          const response = await this.client.videos.create(params as any);
 
           this.logOperationComplete('video.generate', {
             model,
@@ -214,7 +214,7 @@ export class OpenAISoraProvider extends BaseMediaProvider implements IVideoProvi
             video: { id: videoId },
             prompt,
             seconds,
-          });
+          } as any);
 
           this.logOperationComplete('video.extend', {
             jobId: response.id,
@@ -437,16 +437,18 @@ export class OpenAISoraProvider extends BaseMediaProvider implements IVideoProvi
    * Rejects non-finite, non-positive, or NaN inputs — silently mapping
    * those to a default would waste a paid Sora job.
    */
-  private durationToSeconds(duration: number): '4' | '8' | '12' {
+  private durationToSeconds(duration: number): '4' | '8' | '12' | '16' | '20' {
     if (!Number.isFinite(duration) || duration <= 0) {
       throw new ProviderError(
         'openai',
-        `Invalid Sora duration: ${duration}. Must be a finite positive number (snapped to 4 / 8 / 12 seconds).`
+        `Invalid Sora duration: ${duration}. Must be a finite positive number (snapped to 4 / 8 / 12 / 16 / 20 seconds).`
       );
     }
     if (duration <= 4) return '4';
     if (duration <= 8) return '8';
-    return '12';
+    if (duration <= 12) return '12';
+    if (duration <= 16) return '16';
+    return '20';
   }
 
   /**
@@ -459,10 +461,10 @@ export class OpenAISoraProvider extends BaseMediaProvider implements IVideoProvi
   /**
    * Map resolution string to SDK's size format
    */
-  private resolutionToSize(resolution: string): '720x1280' | '1280x720' | '1024x1792' | '1792x1024' {
-    const validSizes = ['720x1280', '1280x720', '1024x1792', '1792x1024'] as const;
+  private resolutionToSize(resolution: string): '720x1280' | '1280x720' | '1024x1792' | '1792x1024' | '1080x1920' | '1920x1080' {
+    const validSizes = ['720x1280', '1280x720', '1024x1792', '1792x1024', '1080x1920', '1920x1080'] as const;
     if (validSizes.includes(resolution as any)) {
-      return resolution as '720x1280' | '1280x720' | '1024x1792' | '1792x1024';
+      return resolution as (typeof validSizes)[number];
     }
     // Default to portrait
     return '720x1280';

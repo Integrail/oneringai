@@ -54,6 +54,9 @@ export interface TTSResponse {
 
   /** Number of characters used (for billing) */
   charactersUsed?: number;
+
+  /** Optional provider-supplied character alignment data. */
+  characterTimestamps?: Array<{ character: string; start: number; end: number }>;
 }
 
 /**
@@ -116,6 +119,12 @@ export interface STTOptions {
   /** Audio data as Buffer or file path */
   audio: Buffer | string;
 
+  /** Sample rate for a headerless raw-audio Buffer. Defaults to 16000. */
+  sampleRate?: 8000 | 16000 | 22050 | 24000 | 44100 | 48000;
+
+  /** Encoding for a headerless raw-audio Buffer. Defaults to signed 16-bit LE PCM. */
+  encoding?: 'pcm' | 'mulaw' | 'alaw';
+
   /** Language code (ISO-639-1), optional for auto-detection */
   language?: string;
 
@@ -145,6 +154,10 @@ export interface WordTimestamp {
   word: string;
   start: number;
   end: number;
+  /** Provider speaker label for diarized transcription. */
+  speaker?: string | number;
+  /** Source channel for multichannel transcription. */
+  channel?: number;
 }
 
 /**
@@ -191,4 +204,40 @@ export interface ISpeechToTextProvider extends IProvider {
    * Translate audio to English text (optional, Whisper-specific)
    */
   translate?(options: STTOptions): Promise<STTResponse>;
+}
+
+/** Input frame for live STT. `finalize` ends the current utterance without closing the session. */
+export type STTStreamInput = Buffer | { type: 'finalize'; channel?: number };
+
+/** Audio source and normalized controls for a live transcription session. */
+export interface STTStreamOptions extends Omit<STTOptions, 'audio' | 'outputFormat'> {
+  /** Raw, real-time-paced audio chunks. The provider does not pace buffered input. */
+  audio: AsyncIterable<STTStreamInput> | Iterable<STTStreamInput>;
+  /** Raw audio sample rate. */
+  sampleRate?: 8000 | 16000 | 22050 | 24000 | 44100 | 48000;
+  /** Raw audio encoding. */
+  encoding?: 'pcm' | 'mulaw' | 'alaw';
+  /** Emit mutable interim transcript events in addition to finalized chunks. */
+  interimResults?: boolean;
+}
+
+/** Normalized event emitted by a live transcription session. */
+export interface STTStreamEvent {
+  type: 'created' | 'transcript' | 'done';
+  text?: string;
+  isFinal?: boolean;
+  speechFinal?: boolean;
+  channel?: number;
+  durationSeconds?: number;
+  words?: WordTimestamp[];
+  /** End-of-turn confidence when the provider's semantic turn detector is enabled. */
+  endOfTurnConfidence?: number;
+  /** Original provider event for fields not represented by the normalized contract. */
+  raw: Record<string, unknown>;
+}
+
+/** Opt-in extension implemented by providers with a live STT WebSocket API. */
+export interface IStreamingSpeechToTextProvider extends ISpeechToTextProvider {
+  supportsStreaming(): boolean;
+  transcribeStream(options: STTStreamOptions): AsyncIterableIterator<STTStreamEvent>;
 }

@@ -298,6 +298,13 @@ export abstract class BaseTextProvider extends BaseProvider implements ITextProv
         prompt_cache: { ...options.prompt_cache, ttl: undefined },
       };
     }
+    if (options.prompt_cache.breakpointMode === 'explicit' && !caching.explicitBreakpoints) {
+      if (options.prompt_cache.strict) return options;
+      return {
+        ...options,
+        prompt_cache: { ...options.prompt_cache, breakpointMode: undefined },
+      };
+    }
     return options;
   }
 
@@ -382,6 +389,18 @@ export abstract class BaseTextProvider extends BaseProvider implements ITextProv
         this.name,
         options.model,
         `prompt_cache_ttl:${options.prompt_cache.ttl}`,
+      );
+    }
+    if (
+      options.prompt_cache?.mode === 'auto' &&
+      options.prompt_cache.strict &&
+      options.prompt_cache.breakpointMode === 'explicit' &&
+      !advanced.promptCaching.explicitBreakpoints
+    ) {
+      throw new ProviderCapabilityNotSupportedError(
+        this.name,
+        options.model,
+        'prompt_cache_explicit_breakpoints',
       );
     }
     for (const tool of options.native_tools ?? []) {

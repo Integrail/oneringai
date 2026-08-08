@@ -10,6 +10,7 @@ import { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
 import { GoogleConfig } from '../../../domain/types/ProviderConfig.js';
 import { GoogleConverter } from './GoogleConverter.js';
 import { GoogleStreamConverter } from './GoogleStreamConverter.js';
+import { GoogleInteractionsConverter } from './GoogleInteractionsConverter.js';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
 import { resolveModelCapabilities } from '../base/ModelCapabilityResolver.js';
 import { ProviderErrorMapper } from '../base/ProviderErrorMapper.js';
@@ -30,6 +31,7 @@ import {
 const GOOGLE_SERVER_TOOL_MODELS = /^gemini-(?:2\.5|3(?:\.|-|$))/;
 const GOOGLE_STRUCTURED_WITH_TOOLS_MODELS = /^gemini-3(?:\.|-|$)/;
 const GOOGLE_NON_TEXT_VARIANTS = /(?:image|live)/;
+const GOOGLE_INTERACTIONS_DEFAULT_MODELS = /^gemini-3\.(?:5|6)(?:-|$)/;
 
 export class GoogleTextProvider extends BaseTextProvider {
   readonly name = 'google';
@@ -43,6 +45,7 @@ export class GoogleTextProvider extends BaseTextProvider {
   private client: GoogleGenAI;
   private converter: GoogleConverter;
   private streamConverter: GoogleStreamConverter;
+  private interactionsConverter: GoogleInteractionsConverter;
   readonly batch: IAsyncTextBatchProvider<TextGenerateOptions, LLMResponse> = this;
 
   constructor(config: GoogleConfig) {
@@ -56,6 +59,7 @@ export class GoogleTextProvider extends BaseTextProvider {
     });
     this.converter = new GoogleConverter();
     this.streamConverter = new GoogleStreamConverter();
+    this.interactionsConverter = new GoogleInteractionsConverter();
 
     // Share storage between converters for multi-turn conversations
     // This allows streaming responses to store signatures and mappings that the
@@ -72,6 +76,13 @@ export class GoogleTextProvider extends BaseTextProvider {
     options = await this.resolveAdvancedCredentials(options);
     return this.executeWithCircuitBreaker(async () => {
       try {
+        if (this.usesInteractions(options)) {
+          const request = await this.interactionsConverter.convertRequest(options);
+          this.logger.debug({ model: options.model }, 'generate: calling Google Interactions API');
+          const result = await this.client.interactions.create(request as any);
+          return this.interactionsConverter.convertResponse(result, options.model);
+        }
+
         // Convert our format → Google format
         const googleRequest = await this.converter.convertRequest(options);
 
@@ -151,6 +162,17 @@ export class GoogleTextProvider extends BaseTextProvider {
     options = await this.resolveAdvancedCredentials(options);
     this.ensureObservabilityInitialized();
     try {
+      if (this.usesInteractions(options)) {
+        const request = await this.interactionsConverter.convertRequest(options);
+        this.logger.debug({ model: options.model }, 'streamGenerate: calling Google Interactions API');
+        const stream = await this.client.interactions.create({ ...request, stream: true } as any);
+        yield* this.interactionsConverter.convertStream(
+          stream as unknown as AsyncIterable<unknown>,
+          options.model,
+        );
+        return;
+      }
+
       // Convert our format → Google format
       const googleRequest = await this.converter.convertRequest(options);
 
@@ -377,6 +399,17 @@ export class GoogleTextProvider extends BaseTextProvider {
       }
       ids.add(request.customId);
     }
+  }
+
+  /**
+   * Gemini 3.5+ uses the GA Interactions API by default. Callers can retain the
+   * legacy generateContent wire contract with `vendorOptions.api = 'generateContent'`.
+   */
+  private usesInteractions(options: TextGenerateOptions): boolean {
+    const requested = options.vendorOptions?.api;
+    if (requested === 'generateContent') return false;
+    if (requested === 'interactions') return true;
+    return GOOGLE_INTERACTIONS_DEFAULT_MODELS.test(options.model);
   }
 
   private mapGoogleBatchState(state?: string): BatchHandle['state'] {

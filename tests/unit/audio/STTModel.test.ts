@@ -139,6 +139,11 @@ describe('STTModel Registry', () => {
       const cost = calculateSTTCost('unknown', 60);
       expect(cost).toBeNull();
     });
+
+    it('uses xAI streaming pricing when requested', () => {
+      expect(calculateSTTCost('xai-stt', 60)).toBeCloseTo(0.0016666667);
+      expect(calculateSTTCost('xai-stt', 60, { streaming: true })).toBeCloseTo(0.0033333333);
+    });
   });
 
   describe('Model constants', () => {
@@ -178,6 +183,15 @@ describe('STTModel Registry', () => {
       expect(model?.capabilities.vendorOptions?.max_speakers.type).toBe('number');
       expect(model?.capabilities.vendorOptions?.max_speakers.min).toBe(2);
       expect(model?.capabilities.vendorOptions?.max_speakers.max).toBe(10);
+    });
+
+    it('describes Gemini native transcription accurately', () => {
+      const model = getSTTModelInfo('gemini-3.6-flash');
+      expect(model?.endpoints).toEqual(['interactions']);
+      expect(model?.capabilities.outputFormats).toEqual(['text']);
+      expect(model?.capabilities.timestamps).toEqual({ supported: true, granularities: ['segment'] });
+      expect(model?.capabilities.features.diarization).toBe(true);
+      expect(model?.capabilities.inputFormats).toEqual(['wav', 'mp3', 'aiff', 'aac', 'ogg', 'flac']);
     });
   });
 });

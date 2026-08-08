@@ -4,6 +4,10 @@
 
 import { IProvider } from './IProvider.js';
 
+export type EmbeddingContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image' | 'audio' | 'video' | 'document'; data: Buffer | string; mimeType?: string };
+
 /**
  * Options for generating embeddings
  */
@@ -12,10 +16,17 @@ export interface EmbeddingOptions {
   model: string;
   /** Text(s) to embed — single string or array */
   input: string | string[];
+  /** Optional multimodal content for models such as Gemini Embedding 2. */
+  content?: EmbeddingContentPart[];
   /** Output dimensions (for models that support MRL / dimension reduction) */
   dimensions?: number;
   /** Encoding format for the embedding values */
   encodingFormat?: 'float' | 'base64';
+  /**
+   * Provider-specific controls. Google supports `taskType`, `title`, and
+   * `mediaDownloadTimeoutMs` (30 seconds by default for external media).
+   */
+  vendorOptions?: Record<string, unknown>;
 }
 
 /**

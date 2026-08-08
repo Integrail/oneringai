@@ -53,11 +53,15 @@ export class GoogleTTSProvider extends BaseMediaProvider implements ITextToSpeec
           });
 
           // Build the request with speech config
+          const stylePrompt = options.vendorOptions?.stylePrompt;
+          const input = typeof stylePrompt === 'string'
+            ? `${stylePrompt}\n\n${options.input}`
+            : options.input;
           const result = await this.client.models.generateContent({
             model: options.model,
             contents: [
               {
-                parts: [{ text: options.input }],
+                parts: [{ text: input }],
               },
             ],
             config: {

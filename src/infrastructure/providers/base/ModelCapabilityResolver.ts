@@ -10,15 +10,20 @@ import type { ModelCapabilities } from '../../../domain/interfaces/ITextProvider
 /**
  * Maps a registry model description to provider ModelCapabilities
  */
-function mapRegistryToCapabilities(info: ILLMDescription): ModelCapabilities {
+function mapRegistryToCapabilities(
+  info: ILLMDescription,
+  fallback: ModelCapabilities,
+): ModelCapabilities {
+  const inputTokens = info.features.input.tokens ?? fallback.maxInputTokens ?? fallback.maxTokens;
+  const outputTokens = info.features.output.tokens ?? fallback.maxOutputTokens ?? fallback.maxTokens;
   return {
     supportsTools: info.features.functionCalling ?? false,
     supportsVision: info.features.vision ?? false,
     supportsJSON: info.features.structuredOutput ?? false,
     supportsJSONSchema: info.features.structuredOutput ?? false,
-    maxTokens: info.features.input.tokens,
-    maxInputTokens: info.features.input.tokens,
-    maxOutputTokens: info.features.output.tokens,
+    maxTokens: inputTokens,
+    maxInputTokens: inputTokens,
+    maxOutputTokens: outputTokens,
   };
 }
 
@@ -35,7 +40,7 @@ export function resolveModelCapabilities(
 ): ModelCapabilities {
   const info = getModelInfo(model);
   if (info) {
-    return mapRegistryToCapabilities(info);
+    return mapRegistryToCapabilities(info, vendorDefaults);
   }
   return vendorDefaults;
 }
@@ -54,5 +59,5 @@ export function resolveMaxContextTokens(
 ): number {
   if (!model) return fallback;
   const info = getModelInfo(model);
-  return info ? info.features.input.tokens : fallback;
+  return info?.features.input.tokens ?? fallback;
 }

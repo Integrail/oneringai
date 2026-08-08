@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-07-24
+**Generated:** 2026-08-08
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -12,23 +12,23 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 ## Table of Contents
 
 - [Core](#core) (18 items)
-- [Text-to-Speech (TTS)](#text-to-speech-tts-) (10 items)
+- [Text-to-Speech (TTS)](#text-to-speech-tts-) (13 items)
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (11 items)
-- [Image Generation](#image-generation) (24 items)
-- [Video Generation](#video-generation) (22 items)
+- [Image Generation](#image-generation) (25 items)
+- [Video Generation](#video-generation) (23 items)
 - [Task Agents](#task-agents) (115 items)
 - [Context Management](#context-management) (14 items)
-- [Session Management](#session-management) (46 items)
-- [Tools & Function Calling](#tools-function-calling) (182 items)
-- [Streaming](#streaming) (29 items)
-- [Model Registry](#model-registry) (17 items)
+- [Session Management](#session-management) (56 items)
+- [Tools & Function Calling](#tools-function-calling) (185 items)
+- [Streaming](#streaming) (30 items)
+- [Model Registry](#model-registry) (27 items)
 - [OAuth & External APIs](#oauth-external-apis) (41 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
 - [Errors](#errors) (39 items)
 - [Utilities](#utilities) (10 items)
-- [Interfaces](#interfaces) (75 items)
+- [Interfaces](#interfaces) (78 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (694 items)
+- [Other](#other) (710 items)
 
 ## Core
 
@@ -36,7 +36,7 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:216`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:205`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
 
@@ -1649,7 +1649,7 @@ refresh-grant tokens on every authorize URL — no migration required. |
 
 ### AgentConfig `interface`
 
-📍 [`src/core/Agent.ts:67`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:68`](src/core/Agent.ts)
 
 Agent configuration - extends BaseAgentConfig with Agent-specific options
 
@@ -1661,13 +1661,7 @@ Agent configuration - extends BaseAgentConfig with Agent-specific options
 | `instructions?` | `instructions?: string;` | System instructions for the agent |
 | `temperature?` | `temperature?: number;` | Temperature for generation |
 | `maxIterations?` | `maxIterations?: number;` | Maximum iterations for tool calling loop |
-| `thinking?` | `thinking?: {
-    enabled: boolean;
-    /** Budget in tokens for thinking (Anthropic & Google) */
-    budgetTokens?: number;
-    /** Reasoning effort level (OpenAI) */
-    effort?: 'low' | 'medium' | 'high';
-  };` | Vendor-agnostic thinking/reasoning configuration |
+| `thinking?` | `thinking?: ThinkingConfig;` | Vendor-agnostic thinking/reasoning configuration |
 | `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Vendor-specific options (e.g., Google's thinkingLevel: 'low' | 'high') |
 | `promptCache?` | `promptCache?: PromptCachePolicy;` | Provider-neutral prompt caching policy. |
 | `nativeTools?` | `nativeTools?: NativeToolRequest[];` | Provider-hosted tools, separate from client-executed ToolFunctions. |
@@ -1849,7 +1843,7 @@ Fetch options with additional connector-specific settings
 
 ### RunOptions `interface`
 
-📍 [`src/core/Agent.ts:156`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:151`](src/core/Agent.ts)
 
 Per-call options for run() and stream().
 These override the agent-level config for this single invocation.
@@ -1859,13 +1853,7 @@ These override the agent-level config for this single invocation.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `thinking?` | `thinking?: {
-    enabled: boolean;
-    /** Budget in tokens for thinking (Anthropic & Google) */
-    budgetTokens?: number;
-    /** Reasoning effort level (OpenAI) */
-    effort?: 'low' | 'medium' | 'high';
-  };` | Vendor-agnostic thinking/reasoning configuration |
+| `thinking?` | `thinking?: ThinkingConfig;` | Vendor-agnostic thinking/reasoning configuration |
 | `temperature?` | `temperature?: number;` | Temperature for generation |
 | `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Vendor-specific options |
 | `promptCache?` | `promptCache?: PromptCachePolicy;` | Per-run override for provider prompt caching. |
@@ -1894,7 +1882,7 @@ type AgentEventListener = (agentId: string, agentName: string, event: string, da
 
 ### AgentSessionConfig `type`
 
-📍 [`src/core/Agent.ts:62`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:63`](src/core/Agent.ts)
 
 Session configuration for Agent (same as BaseSessionConfig)
 
@@ -2281,6 +2269,51 @@ Complete TTS model description
 
 ---
 
+### STTStreamEvent `interface`
+
+📍 [`src/domain/interfaces/IAudioProvider.ts:225`](src/domain/interfaces/IAudioProvider.ts)
+
+Normalized event emitted by a live transcription session.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'created' | 'transcript' | 'done';` | - |
+| `text?` | `text?: string;` | - |
+| `isFinal?` | `isFinal?: boolean;` | - |
+| `speechFinal?` | `speechFinal?: boolean;` | - |
+| `channel?` | `channel?: number;` | - |
+| `durationSeconds?` | `durationSeconds?: number;` | - |
+| `words?` | `words?: WordTimestamp[];` | - |
+| `endOfTurnConfidence?` | `endOfTurnConfidence?: number;` | End-of-turn confidence when the provider's semantic turn detector is enabled. |
+| `raw` | `raw: Record&lt;string, unknown&gt;;` | Original provider event for fields not represented by the normalized contract. |
+
+</details>
+
+---
+
+### STTStreamOptions `interface`
+
+📍 [`src/domain/interfaces/IAudioProvider.ts:213`](src/domain/interfaces/IAudioProvider.ts)
+
+Audio source and normalized controls for a live transcription session.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `audio` | `audio: AsyncIterable&lt;STTStreamInput&gt; | Iterable&lt;STTStreamInput&gt;;` | Raw, real-time-paced audio chunks. The provider does not pace buffered input. |
+| `sampleRate?` | `sampleRate?: 8000 | 16000 | 22050 | 24000 | 44100 | 48000;` | Raw audio sample rate. |
+| `encoding?` | `encoding?: 'pcm' | 'mulaw' | 'alaw';` | Raw audio encoding. |
+| `interimResults?` | `interimResults?: boolean;` | Emit mutable interim transcript events in addition to finalized chunks. |
+
+</details>
+
+---
+
 ### TextToSpeechConfig `interface`
 
 📍 [`src/core/TextToSpeech.ts:22`](src/core/TextToSpeech.ts)
@@ -2389,6 +2422,7 @@ Response from text-to-speech synthesis
 | `format` | `format: AudioFormat;` | Format of the audio |
 | `durationSeconds?` | `durationSeconds?: number;` | Duration in seconds (if available) |
 | `charactersUsed?` | `charactersUsed?: number;` | Number of characters used (for billing) |
+| `characterTimestamps?` | `characterTimestamps?: Array&lt;{ character: string; start: number; end: number }&gt;;` | Optional provider-supplied character alignment data. |
 
 </details>
 
@@ -2396,7 +2430,7 @@ Response from text-to-speech synthesis
 
 ### TTSStreamChunk `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:77`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:80`](src/domain/interfaces/IAudioProvider.ts)
 
 A single chunk of streamed TTS audio
 
@@ -2412,9 +2446,21 @@ A single chunk of streamed TTS audio
 
 ---
 
+### STTStreamInput `type`
+
+📍 [`src/domain/interfaces/IAudioProvider.ts:210`](src/domain/interfaces/IAudioProvider.ts)
+
+Input frame for live STT. `finalize` ends the current utterance without closing the session.
+
+```typescript
+type STTStreamInput = Buffer | { type: 'finalize'; channel?: number }
+```
+
+---
+
 ### calculateTTSCost `function`
 
-📍 [`src/domain/entities/TTSModel.ts:313`](src/domain/entities/TTSModel.ts)
+📍 [`src/domain/entities/TTSModel.ts:393`](src/domain/entities/TTSModel.ts)
 
 Calculate estimated cost for TTS
 For OpenAI models: based on character count
@@ -2431,7 +2477,7 @@ export function calculateTTSCost(
 
 ### getTTSModelsWithFeature `function`
 
-📍 [`src/domain/entities/TTSModel.ts:300`](src/domain/entities/TTSModel.ts)
+📍 [`src/domain/entities/TTSModel.ts:380`](src/domain/entities/TTSModel.ts)
 
 Get TTS models that support a specific feature
 
@@ -2445,7 +2491,7 @@ export function getTTSModelsWithFeature(
 
 ### TTS_MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/TTSModel.ts:130`](src/domain/entities/TTSModel.ts)
+📍 [`src/domain/entities/TTSModel.ts:136`](src/domain/entities/TTSModel.ts)
 
 Complete TTS model registry
 Last full audit: January 2026
@@ -2537,6 +2583,38 @@ Last full audit: January 2026
     },
     pricing: { per1kCharacters: 0.030, currency: 'USD' },
   }` | - |
+| `'gemini-3.1-flash-tts-preview'` | `{
+    name: 'gemini-3.1-flash-tts-preview',
+    displayName: 'Gemini 3.1 Flash TTS Preview',
+    provider: Vendor.Google,
+    description: 'Current low-latency Gemini speech model with steerable prompts and expressive audio tags',
+    isActive: true,
+    lifecycle: 'preview',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['audio_speech', 'generate_content', 'batch'],
+    releaseDate: '2026-04-01',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-tts-preview',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      voices: GEMINI_VOICES,
+      formats: ['wav'],
+      languages: [...GEMINI_TTS_LANGUAGES],
+      speed: { supported: false },
+      features: {
+        streaming: false, ssml: false, emotions: true, voiceCloning: false,
+        wordTimestamps: false, instructionSteering: true,
+      },
+      limits: { maxInputLength: 8192 },
+      vendorOptions: {
+        stylePrompt: { type: 'string', description: 'Natural-language narration and delivery instructions' },
+      },
+    },
+    pricing: { perMInputTokens: 1, perMOutputTokens: 20, currency: 'USD' },
+  }` | - |
 | `'gemini-2.5-flash-preview-tts'` | `{
     name: 'gemini-2.5-flash-preview-tts',
     displayName: 'Gemini 2.5 Flash TTS',
@@ -2601,6 +2679,42 @@ Last full audit: January 2026
       currency: 'USD',
     },
   }` | - |
+| `'xai-tts'` | `{
+    name: 'xai-tts',
+    displayName: 'xAI Text to Speech',
+    provider: Vendor.Grok,
+    description: 'Expressive multilingual xAI speech synthesis with inline speech tags and telephony codecs',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['audio_speech'],
+    releaseDate: '2026-07-23',
+    sources: {
+      documentation: 'https://docs.x.ai/developers/model-capabilities/audio/text-to-speech',
+      pricing: 'https://docs.x.ai/developers/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      voices: XAI_VOICES,
+      formats: ['mp3', 'wav', 'pcm', 'mulaw', 'alaw'],
+      languages: ['auto', ...COMMON_LANGUAGES.CORE],
+      speed: { supported: true, min: 0.7, max: 1.5, default: 1 },
+      features: {
+        streaming: true, ssml: false, emotions: true, voiceCloning: true,
+        wordTimestamps: true, instructionSteering: true,
+      },
+      limits: { maxInputLength: 15000 },
+      vendorOptions: {
+        language: { type: 'string', description: 'BCP-47 language code or automatic detection', default: 'auto' },
+        output_format: { type: 'object', description: 'xAI codec, sample-rate, and bitrate configuration' },
+        optimize_streaming_latency: { type: 'number', description: 'Latency optimization level', min: 0, max: 2, default: 0 },
+        text_normalization: { type: 'boolean', description: 'Normalize numbers and symbols before synthesis', default: false },
+        with_timestamps: { type: 'boolean', description: 'Return character-level timing metadata', default: false },
+      },
+    },
+    pricing: { per1kCharacters: 0.015, currency: 'USD' },
+  }` | - |
 
 </details>
 
@@ -2612,7 +2726,7 @@ Transcribe audio to text
 
 ### SpeechToText `class`
 
-📍 [`src/core/SpeechToText.ts:47`](src/core/SpeechToText.ts)
+📍 [`src/core/SpeechToText.ts:54`](src/core/SpeechToText.ts)
 
 SpeechToText capability class
 Provides speech-to-text transcription with model introspection
@@ -2683,6 +2797,33 @@ async transcribe(
 - `options`: `Partial&lt;Omit&lt;STTOptions, "model" | "audio"&gt;&gt; | undefined` *(optional)*
 
 **Returns:** `Promise&lt;STTResponse&gt;`
+
+#### `supportsStreaming()`
+
+Whether the current provider exposes live streaming transcription.
+
+```typescript
+supportsStreaming(): boolean
+```
+
+**Returns:** `boolean`
+
+#### `transcribeStream()`
+
+Stream raw audio to a live STT session and receive interim/final transcript events.
+The caller is responsible for yielding audio in real-time-paced chunks.
+
+```typescript
+transcribeStream(
+    audio: AsyncIterable&lt;STTStreamInput&gt; | Iterable&lt;STTStreamInput&gt;,
+    options: Partial&lt;Omit&lt;STTStreamOptions, 'model' | 'audio'&gt;&gt; =
+```
+
+**Parameters:**
+- `audio`: `AsyncIterable&lt;STTStreamInput&gt; | Iterable&lt;STTStreamInput&gt;`
+- `options`: `Partial&lt;Omit&lt;STTStreamOptions, "model" | "audio"&gt;&gt;` *(optional)* (default: `{}`)
+
+**Returns:** `AsyncIterableIterator&lt;STTStreamEvent&gt;`
 
 #### `transcribeFile()`
 
@@ -2937,7 +3078,7 @@ setTemperature(temperature: number): void
 
 ### ISTTModelDescription `interface`
 
-📍 [`src/domain/entities/STTModel.ts:76`](src/domain/entities/STTModel.ts)
+📍 [`src/domain/entities/STTModel.ts:80`](src/domain/entities/STTModel.ts)
 
 Complete STT model description
 
@@ -2955,7 +3096,7 @@ Complete STT model description
 
 ### SpeechToTextConfig `interface`
 
-📍 [`src/core/SpeechToText.ts:15`](src/core/SpeechToText.ts)
+📍 [`src/core/SpeechToText.ts:22`](src/core/SpeechToText.ts)
 
 Configuration for SpeechToText capability
 
@@ -2996,7 +3137,7 @@ STT model capabilities
     translation: boolean;
     /** Speaker identification */
     diarization: boolean;
-    /** Real-time streaming (not implemented in v1) */
+    /** Real-time streaming */
     streaming: boolean;
     /** Automatic punctuation */
     punctuation: boolean;
@@ -3017,7 +3158,7 @@ STT model capabilities
 
 ### STTOptions `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:112`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:115`](src/domain/interfaces/IAudioProvider.ts)
 
 Options for speech-to-text transcription
 
@@ -3028,6 +3169,8 @@ Options for speech-to-text transcription
 |----------|------|-------------|
 | `model` | `model: string;` | Model to use (e.g., 'whisper-1', 'gpt-4o-transcribe') |
 | `audio` | `audio: Buffer | string;` | Audio data as Buffer or file path |
+| `sampleRate?` | `sampleRate?: 8000 | 16000 | 22050 | 24000 | 44100 | 48000;` | Sample rate for a headerless raw-audio Buffer. Defaults to 16000. |
+| `encoding?` | `encoding?: 'pcm' | 'mulaw' | 'alaw';` | Encoding for a headerless raw-audio Buffer. Defaults to signed 16-bit LE PCM. |
 | `language?` | `language?: string;` | Language code (ISO-639-1), optional for auto-detection |
 | `outputFormat?` | `outputFormat?: STTOutputFormat;` | Output format |
 | `includeTimestamps?` | `includeTimestamps?: boolean;` | Include word/segment timestamps |
@@ -3042,7 +3185,7 @@ Options for speech-to-text transcription
 
 ### STTResponse `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:164`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:177`](src/domain/interfaces/IAudioProvider.ts)
 
 Response from speech-to-text transcription
 
@@ -3075,7 +3218,7 @@ type STTOutputFormat = 'json' | 'text' | 'srt' | 'vtt' | 'verbose_json'
 
 ### STTOutputFormat `type`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:107`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:110`](src/domain/interfaces/IAudioProvider.ts)
 
 STT output format types
 
@@ -3087,19 +3230,22 @@ type STTOutputFormat = 'json' | 'text' | 'srt' | 'vtt' | 'verbose_json'
 
 ### calculateSTTCost `function`
 
-📍 [`src/domain/entities/STTModel.ts:300`](src/domain/entities/STTModel.ts)
+📍 [`src/domain/entities/STTModel.ts:509`](src/domain/entities/STTModel.ts)
 
 Calculate estimated cost for STT
 
 ```typescript
-export function calculateSTTCost(modelName: string, durationSeconds: number): number | null
+export function calculateSTTCost(
+  modelName: string,
+  durationSeconds: number,
+  options?:
 ```
 
 ---
 
 ### getSTTModelsWithFeature `function`
 
-📍 [`src/domain/entities/STTModel.ts:289`](src/domain/entities/STTModel.ts)
+📍 [`src/domain/entities/STTModel.ts:498`](src/domain/entities/STTModel.ts)
 
 Get STT models that support a specific feature
 
@@ -3113,7 +3259,7 @@ export function getSTTModelsWithFeature(
 
 ### STT_MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/STTModel.ts:124`](src/domain/entities/STTModel.ts)
+📍 [`src/domain/entities/STTModel.ts:144`](src/domain/entities/STTModel.ts)
 
 Complete STT model registry
 Last full audit: January 2026
@@ -3123,6 +3269,118 @@ Last full audit: January 2026
 
 | Property | Type | Description |
 |----------|------|-------------|
+| `'gpt-transcribe'` | `{
+    name: 'gpt-transcribe',
+    displayName: 'GPT Transcribe',
+    provider: Vendor.OpenAI,
+    description: 'Current accurate file-transcription model for multilingual audio',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['audio_transcription'],
+    releaseDate: '2026-07-09',
+    sources: {
+      documentation: 'https://developers.openai.com/api/docs/models/gpt-transcribe',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text'],
+      features: { translation: false, diarization: false, streaming: false, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 25, maxDurationSeconds: 7200 },
+    },
+    pricing: { perMinute: 0.0045, currency: 'USD' },
+  }` | - |
+| `'gpt-4o-mini-transcribe'` | `{
+    name: 'gpt-4o-mini-transcribe',
+    displayName: 'GPT-4o Mini Transcribe',
+    provider: Vendor.OpenAI,
+    description: 'Cost-efficient GPT-4o transcription for high-volume workloads',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['audio_transcription'],
+    releaseDate: '2025-03-20',
+    sources: {
+      documentation: 'https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text'],
+      features: { translation: false, diarization: false, streaming: false, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 25, maxDurationSeconds: 7200 },
+    },
+    pricing: { perMinute: 0.003, currency: 'USD' },
+  }` | - |
+| `'gpt-live-transcribe'` | `{
+    name: 'gpt-live-transcribe',
+    displayName: 'GPT Live Transcribe',
+    provider: Vendor.OpenAI,
+    description: 'Recommended streaming speech-to-text model with incremental transcript deltas, vocabulary hints, multilingual hints, and tunable latency',
+    isActive: true,
+    sources: {
+      documentation: 'https://developers.openai.com/api/docs/models/gpt-live-transcribe',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text'],
+      features: {
+        translation: false,
+        diarization: false,
+        streaming: true,
+        punctuation: true,
+        profanityFilter: false,
+      },
+      limits: { maxFileSizeMB: 0 },
+      vendorOptions: {
+        delay: {
+          type: 'string',
+          description: 'Streaming transcript latency/accuracy tradeoff',
+          default: 'low',
+        },
+        keywords: {
+          type: 'array',
+          description: 'Literal vocabulary hints such as product names and acronyms',
+        },
+        languages: {
+          type: 'array',
+          description: 'Expected ISO language codes; do not combine with language',
+        },
+      },
+    },
+    pricing: { perMinute: 0.017, currency: 'USD' },
+  }` | - |
+| `'gpt-realtime-whisper'` | `{
+    name: 'gpt-realtime-whisper',
+    displayName: 'GPT Realtime Whisper',
+    provider: Vendor.OpenAI,
+    description: 'Low-latency streaming speech-to-text model for realtime transcription',
+    isActive: true,
+    sources: {
+      documentation: 'https://developers.openai.com/api/docs/models/gpt-realtime-whisper',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text'],
+      features: {
+        translation: false,
+        diarization: false,
+        streaming: true,
+        punctuation: true,
+        profanityFilter: false,
+      },
+      limits: { maxFileSizeMB: 0 },
+    },
+    pricing: { perMinute: 0.017, currency: 'USD' },
+  }` | - |
 | `'gpt-4o-transcribe'` | `{
     name: 'gpt-4o-transcribe',
     displayName: 'GPT-4o Transcribe',
@@ -3209,6 +3467,71 @@ Last full audit: January 2026
     },
     pricing: { perMinute: 0.006, currency: 'USD' },
   }` | - |
+| `'gemini-3.6-flash'` | `{
+    name: 'gemini-3.6-flash',
+    displayName: 'Gemini 3.6 Flash Audio Transcription',
+    provider: Vendor.Google,
+    description: 'Gemini Interactions transcription with language hints, normalized timestamps, diarization, and custom vocabulary',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['interactions'],
+    releaseDate: '2026-07-21',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/audio',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      inputFormats: ['wav', 'mp3', 'aiff', 'aac', 'ogg', 'flac'],
+      outputFormats: ['text'],
+      timestamps: { supported: true, granularities: ['segment'] },
+      features: { translation: true, diarization: true, streaming: false, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 20, maxDurationSeconds: 34200 },
+      vendorOptions: {
+        instructions: { type: 'string', description: 'Custom transcription, translation, or extraction instructions' },
+        customVocabulary: { type: 'array', description: 'Phrases to bias native speech recognition toward' },
+        diarizationMode: { type: 'string', description: 'Set to speaker to include speaker labels on words' },
+        transcriptionConfig: { type: 'object', description: 'Additional Gemini Interactions transcription_config fields' },
+      },
+    },
+    pricing: { perMInputTokens: 1.5, currency: 'USD' },
+  }` | - |
+| `'xai-stt'` | `{
+    name: 'xai-stt',
+    displayName: 'xAI Speech to Text',
+    provider: Vendor.Grok,
+    description: 'Low-cost xAI file and streaming transcription with timestamps, diarization, and multichannel support',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'region_limited',
+    preferred: true,
+    endpoints: ['audio_transcription', 'realtime'],
+    releaseDate: '2026-07-23',
+    sources: {
+      documentation: 'https://docs.x.ai/developers/model-capabilities/audio/speech-to-text',
+      pricing: 'https://docs.x.ai/developers/models/speech-to-text',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text', 'verbose_json'],
+      features: { translation: false, diarization: true, streaming: true, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 500 },
+      vendorOptions: {
+        format: { type: 'boolean', description: 'Apply automatic transcript formatting', default: false },
+        multichannel: { type: 'boolean', description: 'Transcribe channels independently', default: false },
+        channels: { type: 'number', description: 'Number of channels in raw audio', min: 2, max: 8 },
+        diarize: { type: 'boolean', description: 'Identify distinct speakers', default: false },
+        keyterm: { type: 'array', description: 'Terms whose recognition should be boosted' },
+        filler_words: { type: 'boolean', description: 'Retain filler words in the transcript', default: false },
+        vad_threshold: { type: 'number', description: 'Voice-activity detection threshold', min: 0, max: 1, default: 0.08 },
+      },
+    },
+    pricing: { perMinute: 0.0016666667, streamingPerMinute: 0.0033333333, currency: 'USD' },
+  }` | - |
 | `'whisper-large-v3'` | `{
     name: 'whisper-large-v3',
     displayName: 'Whisper Large v3 (Groq)',
@@ -3275,7 +3598,7 @@ Generate images from text prompts
 
 ### ImageGeneration `class`
 
-📍 [`src/capabilities/images/ImageGeneration.ts:73`](src/capabilities/images/ImageGeneration.ts)
+📍 [`src/capabilities/images/ImageGeneration.ts:80`](src/capabilities/images/ImageGeneration.ts)
 
 ImageGeneration capability class
 
@@ -3333,11 +3656,11 @@ Edit an existing image
 Note: Not all models/vendors support this
 
 ```typescript
-async edit(options: ImageEditOptions): Promise&lt;ImageResponse&gt;
+async edit(options: SimpleImageEditOptions): Promise&lt;ImageResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `ImageEditOptions`
+- `options`: `SimpleImageEditOptions`
 
 **Returns:** `Promise&lt;ImageResponse&gt;`
 
@@ -3453,7 +3776,7 @@ getConnector(): Connector
 
 ### IImageModelDescription `interface`
 
-📍 [`src/domain/entities/ImageModel.ts:94`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:108`](src/domain/entities/ImageModel.ts)
 
 Complete image model description
 
@@ -3471,7 +3794,7 @@ Complete image model description
 
 ### IImageProvider `interface`
 
-📍 [`src/domain/interfaces/IImageProvider.ts:45`](src/domain/interfaces/IImageProvider.ts)
+📍 [`src/domain/interfaces/IImageProvider.ts:53`](src/domain/interfaces/IImageProvider.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -3531,7 +3854,7 @@ listModels?(): Promise&lt;string[]&gt;;
 
 ### ImageEditOptions `interface`
 
-📍 [`src/domain/interfaces/IImageProvider.ts:18`](src/domain/interfaces/IImageProvider.ts)
+📍 [`src/domain/interfaces/IImageProvider.ts:20`](src/domain/interfaces/IImageProvider.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -3545,6 +3868,7 @@ listModels?(): Promise&lt;string[]&gt;;
 | `size?` | `size?: string;` | - |
 | `n?` | `n?: number;` | - |
 | `response_format?` | `response_format?: 'url' | 'b64_json';` | - |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Provider-specific options for features without a normalized equivalent. |
 
 </details>
 
@@ -3586,6 +3910,7 @@ listModels?(): Promise&lt;string[]&gt;;
 | `style?` | `style?: 'vivid' | 'natural';` | - |
 | `n?` | `n?: number;` | - |
 | `response_format?` | `response_format?: 'url' | 'b64_json';` | - |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Provider-specific options for features without a normalized equivalent. |
 
 </details>
 
@@ -3610,7 +3935,7 @@ Options for creating an ImageGeneration instance
 
 ### ImageModelCapabilities `interface`
 
-📍 [`src/domain/entities/ImageModel.ts:35`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:37`](src/domain/entities/ImageModel.ts)
 
 Image model capabilities
 
@@ -3653,7 +3978,7 @@ Image model capabilities
 
 ### ImageModelPricing `interface`
 
-📍 [`src/domain/entities/ImageModel.ts:81`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:83`](src/domain/entities/ImageModel.ts)
 
 Image model pricing
 
@@ -3665,6 +3990,15 @@ Image model pricing
 | `perImageStandard?` | `perImageStandard?: number;` | Cost per image at standard quality |
 | `perImageHD?` | `perImageHD?: number;` | Cost per image at HD quality |
 | `perImage?` | `perImage?: number;` | Cost per image (flat rate) |
+| `inputPerImage?` | `inputPerImage?: number;` | Input-image charge for providers that bill source images separately. |
+| `perImageByResolution?` | `perImageByResolution?: Readonly&lt;Record&lt;string, number&gt;&gt;;` | Resolution-specific output prices, keyed by vendor resolution label. |
+| `tokenPricing?` | `tokenPricing?: {
+    textInput?: number;
+    cachedTextInput?: number;
+    imageInput?: number;
+    cachedImageInput?: number;
+    imageOutput?: number;
+  };` | Token rates used by multimodal generation endpoints (USD per 1M tokens). |
 | `currency` | `currency: 'USD';` | - |
 
 </details>
@@ -3673,7 +4007,7 @@ Image model pricing
 
 ### ImageResponse `interface`
 
-📍 [`src/domain/interfaces/IImageProvider.ts:36`](src/domain/interfaces/IImageProvider.ts)
+📍 [`src/domain/interfaces/IImageProvider.ts:40`](src/domain/interfaces/IImageProvider.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -3685,6 +4019,10 @@ Image model pricing
     url?: string;
     b64_json?: string;
     revised_prompt?: string;
+    /** Persistent provider file ID, when output storage was requested. */
+    file_id?: string;
+    /** Persistent public URL, when requested from the provider. */
+    public_url?: string;
   }&gt;;` | - |
 
 </details>
@@ -3693,7 +4031,7 @@ Image model pricing
 
 ### ImageVariationOptions `interface`
 
-📍 [`src/domain/interfaces/IImageProvider.ts:28`](src/domain/interfaces/IImageProvider.ts)
+📍 [`src/domain/interfaces/IImageProvider.ts:32`](src/domain/interfaces/IImageProvider.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -3712,7 +4050,7 @@ Image model pricing
 
 ### InputImageContent `interface`
 
-📍 [`src/domain/entities/Content.ts:24`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:26`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -3743,10 +4081,12 @@ Simplified options for quick generation
 | `prompt` | `prompt: string;` | Text prompt describing the image |
 | `model?` | `model?: string;` | Model to use (defaults to vendor's best model) |
 | `size?` | `size?: string;` | Image size |
-| `quality?` | `quality?: 'standard' | 'hd';` | Quality setting |
+| `aspectRatio?` | `aspectRatio?: string;` | Aspect ratio for providers that use ratio rather than pixel dimensions |
+| `quality?` | `quality?: ImageGenerateOptions['quality'];` | Quality setting |
 | `style?` | `style?: 'vivid' | 'natural';` | Style setting (DALL-E 3 only) |
 | `n?` | `n?: number;` | Number of images to generate |
 | `response_format?` | `response_format?: 'url' | 'b64_json';` | Response format |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Provider-specific controls such as output format, compression, or image resolution |
 
 </details>
 
@@ -3754,19 +4094,31 @@ Simplified options for quick generation
 
 ### AspectRatio `type`
 
-📍 [`src/domain/entities/ImageModel.ts:30`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:32`](src/domain/entities/ImageModel.ts)
 
 Supported aspect ratios
 
 ```typescript
-type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9' | '3:2' | '2:3' | '1:4' | '4:1' | '1:8' | '8:1' | '2:1' | '1:2'
+type AspectRatio = '1:1' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9' | '3:2' | '2:3' | '1:4' | '4:1' | '1:8' | '8:1' | '2:1' | '1:2'
+```
+
+---
+
+### SimpleImageEditOptions `type`
+
+📍 [`src/capabilities/images/ImageGeneration.ts:75`](src/capabilities/images/ImageGeneration.ts)
+
+High-level edit options; the current vendor model is selected when omitted.
+
+```typescript
+type SimpleImageEditOptions = Omit&lt;ImageEditOptions, 'model'&gt; & { model?: string }
 ```
 
 ---
 
 ### calculateImageCost `function`
 
-📍 [`src/domain/entities/ImageModel.ts:1146`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:1390`](src/domain/entities/ImageModel.ts)
 
 Calculate estimated cost for image generation
 
@@ -3774,8 +4126,7 @@ Calculate estimated cost for image generation
 export function calculateImageCost(
   modelName: string,
   imageCount: number,
-  quality: 'standard' | 'hd' = 'standard'
-): number | null
+  qualityOrOptions: 'standard' | 'hd' |
 ```
 
 ---
@@ -3824,7 +4175,7 @@ export function createMessageWithImages(
 
 ### getImageModelsWithFeature `function`
 
-📍 [`src/domain/entities/ImageModel.ts:1135`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:1379`](src/domain/entities/ImageModel.ts)
 
 Get image models that support a specific feature
 
@@ -3862,7 +4213,7 @@ export async function readClipboardImage(): Promise&lt;ClipboardImageResult&gt;
 
 ### IMAGE_MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/ImageModel.ts:148`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:168`](src/domain/entities/ImageModel.ts)
 
 Complete image model registry
 Last full audit: March 2026
@@ -3872,12 +4223,62 @@ Last full audit: March 2026
 
 | Property | Type | Description |
 |----------|------|-------------|
+| `'gpt-image-2'` | `{
+    name: 'gpt-image-2',
+    displayName: 'GPT Image 2',
+    provider: Vendor.OpenAI,
+    description: 'Current state-of-the-art OpenAI model for fast, high-quality image generation and editing',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    snapshots: ['gpt-image-2-2026-04-21'],
+    endpoints: ['image_generation', 'image_edit'],
+    releaseDate: '2026-04-21',
+    sources: {
+      documentation: 'https://developers.openai.com/api/docs/models/gpt-image-2',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
+      maxImagesPerRequest: 10,
+      outputFormats: ['png', 'webp', 'jpeg'],
+      features: {
+        generation: true, editing: true, variations: false, styleControl: false,
+        qualityControl: true, transparency: true, promptRevision: false,
+      },
+      limits: { maxPromptLength: 32000, maxRequestsPerMinute: 250 },
+      vendorOptions: {
+        quality: { type: 'enum', description: 'Rendering quality tier', enum: ['auto', 'low', 'medium', 'high'], default: 'auto' },
+        background: { type: 'enum', description: 'Background handling', enum: ['auto', 'transparent', 'opaque'], default: 'auto' },
+        output_format: { type: 'enum', description: 'Encoded output image format', enum: ['png', 'jpeg', 'webp'], default: 'png' },
+        output_compression: { type: 'number', description: 'JPEG/WebP compression quality', min: 0, max: 100, default: 100 },
+        moderation: { type: 'enum', description: 'Moderation strictness', enum: ['auto', 'low'], default: 'auto' },
+        input_fidelity: { type: 'enum', description: 'Fidelity applied to editing input images', enum: ['low', 'high'], default: 'low' },
+      },
+    },
+    pricing: {
+      tokenPricing: {
+        textInput: 5,
+        cachedTextInput: 1.25,
+        imageInput: 8,
+        cachedImageInput: 2,
+        imageOutput: 30,
+      },
+      currency: 'USD',
+    },
+  }` | - |
 | `'gpt-image-1.5'` | `{
     name: 'gpt-image-1.5',
     displayName: 'GPT Image 1.5',
     provider: Vendor.OpenAI,
     description: 'State-of-the-art image generation with better instruction following and prompt adherence',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-09',
+    retirementDate: '2026-12-01',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2025-12-16',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1.5',
@@ -3954,6 +4355,10 @@ Last full audit: March 2026
     provider: Vendor.OpenAI,
     description: 'Image model used in ChatGPT. Floating alias pointing to current ChatGPT image snapshot',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-09',
+    retirementDate: '2026-12-01',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2025-12-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/chatgpt-image-latest',
@@ -4030,6 +4435,10 @@ Last full audit: March 2026
     provider: Vendor.OpenAI,
     description: 'Previous generation OpenAI image model. More expensive than GPT Image 1.5',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-09',
+    retirementDate: '2026-12-01',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2025-04-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1',
@@ -4106,6 +4515,10 @@ Last full audit: March 2026
     provider: Vendor.OpenAI,
     description: 'Cost-efficient version of GPT Image 1. Cheapest OpenAI image model',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-09',
+    retirementDate: '2026-12-01',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2025-06-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1-mini',
@@ -4182,6 +4595,8 @@ Last full audit: March 2026
     provider: Vendor.OpenAI,
     description: 'Deprecated. High quality image generation with prompt revision. Migrate to gpt-image-1.5',
     isActive: false,
+    lifecycle: 'retired',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2023-11-06',
     deprecationDate: '2026-05-12',
     sources: {
@@ -4234,6 +4649,8 @@ Last full audit: March 2026
     provider: Vendor.OpenAI,
     description: 'Deprecated. Fast image generation with editing and variation support. Migrate to gpt-image-1-mini',
     isActive: false,
+    lifecycle: 'retired',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2022-11-03',
     deprecationDate: '2026-05-12',
     sources: {
@@ -4268,6 +4685,10 @@ Last full audit: March 2026
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 - standard quality image generation',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-16',
+    retirementDate: '2026-08-17',
+    replacementModel: 'gemini-3.1-flash-image',
     releaseDate: '2025-06-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
@@ -4379,6 +4800,10 @@ Last full audit: March 2026
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 Ultra - highest quality image generation',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-16',
+    retirementDate: '2026-08-17',
+    replacementModel: 'gemini-3-pro-image',
     releaseDate: '2025-06-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
@@ -4490,6 +4915,10 @@ Last full audit: March 2026
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 Fast - optimized for speed',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-16',
+    retirementDate: '2026-08-17',
+    replacementModel: 'gemini-3.1-flash-lite-image',
     releaseDate: '2025-06-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
@@ -4595,12 +5024,108 @@ Last full audit: March 2026
       currency: 'USD',
     },
   }` | - |
+| `'gemini-3.1-flash-image'` | `{
+    name: 'gemini-3.1-flash-image',
+    displayName: 'Nano Banana 2',
+    provider: Vendor.Google,
+    description: 'Current all-around Gemini image generation and editing model with up to 4K output',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['image_generation', 'image_edit', 'generate_content', 'batch'],
+    releaseDate: '2026-06-25',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      sizes: ['512x512', '1024x1024', '2048x2048', '4096x4096', 'auto'],
+      aspectRatios: ['1:1', '3:4', '4:3', '9:16', '16:9', '3:2', '2:3', '1:4', '4:1', '1:8', '8:1'],
+      maxImagesPerRequest: 4,
+      outputFormats: ['png', 'jpeg'],
+      features: { generation: true, editing: true, variations: false, styleControl: false, qualityControl: true, transparency: false, promptRevision: false },
+      limits: { maxPromptLength: 131072 },
+      vendorOptions: {
+        imageSize: { type: 'enum', description: 'Requested output image resolution', enum: ['512px', '1024px', '2048px', '4096px'], default: '1024px' },
+      },
+    },
+    pricing: {
+      perImageStandard: 0.067,
+      perImageHD: 0.151,
+      perImageByResolution: { '512px': 0.045, '1024px': 0.067, '2048px': 0.101, '4096px': 0.151 },
+      tokenPricing: { textInput: 0.50, imageInput: 0.50, imageOutput: 60 },
+      currency: 'USD',
+    },
+  }` | - |
+| `'gemini-3.1-flash-lite-image'` | `{
+    name: 'gemini-3.1-flash-lite-image',
+    displayName: 'Nano Banana 2 Lite',
+    provider: Vendor.Google,
+    description: 'Ultra-low-latency 1K image generation and editing for high-volume interactive use',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['image_generation', 'image_edit', 'generate_content', 'batch'],
+    releaseDate: '2026-06-25',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-image',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      sizes: ['1024x1024', 'auto'],
+      aspectRatios: ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
+      maxImagesPerRequest: 4,
+      outputFormats: ['png', 'jpeg'],
+      features: { generation: true, editing: true, variations: false, styleControl: false, qualityControl: false, transparency: false, promptRevision: false },
+      limits: { maxPromptLength: 65536 },
+      vendorOptions: { imageSize: { type: 'enum', description: 'Requested output image resolution', enum: ['1024px'], default: '1024px' } },
+    },
+    pricing: {
+      perImage: 0.0336,
+      perImageByResolution: { '1024px': 0.0336 },
+      tokenPricing: { textInput: 0.25, imageInput: 0.25, imageOutput: 30 },
+      currency: 'USD',
+    },
+  }` | - |
+| `'gemini-3-pro-image'` | `{
+    name: 'gemini-3-pro-image',
+    displayName: 'Nano Banana Pro',
+    provider: Vendor.Google,
+    description: 'Professional Gemini design engine for complex instructions, grounded assets, and 4K output',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['image_generation', 'image_edit', 'generate_content', 'batch'],
+    releaseDate: '2026-06-25',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      sizes: ['1024x1024', '2048x2048', '4096x4096', 'auto'],
+      aspectRatios: ['1:1', '3:4', '4:3', '9:16', '16:9'],
+      maxImagesPerRequest: 4,
+      outputFormats: ['png', 'jpeg'],
+      features: { generation: true, editing: true, variations: false, styleControl: true, qualityControl: true, transparency: false, promptRevision: false },
+      limits: { maxPromptLength: 65536 },
+      vendorOptions: { imageSize: { type: 'enum', description: 'Requested output image resolution', enum: ['1024px', '2048px', '4096px'], default: '1024px' } },
+    },
+    pricing: { perImageStandard: 0.134, perImageHD: 0.24, currency: 'USD' },
+  }` | - |
 | `'gemini-3.1-flash-image-preview'` | `{
     name: 'gemini-3.1-flash-image-preview',
     displayName: 'Nano Banana 2 (Gemini 3.1 Flash Image)',
     provider: Vendor.Google,
     description: 'High-efficiency native image generation and editing with 4K support and thinking capabilities',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-25',
+    replacementModel: 'gemini-3.1-flash-image',
     releaseDate: '2026-02-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image-preview',
@@ -4645,7 +5170,10 @@ Last full audit: March 2026
     displayName: 'Nano Banana Pro (Gemini 3 Pro Image)',
     provider: Vendor.Google,
     description: 'Professional design engine with reasoning for studio-quality 4K visuals, complex layouts, and precise text rendering',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-25',
+    replacementModel: 'gemini-3-pro-image',
     releaseDate: '2025-11-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image-preview',
@@ -4718,6 +5246,44 @@ Last full audit: March 2026
       currency: 'USD',
     },
   }` | - |
+| `'grok-imagine-image-quality'` | `{
+    name: 'grok-imagine-image-quality',
+    displayName: 'Grok Imagine Image Quality',
+    provider: Vendor.Grok,
+    description: 'Higher-fidelity xAI image generation and multi-image editing with 1K and 2K output',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['grok-imagine-image-quality-latest', 'grok-imagine-image-pro'],
+    snapshots: ['grok-imagine-image-quality-20260403'],
+    endpoints: ['image_generation', 'image_edit'],
+    releaseDate: '2026-04-03',
+    sources: {
+      documentation: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
+      pricing: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      sizes: ['1024x1024', '2048x2048', 'auto'],
+      aspectRatios: ['1:1', '3:2', '2:3', '3:4', '4:3', '9:16', '16:9'],
+      maxImagesPerRequest: 4,
+      outputFormats: ['jpeg', 'png'],
+      features: { generation: true, editing: true, variations: false, styleControl: true, qualityControl: true, transparency: false, promptRevision: false },
+      limits: { maxPromptLength: 32000, maxRequestsPerMinute: 300 },
+      vendorOptions: {
+        resolution: { type: 'enum', description: 'Requested output image resolution', enum: ['1K', '2K'], default: '1K' },
+        storage_options: { type: 'object', description: 'Optional xAI Files persistence and public URL settings' },
+      },
+    },
+    pricing: {
+      inputPerImage: 0.01,
+      perImageStandard: 0.05,
+      perImageHD: 0.07,
+      perImageByResolution: { '1K': 0.05, '2K': 0.07 },
+      currency: 'USD',
+    },
+  }` | - |
 | `'grok-imagine-image'` | `{
     name: 'grok-imagine-image',
     displayName: 'Grok Imagine Image',
@@ -4775,7 +5341,9 @@ Last full audit: March 2026
     displayName: 'Grok 2 Image',
     provider: Vendor.Grok,
     description: 'xAI Grok 2 image generation (text-only input, no editing)',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    replacementModel: 'grok-imagine-image-quality',
     releaseDate: '2024-12-12',
     sources: {
       documentation: 'https://docs.x.ai/docs/guides/image-generation',
@@ -4833,7 +5401,7 @@ Generate videos from text prompts
 
 ### VideoGeneration `class`
 
-📍 [`src/capabilities/video/VideoGeneration.ts:83`](src/capabilities/video/VideoGeneration.ts)
+📍 [`src/capabilities/video/VideoGeneration.ts:86`](src/capabilities/video/VideoGeneration.ts)
 
 VideoGeneration capability class
 
@@ -4949,11 +5517,11 @@ Extend an existing video
 Note: Not all models/vendors support this
 
 ```typescript
-async extend(options: VideoExtendOptions): Promise&lt;VideoResponse&gt;
+async extend(options: SimpleVideoExtendOptions): Promise&lt;VideoResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `VideoExtendOptions`
+- `options`: `SimpleVideoExtendOptions`
 
 **Returns:** `Promise&lt;VideoResponse&gt;`
 
@@ -5124,7 +5692,7 @@ Options for creating a reusable character from a reference video
 
 ### IVideoModelDescription `interface`
 
-📍 [`src/domain/entities/VideoModel.ts:58`](src/domain/entities/VideoModel.ts)
+📍 [`src/domain/entities/VideoModel.ts:66`](src/domain/entities/VideoModel.ts)
 
 Video model description
 
@@ -5427,6 +5995,7 @@ Video model capabilities
 | `aspectRatios?` | `aspectRatios?: string[];` | Supported aspect ratios (e.g., '16:9', '9:16') - for vendors that use this instead of resolution |
 | `maxFps` | `maxFps: number;` | Maximum frames per second |
 | `audio` | `audio: boolean;` | Whether the model supports audio generation |
+| `textToVideo?` | `textToVideo?: boolean;` | Supports generation from only a text prompt. Defaults to true for legacy entries. |
 | `imageToVideo` | `imageToVideo: boolean;` | Whether the model supports image-to-video |
 | `videoExtension` | `videoExtension: boolean;` | Whether the model supports video extension |
 | `frameControl` | `frameControl: boolean;` | Whether the model supports first/last frame specification |
@@ -5447,7 +6016,7 @@ Video model capabilities
 
 ### VideoModelPricing `interface`
 
-📍 [`src/domain/entities/VideoModel.ts:48`](src/domain/entities/VideoModel.ts)
+📍 [`src/domain/entities/VideoModel.ts:50`](src/domain/entities/VideoModel.ts)
 
 Video model pricing
 
@@ -5457,6 +6026,9 @@ Video model pricing
 | Property | Type | Description |
 |----------|------|-------------|
 | `perSecond` | `perSecond: number;` | Cost per second of generated video |
+| `perSecondByResolution?` | `perSecondByResolution?: Readonly&lt;Record&lt;string, number&gt;&gt;;` | Resolution-specific rates when the provider does not use a flat rate. |
+| `batchPerSecondByResolution?` | `batchPerSecondByResolution?: Readonly&lt;Record&lt;string, number&gt;&gt;;` | Discounted offline/batch rate when supported. |
+| `inputImage?` | `inputImage?: number;` | Optional charge for an image-to-video reference image. |
 | `currency` | `currency: string;` | Currency |
 
 </details>
@@ -5520,6 +6092,18 @@ Video generation response
 
 ---
 
+### SimpleVideoExtendOptions `type`
+
+📍 [`src/capabilities/video/VideoGeneration.ts:81`](src/capabilities/video/VideoGeneration.ts)
+
+High-level extension options; the current extend-capable model is selected when omitted.
+
+```typescript
+type SimpleVideoExtendOptions = Omit&lt;VideoExtendOptions, 'model'&gt; & { model?: string }
+```
+
+---
+
 ### VideoStatus `type`
 
 📍 [`src/domain/interfaces/IVideoProvider.ts:92`](src/domain/interfaces/IVideoProvider.ts)
@@ -5534,12 +6118,15 @@ type VideoStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
 ### calculateVideoCost `function`
 
-📍 [`src/domain/entities/VideoModel.ts:335`](src/domain/entities/VideoModel.ts)
+📍 [`src/domain/entities/VideoModel.ts:472`](src/domain/entities/VideoModel.ts)
 
 Calculate video generation cost
 
 ```typescript
-export function calculateVideoCost(modelName: string, durationSeconds: number): number | null
+export function calculateVideoCost(
+  modelName: string,
+  durationSeconds: number,
+  options?:
 ```
 
 ---
@@ -5572,7 +6159,7 @@ export function createVideoTools(
 
 ### getVideoModelsWithAudio `function`
 
-📍 [`src/domain/entities/VideoModel.ts:328`](src/domain/entities/VideoModel.ts)
+📍 [`src/domain/entities/VideoModel.ts:465`](src/domain/entities/VideoModel.ts)
 
 Get models that support audio
 
@@ -5584,7 +6171,7 @@ export function getVideoModelsWithAudio(): IVideoModelDescription[]
 
 ### getVideoModelsWithFeature `function`
 
-📍 [`src/domain/entities/VideoModel.ts:319`](src/domain/entities/VideoModel.ts)
+📍 [`src/domain/entities/VideoModel.ts:456`](src/domain/entities/VideoModel.ts)
 
 Get models with a specific feature
 
@@ -5596,7 +6183,7 @@ export function getVideoModelsWithFeature(feature: keyof VideoModelCapabilities[
 
 ### VIDEO_MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/VideoModel.ts:112`](src/domain/entities/VideoModel.ts)
+📍 [`src/domain/entities/VideoModel.ts:123`](src/domain/entities/VideoModel.ts)
 
 Video Model Registry
 
@@ -5611,6 +6198,10 @@ Video Model Registry
     provider: Vendor.OpenAI,
     description: 'Flagship video generation with synced audio. Extensions up to 120s total',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-24',
+    retirementDate: '2026-09-24',
+    endpoints: ['video_generation', 'video_edit', 'batch'],
     releaseDate: '2025-10-06',
     sources: OPENAI_SOURCES,
     capabilities: {
@@ -5631,6 +6222,8 @@ Video Model Registry
     },
     pricing: {
       perSecond: 0.10, // $0.05/sec batch API
+      perSecondByResolution: { '720p': 0.10, '720x1280': 0.10, '1280x720': 0.10 },
+      batchPerSecondByResolution: { '720p': 0.05, '720x1280': 0.05, '1280x720': 0.05 },
       currency: 'USD',
     },
   }` | - |
@@ -5640,6 +6233,10 @@ Video Model Registry
     provider: Vendor.OpenAI,
     description: 'Most advanced synced-audio video generation. Up to 1080p, extensions up to 120s',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-24',
+    retirementDate: '2026-09-24',
+    endpoints: ['video_generation', 'video_edit', 'batch'],
     releaseDate: '2025-10-06',
     sources: OPENAI_SOURCES,
     capabilities: {
@@ -5660,6 +6257,16 @@ Video Model Registry
     },
     pricing: {
       perSecond: 0.30, // 720p base; $0.50/sec at 1024x, $0.70/sec at 1080p
+      perSecondByResolution: {
+        '720p': 0.30, '720x1280': 0.30, '1280x720': 0.30,
+        '1024p': 0.50, '1024x1792': 0.50, '1792x1024': 0.50,
+        '1080p': 0.70, '1080x1920': 0.70, '1920x1080': 0.70,
+      },
+      batchPerSecondByResolution: {
+        '720p': 0.15, '720x1280': 0.15, '1280x720': 0.15,
+        '1024p': 0.25, '1024x1792': 0.25, '1792x1024': 0.25,
+        '1080p': 0.35, '1080x1920': 0.35, '1920x1080': 0.35,
+      },
       currency: 'USD',
     },
   }` | - |
@@ -5667,7 +6274,10 @@ Video Model Registry
     name: 'veo-2.0-generate-001',
     displayName: 'Veo 2.0',
     provider: Vendor.Google,
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-30',
+    replacementModel: 'veo-3.1-lite-generate-preview',
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [5, 6, 7, 8],
@@ -5713,7 +6323,8 @@ Video Model Registry
       },
     },
     pricing: {
-      perSecond: 0.15, // $0.15 for 720p/1080p, $0.35 for 4K
+      perSecond: 0.10,
+      perSecondByResolution: { '720p': 0.10, '1080p': 0.12, '4k': 0.30 },
       currency: 'USD',
     },
   }` | - |
@@ -5741,8 +6352,67 @@ Video Model Registry
     },
     pricing: {
       perSecond: 0.40, // $0.40 for 720p/1080p, $0.60 for 4K
+      perSecondByResolution: { '720p': 0.40, '1080p': 0.40, '4k': 0.60 },
       currency: 'USD',
     },
+  }` | - |
+| `'veo-3.1-lite-generate-preview'` | `{
+    name: 'veo-3.1-lite-generate-preview',
+    displayName: 'Veo 3.1 Lite',
+    provider: Vendor.Google,
+    description: 'Cost-efficient Veo 3.1 preview for short 720p and 1080p clips with native audio',
+    isActive: true,
+    lifecycle: 'preview',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['video_generation'],
+    releaseDate: '2026-06-30',
+    sources: { ...GOOGLE_SOURCES, lastVerified: '2026-08-08' },
+    capabilities: {
+      durations: [4, 6, 8],
+      resolutions: ['720p', '1080p'],
+      aspectRatios: ['16:9', '9:16'],
+      maxFps: 24,
+      audio: true,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: true,
+      features: { upscaling: false, styleControl: false, negativePrompt: true, seed: true },
+    },
+    pricing: {
+      perSecond: 0.05,
+      perSecondByResolution: { '720p': 0.05, '1080p': 0.08 },
+      currency: 'USD',
+    },
+  }` | - |
+| `'gemini-omni-flash-preview'` | `{
+    name: 'gemini-omni-flash-preview',
+    displayName: 'Gemini Omni Flash',
+    provider: Vendor.Google,
+    description: 'Conversational 720p video generation and editing through the Interactions API',
+    isActive: true,
+    lifecycle: 'preview',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['interactions', 'video_generation', 'video_edit'],
+    releaseDate: '2026-06-30',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/omni',
+      apiReference: 'https://ai.google.dev/api/interactions-api',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      durations: [3, 4, 5, 6, 7, 8, 9, 10],
+      resolutions: ['720p'],
+      aspectRatios: ['16:9', '9:16'],
+      maxFps: 24,
+      audio: true,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: false,
+      features: { upscaling: false, styleControl: true, negativePrompt: false, seed: false },
+    },
+    pricing: { perSecond: 0.10, perSecondByResolution: { '720p': 0.10 }, currency: 'USD' },
   }` | - |
 | `'grok-imagine-video'` | `{
     name: 'grok-imagine-video',
@@ -5768,6 +6438,44 @@ Video Model Registry
     },
     pricing: {
       perSecond: 0.05,
+      perSecondByResolution: { '480p': 0.05, '720p': 0.07 },
+      currency: 'USD',
+    },
+  }` | - |
+| `'grok-imagine-video-1.5'` | `{
+    name: 'grok-imagine-video-1.5',
+    displayName: 'Grok Imagine Video 1.5',
+    provider: Vendor.Grok,
+    description: 'Higher-fidelity xAI video generation with 480p, 720p, and 1080p output',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['grok-imagine-video-1.5-preview'],
+    snapshots: ['grok-imagine-video-1.5-2026-05-30'],
+    endpoints: ['video_generation'],
+    releaseDate: '2026-06-01',
+    sources: {
+      documentation: 'https://docs.x.ai/developers/models/grok-imagine-video-1.5',
+      pricing: 'https://docs.x.ai/developers/models/grok-imagine-video-1.5',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      durations: [1, 5, 8, 10, 15],
+      resolutions: ['480p', '720p', '1080p'],
+      aspectRatios: ['16:9', '4:3', '1:1', '9:16', '3:4', '3:2', '2:3'],
+      maxFps: 24,
+      audio: true,
+      textToVideo: false,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: false,
+      features: { upscaling: true, styleControl: true, negativePrompt: false, seed: true },
+    },
+    pricing: {
+      perSecond: 0.08,
+      perSecondByResolution: { '480p': 0.08, '720p': 0.14, '1080p': 0.25 },
+      inputImage: 0.01,
       currency: 'USD',
     },
   }` | - |
@@ -16240,6 +16948,236 @@ getPath(userId: string | undefined): string
 
 ---
 
+### GrokRealtimeSession `class`
+
+📍 [`src/capabilities/voice/grok/GrokRealtimeSession.ts:17`](src/capabilities/voice/grok/GrokRealtimeSession.ts)
+
+xAI-typed facade over the connector-aware Realtime WebSocket transport.
+OpenAIRealtimeSession deliberately retains OpenAI's stricter 24 kHz type.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(options: GrokRealtimeSessionOptions)
+```
+
+**Parameters:**
+- `options`: `GrokRealtimeSessionOptions`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `updateSession()`
+
+```typescript
+override updateSession(
+    session: NonNullable&lt;OpenAIRealtimeSessionOptions['session']&gt; | GrokRealtimeSessionConfig,
+  ): void
+```
+
+**Parameters:**
+- `session`: `NonNullable&lt;OpenAIRealtimeSessionConfig | OpenAIRealtimeTranscriptionSessionConfig | OpenAIRealtimeTranslationSessionConfig | undefined&gt; | GrokRealtimeSessionConfig`
+
+**Returns:** `void`
+
+</details>
+
+---
+
+### OpenAIRealtimeSession `class`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:57`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+
+Connector-first, server-side WebSocket client for OpenAI's GA Realtime API.
+It intentionally exposes the raw event stream while providing helpers for
+the common conversation, audio, and response events.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(options: OpenAIRealtimeSessionOptions)
+```
+
+**Parameters:**
+- `options`: `OpenAIRealtimeSessionOptions`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `connect()`
+
+```typescript
+async connect(): Promise&lt;OpenAIRealtimeServerEvent&gt;
+```
+
+**Returns:** `Promise&lt;OpenAIRealtimeServerEvent&gt;`
+
+#### `updateSession()`
+
+```typescript
+updateSession(session: NonNullable&lt;OpenAIRealtimeSessionOptions['session']&gt;): void
+```
+
+**Parameters:**
+- `session`: `NonNullable&lt;OpenAIRealtimeSessionConfig | OpenAIRealtimeTranscriptionSessionConfig | OpenAIRealtimeTranslationSessionConfig | undefined&gt;`
+
+**Returns:** `void`
+
+#### `appendAudio()`
+
+```typescript
+appendAudio(audio: Buffer | string): void
+```
+
+**Parameters:**
+- `audio`: `string | Buffer&lt;ArrayBufferLike&gt;`
+
+**Returns:** `void`
+
+#### `commitAudio()`
+
+```typescript
+commitAudio(): void
+```
+
+**Returns:** `void`
+
+#### `clearAudio()`
+
+```typescript
+clearAudio(): void
+```
+
+**Returns:** `void`
+
+#### `createResponse()`
+
+```typescript
+createResponse(response: Record&lt;string, unknown&gt; =
+```
+
+**Parameters:**
+- `response`: `Record&lt;string, unknown&gt;` *(optional)* (default: `{}`)
+
+**Returns:** `void`
+
+#### `cancelResponse()`
+
+```typescript
+cancelResponse(): void
+```
+
+**Returns:** `void`
+
+#### `closeTranslation()`
+
+Flush and close a translation stream after handling `session.closed`.
+
+```typescript
+closeTranslation(): void
+```
+
+**Returns:** `void`
+
+#### `sendText()`
+
+```typescript
+sendText(text: string): void
+```
+
+**Parameters:**
+- `text`: `string`
+
+**Returns:** `void`
+
+#### `sendImage()`
+
+```typescript
+sendImage(imageUrl: string): void
+```
+
+**Parameters:**
+- `imageUrl`: `string`
+
+**Returns:** `void`
+
+#### `truncateItem()`
+
+```typescript
+truncateItem(itemId: string, audioEndMs: number, contentIndex = 0): void
+```
+
+**Parameters:**
+- `itemId`: `string`
+- `audioEndMs`: `number`
+- `contentIndex`: `number` *(optional)* (default: `0`)
+
+**Returns:** `void`
+
+#### `send()`
+
+```typescript
+send(event: OpenAIRealtimeClientEvent): void
+```
+
+**Parameters:**
+- `event`: `OpenAIRealtimeClientEvent`
+
+**Returns:** `void`
+
+#### `close()`
+
+```typescript
+close(code = 1000, reason = 'OK'): void
+```
+
+**Parameters:**
+- `code`: `number` *(optional)* (default: `1000`)
+- `reason`: `string` *(optional)* (default: `'OK'`)
+
+**Returns:** `void`
+
+#### `on()`
+
+```typescript
+on&lt;K extends keyof OpenAIRealtimeSessionEvents&gt;(event: K, handler: OpenAIRealtimeSessionEvents[K]): this
+```
+
+**Parameters:**
+- `event`: `K`
+- `handler`: `OpenAIRealtimeSessionEvents[K]`
+
+**Returns:** `this`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: Connector` | - |
+| `model` | `model: OpenAIRealtimeModel` | - |
+| `initialSession?` | `initialSession: OpenAIRealtimeSessionConfig | OpenAIRealtimeTranscriptionSessionConfig | OpenAIRealtimeTranslationSessionConfig | undefined` | - |
+| `options` | `options: OpenAIRealtimeSessionOptions` | - |
+| `socket` | `socket: WebSocketLike | null` | - |
+| `connected` | `connected: boolean` | - |
+| `inputAudioTransport` | `inputAudioTransport: "json" | "binary"` | - |
+
+</details>
+
+---
+
 ### SessionIngestorPluginNextGen `class`
 
 📍 [`src/core/context-nextgen/plugins/SessionIngestorPluginNextGen.ts:136`](src/core/context-nextgen/plugins/SessionIngestorPluginNextGen.ts)
@@ -16885,6 +17823,43 @@ Configuration for FileUserInfoStorage
 
 ---
 
+### GrokRealtimeSessionConfig `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:150`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+xAI-specific session type used by GrokRealtimeSession.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `audio?` | `audio?: {
+    input?: Omit&lt;RealtimeAudioInput, 'format'&gt; & { format?: GrokRealtimeAudioFormat };
+    output?: Omit&lt;RealtimeAudioOutput, 'format'&gt; & { format?: GrokRealtimeAudioFormat };
+  };` | - |
+
+</details>
+
+---
+
+### GrokRealtimeSessionOptions `interface`
+
+📍 [`src/capabilities/voice/grok/GrokRealtimeSession.ts:8`](src/capabilities/voice/grok/GrokRealtimeSession.ts)
+
+xAI Voice Agent WebSocket options with xAI's provider-specific audio rates.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `session?` | `session?: GrokRealtimeSessionConfig;` | - |
+
+</details>
+
+---
+
 ### IAgentStorage `interface`
 
 📍 [`src/infrastructure/storage/InMemoryStorage.ts:182`](src/infrastructure/storage/InMemoryStorage.ts)
@@ -16899,6 +17874,171 @@ Unified agent storage interface
 | `memory` | `memory: IMemoryStorage;` | - |
 | `plan` | `plan: IPlanStorage;` | - |
 | `agent` | `agent: IAgentStateStorage;` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeSessionConfig `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:101`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type?` | `type?: 'realtime';` | - |
+| `model?` | `model?: OpenAIRealtimeModel;` | - |
+| `instructions?` | `instructions?: string;` | - |
+| `output_modalities?` | `output_modalities?: Array&lt;'audio' | 'text'&gt;;` | - |
+| `max_output_tokens?` | `max_output_tokens?: number | 'inf';` | - |
+| `parallel_tool_calls?` | `parallel_tool_calls?: boolean;` | - |
+| `reasoning?` | `reasoning?: { effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' };` | - |
+| `voice?` | `voice?: OpenAIRealtimeVoice | { id: string };` | xAI-compatible top-level voice selector. |
+| `turn_detection?` | `turn_detection?: OpenAIRealtimeTurnDetection;` | xAI-compatible top-level turn detection selector. |
+| `resumption?` | `resumption?: { enabled: boolean };` | xAI conversation resumption (30-minute inactivity window). |
+| `include?` | `include?: Array&lt;'item.input_audio_transcription.logprobs'&gt;;` | - |
+| `prompt?` | `prompt?: { id: string; version?: string; variables?: Record&lt;string, string&gt; } | null;` | - |
+| `tool_choice?` | `tool_choice?: 'none' | 'auto' | 'required' | Record&lt;string, unknown&gt;;` | - |
+| `tools?` | `tools?: OpenAIRealtimeTool[];` | - |
+| `tracing?` | `tracing?: 'auto' | OpenAIRealtimeTracing | null;` | - |
+| `truncation?` | `truncation?: 'auto' | 'disabled' | OpenAIRealtimeTruncation;` | - |
+| `audio?` | `audio?: {
+    input?: {
+      format?: OpenAIRealtimeAudioFormat;
+      transport?: 'json' | 'binary';
+      noise_reduction?: { type: 'near_field' | 'far_field' } | null;
+      transcription?: {
+        model?: string;
+        language?: string;
+        /** xAI speech-to-speech transcription language hint. */
+        language_hint?: string;
+        /** xAI speech-to-speech transcription vocabulary hints. */
+        keyterms?: string[];
+        prompt?: string;
+      } | null;
+      turn_detection?: OpenAIRealtimeTurnDetection;
+    };
+    output?: {
+      format?: OpenAIRealtimeAudioFormat;
+      transport?: 'json' | 'binary';
+      voice?: OpenAIRealtimeVoice | { id: string };
+      speed?: number;
+    };
+  };` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeSessionEvents `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:44`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `event` | `event: (event: OpenAIRealtimeServerEvent) =&gt; void;` | - |
+| `audio` | `audio: (audio: Buffer) =&gt; void;` | Raw assistant audio when xAI binary output transport is enabled. |
+| `error` | `error: (error: Error) =&gt; void;` | - |
+| `close` | `close: (code: number, reason: string) =&gt; void;` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeSessionOptions `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:22`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: string | Connector;` | - |
+| `model?` | `model?: OpenAIRealtimeModel;` | - |
+| `endpoint?` | `endpoint?: 'realtime' | 'realtime/translations';` | Dedicated translation sessions use `realtime/translations`. |
+| `callId?` | `callId?: string;` | xAI SIP call to join. When set, the model query parameter is omitted. |
+| `conversationId?` | `conversationId?: string;` | xAI conversation ID to resume after reconnecting. |
+| `reasoningEffort?` | `reasoningEffort?: 'none' | 'high';` | xAI voice reasoning mode selected during the WebSocket handshake. |
+| `session?` | `session?: OpenAIRealtimeSessionConfig
+    | OpenAIRealtimeTranscriptionSessionConfig
+    | OpenAIRealtimeTranslationSessionConfig;` | - |
+| `safetyIdentifier?` | `safetyIdentifier?: string;` | Stable, privacy-preserving end-user identifier sent as a header. |
+| `headers?` | `headers?: Record&lt;string, string&gt;;` | - |
+| `connectTimeoutMs?` | `connectTimeoutMs?: number;` | - |
+| `webSocketFactory?` | `webSocketFactory?: (url: string, options: { headers: Record&lt;string, string&gt; }) =&gt; Promise&lt;WebSocketLike&gt; | WebSocketLike;` | Test/custom-runtime hook. Normal callers should leave this unset. |
+
+</details>
+
+---
+
+### OpenAIRealtimeTranscriptionSessionConfig `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:178`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'transcription';` | - |
+| `audio?` | `audio?: {
+    input?: {
+      format?: OpenAIRealtimeAudioFormat;
+      noise_reduction?: { type: 'near_field' | 'far_field' } | null;
+      transcription?: {
+        model?: 'gpt-live-transcribe' | 'gpt-transcribe' | (string & {});
+        language?: string;
+        languages?: string[];
+        prompt?: string;
+        keywords?: string[];
+        delay?: 'low' | 'medium' | 'high' | (string & {});
+      };
+      turn_detection?: OpenAIRealtimeTurnDetection;
+    };
+  };` | - |
+| `include?` | `include?: Array&lt;'item.input_audio_transcription.logprobs'&gt;;` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeTranslationClientSessionConfig `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:207`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+Translation configuration accepted when minting a WebRTC client secret.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `model` | `model: 'gpt-realtime-translate' | (string & {});` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeTranslationSessionConfig `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:198`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `audio` | `audio: {
+    output: {
+      language: string;
+    };
+  };` | - |
 
 </details>
 
@@ -17050,7 +18190,7 @@ Full session state wrapper (includes metadata)
 
 ### VoiceSessionInfo `interface`
 
-📍 [`src/capabilities/voice/types.ts:98`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:102`](src/capabilities/voice/types.ts)
 
 Read-only snapshot of a voice session's state.
 Exposed to lifecycle hooks and event handlers.
@@ -17087,7 +18227,7 @@ type SessionIngestorDiligence = 'minimal' | 'normal' | 'thorough'
 
 ### SessionState `type`
 
-📍 [`src/capabilities/voice/types.ts:80`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:84`](src/capabilities/voice/types.ts)
 
 ```typescript
 type SessionState = | 'idle'        // Created, not yet connected
@@ -20623,7 +21763,7 @@ MCP Tool call result
 
 ### NativeToolEvent `interface`
 
-📍 [`src/domain/entities/Response.ts:34`](src/domain/entities/Response.ts)
+📍 [`src/domain/entities/Response.ts:36`](src/domain/entities/Response.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -20634,6 +21774,51 @@ MCP Tool call result
 | `id?` | `id?: string;` | - |
 | `status?` | `status?: string;` | - |
 | `error?` | `error?: { code?: string; message: string; details?: unknown };` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeFunctionTool `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:64`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'function';` | - |
+| `name` | `name: string;` | - |
+| `description?` | `description?: string;` | - |
+| `parameters?` | `parameters?: Record&lt;string, unknown&gt;;` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeMCPTool `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:71`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'mcp';` | - |
+| `server_label` | `server_label: string;` | - |
+| `server_url?` | `server_url?: string;` | - |
+| `connector_id?` | `connector_id?: string;` | - |
+| `authorization?` | `authorization?: string;` | - |
+| `allowed_tools?` | `allowed_tools?: string[] | { read_only?: boolean; tool_names?: string[] } | null;` | - |
+| `require_approval?` | `require_approval?: 'always' | 'never' | {
+    always?: { read_only?: boolean; tool_names?: string[] };
+    never?: { read_only?: boolean; tool_names?: string[] };
+  } | null;` | - |
+| `defer_loading?` | `defer_loading?: boolean;` | - |
+| `headers?` | `headers?: Record&lt;string, string&gt; | null;` | - |
+| `server_description?` | `server_description?: string;` | - |
 
 </details>
 
@@ -21379,7 +22564,7 @@ Metadata for a tool in the registry
 
 ### ToolResultContent `interface`
 
-📍 [`src/domain/entities/Content.ts:52`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:54`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -21420,7 +22605,7 @@ Provider converters read this field to inject native multimodal image blocks. |
 
 ### ToolUseContent `interface`
 
-📍 [`src/domain/entities/Content.ts:43`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:45`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -21480,7 +22665,7 @@ type DesktopToolName = (typeof DESKTOP_TOOL_NAMES)[number]
 
 ### NativeToolCapability `type`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:25`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:31`](src/domain/interfaces/IAdvancedInference.ts)
 
 ```typescript
 type NativeToolCapability = | 'web_search'
@@ -21494,7 +22679,7 @@ type NativeToolCapability = | 'web_search'
 
 ### NativeToolRequest `type`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:66`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:72`](src/domain/interfaces/IAdvancedInference.ts)
 
 ```typescript
 type NativeToolRequest = | { capability: 'web_search'; options?: Record&lt;string, unknown&gt; }
@@ -21502,6 +22687,16 @@ type NativeToolRequest = | { capability: 'web_search'; options?: Record&lt;strin
   | { capability: 'code_execution'; options?: Record&lt;string, unknown&gt; }
   | { capability: 'file_search'; options: FileSearchOptions }
   | { capability: 'remote_mcp'; server: RemoteMcpDescriptor; options?: Record&lt;string, unknown&gt; }
+```
+
+---
+
+### OpenAIRealtimeTool `type`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:87`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+```typescript
+type OpenAIRealtimeTool = OpenAIRealtimeFunctionTool | OpenAIRealtimeMCPTool
 ```
 
 ---
@@ -23338,7 +24533,7 @@ Get summary statistics
 getStatistics()
 ```
 
-**Returns:** `{ responseId: string; model: string; status: "in_progress" | "completed" | "failed" | "incomplete"; iterations: number; totalChunks: number; totalTextDeltas: number; totalToolCalls: number; textItemsCount: number; toolCallBuffersCount: number; completedToolCallsCount: number; durationMs: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; cached_input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_creation_details?: { short_ttl_input_tokens?: number | undefined; extended_ttl_input_tokens?: number | undefined; } | undefined; native_tool_calls?: Record&lt;string, number | undefined&gt; | undefined; processing_mode?: "interactive" | "batch" | undefined; service_tier?: string | undefined; }; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; }`
+**Returns:** `{ responseId: string; model: string; status: "in_progress" | "completed" | "failed" | "incomplete"; iterations: number; totalChunks: number; totalTextDeltas: number; totalToolCalls: number; textItemsCount: number; toolCallBuffersCount: number; completedToolCallsCount: number; durationMs: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; cached_input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_creation_details?: { short_ttl_input_tokens?: number | undefined; extended_ttl_input_tokens?: number | undefined; } | undefined; native_tool_calls?: Record&lt;string, number | undefined&gt; | undefined; processing_mode?: ProcessingMode | undefined; service_tier?: string | undefined; speed?: string | undefined; }; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; }`
 
 #### `hasText()`
 
@@ -23378,7 +24573,7 @@ Create a snapshot for checkpointing (error recovery)
 createSnapshot()
 ```
 
-**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; reasoningBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;; completedToolCalls: ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; cached_input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_creation_details?: { short_ttl_input_tokens?: number | undefined; extended_ttl_input_tokens?: number | undefined; } | undefined; native_tool_calls?: Record&lt;string, number | undefined&gt; | undefined; processing_mode?: "interactive" | "batch" | undefined; service_tier?: string | undefined; }; status: "in_progress" | "completed" | "failed" | "incomplete"; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; startTime: Date; endTime: Date | undefined; }`
+**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; reasoningBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;; completedToolCalls: ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; cached_input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_creation_details?: { short_ttl_input_tokens?: number | undefined; extended_ttl_input_tokens?: number | undefined; } | undefined; native_tool_calls?: Record&lt;string, number | undefined&gt; | undefined; processing_mode?: ProcessingMode | undefined; service_tier?: string | undefined; speed?: string | undefined; }; status: "in_progress" | "completed" | "failed" | "incomplete"; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; startTime: Date; endTime: Date | undefined; }`
 
 </details>
 
@@ -23621,9 +24816,41 @@ Error event
 
 ---
 
+### IStreamingSpeechToTextProvider `interface`
+
+📍 [`src/domain/interfaces/IAudioProvider.ts:240`](src/domain/interfaces/IAudioProvider.ts)
+
+Opt-in extension implemented by providers with a live STT WebSocket API.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `supportsStreaming()`
+
+```typescript
+supportsStreaming(): boolean;
+```
+
+**Returns:** `boolean`
+
+#### `transcribeStream()`
+
+```typescript
+transcribeStream(options: STTStreamOptions): AsyncIterableIterator&lt;STTStreamEvent&gt;;
+```
+
+**Parameters:**
+- `options`: `STTStreamOptions`
+
+**Returns:** `AsyncIterableIterator&lt;STTStreamEvent&gt;`
+
+</details>
+
+---
+
 ### IStreamingTextToSpeechProvider `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:88`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:91`](src/domain/interfaces/IAudioProvider.ts)
 
 Streaming Text-to-Speech provider interface (opt-in extension)
 Providers that support chunked transfer implement this alongside ITextToSpeechProvider.
@@ -24063,6 +25290,28 @@ constructor(providerName: string, model: string, capability: string)
 
 ---
 
+### EmbeddingCostOptions `interface`
+
+📍 [`src/domain/entities/EmbeddingModel.ts:70`](src/domain/entities/EmbeddingModel.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `modality?` | `modality?: 'text' | 'image' | 'audio' | 'video';` | Treat the legacy `tokens` argument as this modality. Defaults to text. |
+| `imageTokens?` | `imageTokens?: number;` | Additional modality-specific token buckets for mixed inputs. |
+| `audioTokens?` | `audioTokens?: number;` | - |
+| `videoTokens?` | `videoTokens?: number;` | - |
+| `images?` | `images?: number;` | Unit counts accepted when token usage is unavailable. |
+| `audioSeconds?` | `audioSeconds?: number;` | - |
+| `videoFrames?` | `videoFrames?: number;` | - |
+| `batch?` | `batch?: boolean;` | Apply the model's published batch discount. |
+
+</details>
+
+---
+
 ### EmbeddingModelCapabilities `interface`
 
 📍 [`src/domain/entities/EmbeddingModel.ts:16`](src/domain/entities/EmbeddingModel.ts)
@@ -24077,6 +25326,7 @@ Embedding model capabilities
 | `maxTokens` | `maxTokens: number;` | Maximum input tokens |
 | `defaultDimensions` | `defaultDimensions: number;` | Default output dimensions |
 | `maxDimensions` | `maxDimensions: number;` | Maximum output dimensions |
+| `inputModalities?` | `inputModalities?: readonly ('text' | 'image' | 'audio' | 'video' | 'document')[];` | Input modalities embedded into the shared vector space. |
 | `features` | `features: {
     /** Matryoshka Representation Learning — flexible output dimensions */
     matryoshka: boolean;
@@ -24101,7 +25351,7 @@ Embedding model capabilities
 
 ### EmbeddingModelPricing `interface`
 
-📍 [`src/domain/entities/EmbeddingModel.ts:53`](src/domain/entities/EmbeddingModel.ts)
+📍 [`src/domain/entities/EmbeddingModel.ts:56`](src/domain/entities/EmbeddingModel.ts)
 
 Embedding model pricing
 
@@ -24111,6 +25361,13 @@ Embedding model pricing
 | Property | Type | Description |
 |----------|------|-------------|
 | `perMTokens` | `perMTokens: number;` | Cost per million tokens |
+| `perMImageTokens?` | `perMImageTokens?: number;` | - |
+| `perMAudioTokens?` | `perMAudioTokens?: number;` | - |
+| `perMVideoTokens?` | `perMVideoTokens?: number;` | - |
+| `perImage?` | `perImage?: number;` | - |
+| `perAudioSecond?` | `perAudioSecond?: number;` | - |
+| `perVideoFrame?` | `perVideoFrame?: number;` | - |
+| `batchMultiplier?` | `batchMultiplier?: number;` | Cost multiplier for asynchronous batch processing (for example, 0.5). |
 | `currency` | `currency: 'USD';` | - |
 
 </details>
@@ -24119,7 +25376,7 @@ Embedding model pricing
 
 ### IBaseModelDescription `interface`
 
-📍 [`src/domain/types/SharedTypes.ts:85`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:121`](src/domain/types/SharedTypes.ts)
 
 Base model description - shared by all registries
 Every model registry (Image, TTS, STT, Video) extends this
@@ -24134,8 +25391,16 @@ Every model registry (Image, TTS, STT, Video) extends this
 | `provider` | `provider: VendorType;` | Vendor/provider |
 | `description?` | `description?: string;` | Model description |
 | `isActive` | `isActive: boolean;` | Whether the model is currently available |
+| `preferred?` | `preferred?: boolean;` | Whether this is a vendor-recommended/default choice for its modality. |
+| `lifecycle?` | `lifecycle?: ModelLifecycleStatus;` | Vendor-published lifecycle. `isActive` remains for backward compatibility. |
+| `availability?` | `availability?: ModelAvailability;` | Access scope when the model is not generally available to every account. |
+| `aliases?` | `aliases?: readonly string[];` | Alternate model IDs accepted by the provider. |
+| `snapshots?` | `snapshots?: readonly string[];` | Pinned versions behind this family entry. |
+| `endpoints?` | `endpoints?: readonly ModelEndpoint[];` | Normalized API endpoints on which the model is supported. |
 | `releaseDate?` | `releaseDate?: string;` | Release date (YYYY-MM-DD) |
 | `deprecationDate?` | `deprecationDate?: string;` | Deprecation date if scheduled (YYYY-MM-DD) |
+| `retirementDate?` | `retirementDate?: string;` | Final shutdown date, after which requests fail or are redirected. |
+| `replacementModel?` | `replacementModel?: string;` | Recommended migration target. |
 | `sources` | `sources: ISourceLinks;` | Documentation/pricing links for maintenance |
 
 </details>
@@ -24144,7 +25409,7 @@ Every model registry (Image, TTS, STT, Video) extends this
 
 ### IEmbeddingModelDescription `interface`
 
-📍 [`src/domain/entities/EmbeddingModel.ts:62`](src/domain/entities/EmbeddingModel.ts)
+📍 [`src/domain/entities/EmbeddingModel.ts:88`](src/domain/entities/EmbeddingModel.ts)
 
 Complete embedding model description
 
@@ -24162,7 +25427,7 @@ Complete embedding model description
 
 ### ILLMDescription `interface`
 
-📍 [`src/domain/entities/Model.ts:9`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:15`](src/domain/entities/Model.ts)
 
 Complete description of an LLM model including capabilities, pricing, and features
 
@@ -24175,9 +25440,18 @@ Complete description of an LLM model including capabilities, pricing, and featur
 | `provider` | `provider: string;` | Vendor/provider (Vendor.OpenAI, Vendor.Anthropic, etc.) |
 | `description?` | `description?: string;` | Optional description of the model |
 | `isActive` | `isActive: boolean;` | Whether the model is currently available for use |
+| `lifecycle?` | `lifecycle?: ModelLifecycleStatus;` | Vendor-published lifecycle. `isActive` is retained for compatibility. |
+| `availability?` | `availability?: ModelAvailability;` | Access scope for limited or gated models. |
+| `aliases?` | `aliases?: readonly string[];` | Alternate model IDs accepted by the provider. |
+| `snapshots?` | `snapshots?: readonly string[];` | Pinned versions represented by this registry entry. |
+| `endpoints?` | `endpoints?: readonly ModelEndpoint[];` | Supported first-party API endpoints. |
+| `deprecationDate?` | `deprecationDate?: string;` | Date the vendor announced deprecation (YYYY-MM-DD). |
+| `retirementDate?` | `retirementDate?: string;` | Final shutdown date (YYYY-MM-DD). |
+| `replacementModel?` | `replacementModel?: string;` | Recommended migration target. |
 | `preferred?` | `preferred?: boolean;` | Whether this model is a preferred/recommended choice for its vendor |
 | `releaseDate?` | `releaseDate?: string;` | Release date (YYYY-MM-DD format) |
 | `knowledgeCutoff?` | `knowledgeCutoff?: string;` | Knowledge cutoff date |
+| `sources?` | `sources?: ISourceLinks;` | Official references used to verify this entry. Optional for legacy v1 records. |
 | `voices?` | `voices?: IVoiceInfo[];` | Built-in voices for realtime/audio models (undefined = no built-in voices) |
 | `features` | `features: {
     /** Supports extended reasoning/thinking */
@@ -24219,22 +25493,40 @@ Complete description of an LLM model including capabilities, pricing, and featur
     /** Supports prompt caching */
     promptCaching?: boolean;
 
+    /** Modality-specific prices. Token prices are USD per million tokens. */
+    pricing?: {
+      text?: TokenPricing;
+      audio?: TokenPricing;
+      image?: TokenPricing;
+      /** Used by duration-priced realtime translation models. */
+      audioDurationPerMinute?: number;
+      /** Used by realtime agents that bill text conversation events. */
+      textInputPerMessage?: number;
+      /** Provider processing-tier multipliers relative to standard pricing. */
+      processingMultipliers?: Partial&lt;Record&lt;ProcessingMode, number&gt;&gt;;
+    };
+
     /** Parameter support - indicates which sampling parameters are supported */
     parameters?: {
       /** Supports temperature parameter */
       temperature?: boolean;
       /** Supports top_p parameter */
       topP?: boolean;
+      /** Supports top_k parameter */
+      topK?: boolean;
       /** Supports frequency_penalty parameter */
       frequencyPenalty?: boolean;
       /** Supports presence_penalty parameter */
       presencePenalty?: boolean;
     };
 
+    /** Accepted parameters that the vendor has announced as deprecated. */
+    deprecatedParameters?: readonly ('temperature' | 'topP' | 'topK' | 'frequencyPenalty' | 'presencePenalty')[];
+
     /** Input specifications */
     input: {
       /** Maximum input context window (in tokens) */
-      tokens: number;
+      tokens: number | null;
 
       /** Supports text input */
       text: boolean;
@@ -24258,7 +25550,7 @@ Complete description of an LLM model including capabilities, pricing, and featur
     /** Output specifications */
     output: {
       /** Maximum output tokens */
-      tokens: number;
+      tokens: number | null;
 
       /** Supports text output */
       text: boolean;
@@ -24278,9 +25570,28 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
 ---
 
+### LongContextTokenPricing `interface`
+
+📍 [`src/domain/entities/Model.ts:190`](src/domain/entities/Model.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `thresholdTokens` | `thresholdTokens: number;` | Apply this tier when total request input is at least this many tokens. |
+| `input` | `input: number;` | - |
+| `cachedInput?` | `cachedInput?: number;` | - |
+| `cacheWrite?` | `cacheWrite?: number;` | - |
+| `output` | `output: number;` | - |
+
+</details>
+
+---
+
 ### ModelCapabilities `interface`
 
-📍 [`src/domain/interfaces/ITextProvider.ts:61`](src/domain/interfaces/ITextProvider.ts)
+📍 [`src/domain/interfaces/ITextProvider.ts:73`](src/domain/interfaces/ITextProvider.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -24319,9 +25630,119 @@ emitted only when the primitive actually called a connector.
 
 ---
 
+### TokenPricing `interface`
+
+📍 [`src/domain/entities/Model.ts:199`](src/domain/entities/Model.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `input` | `input: number;` | - |
+| `cachedInput?` | `cachedInput?: number;` | - |
+| `cacheWrite?` | `cacheWrite?: number;` | Explicit cache population/write price per million tokens. |
+| `output?` | `output?: number;` | Output price. Omitted for input-only modalities such as images on realtime models. |
+| `longContext?` | `longContext?: LongContextTokenPricing;` | Optional all-token price tier for long-context requests. |
+
+</details>
+
+---
+
+### ModelAvailability `type`
+
+📍 [`src/domain/types/SharedTypes.ts:20`](src/domain/types/SharedTypes.ts)
+
+Commercial/access scope for models that are not universally available.
+
+```typescript
+type ModelAvailability = | 'public'
+  | 'limited'
+  | 'invite_only'
+  | 'enterprise'
+  | 'region_limited'
+```
+
+---
+
+### ModelEndpoint `type`
+
+📍 [`src/domain/types/SharedTypes.ts:28`](src/domain/types/SharedTypes.ts)
+
+Normalized API surfaces used by the first-party provider adapters.
+
+```typescript
+type ModelEndpoint = | 'responses'
+  | 'chat_completions'
+  | 'messages'
+  | 'generate_content'
+  | 'interactions'
+  | 'realtime'
+  | 'batch'
+  | 'image_generation'
+  | 'image_edit'
+  | 'video_generation'
+  | 'video_edit'
+  | 'audio_speech'
+  | 'audio_transcription'
+  | 'embeddings'
+```
+
+---
+
+### ModelLifecycleStatus `type`
+
+📍 [`src/domain/types/SharedTypes.ts:12`](src/domain/types/SharedTypes.ts)
+
+Lifecycle state published by the model vendor.
+
+```typescript
+type ModelLifecycleStatus = | 'preview'
+  | 'active'
+  | 'legacy'
+  | 'deprecated'
+  | 'retired'
+```
+
+---
+
+### OpenAIRealtimeModel `type`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:3`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+OpenAI Realtime GA session and transport types.
+
+```typescript
+type OpenAIRealtimeModel = | 'gpt-realtime-2.1'
+  | 'gpt-realtime-2.1-mini'
+  | 'gpt-realtime-2'
+  | 'gpt-realtime-translate'
+  | 'gpt-realtime-1.5'
+  | 'gpt-realtime'
+  | 'gpt-realtime-mini'
+  | (string & {})
+```
+
+---
+
+### ProcessingMode `type`
+
+📍 [`src/domain/entities/Model.ts:182`](src/domain/entities/Model.ts)
+
+```typescript
+type ProcessingMode = | 'interactive'
+  | 'standard'
+  | 'batch'
+  | 'flex'
+  | 'fast'
+  | 'priority'
+```
+
+---
+
 ### calculateCost `function`
 
-📍 [`src/domain/entities/Model.ts:2876`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3612`](src/domain/entities/Model.ts)
 
 Calculate the cost for a given model and token usage
 
@@ -24337,19 +25758,22 @@ export function calculateCost(
 
 ### calculateEmbeddingCost `function`
 
-📍 [`src/domain/entities/EmbeddingModel.ts:477`](src/domain/entities/EmbeddingModel.ts)
+📍 [`src/domain/entities/EmbeddingModel.ts:575`](src/domain/entities/EmbeddingModel.ts)
 
 Calculate embedding cost for a given model and token count
 
 ```typescript
-export function calculateEmbeddingCost(modelName: string, tokens: number): number | null
+export function calculateEmbeddingCost(
+  modelName: string,
+  tokens: number,
+  options: EmbeddingCostOptions =
 ```
 
 ---
 
 ### getActiveModels `function`
 
-📍 [`src/domain/entities/Model.ts:2864`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3593`](src/domain/entities/Model.ts)
 
 Get all currently active models
 
@@ -24359,9 +25783,21 @@ export function getActiveModels(): ILLMDescription[]
 
 ---
 
+### getDeprecatedModels `function`
+
+📍 [`src/domain/entities/Model.ts:3598`](src/domain/entities/Model.ts)
+
+Get callable models carrying an explicit vendor deprecation notice.
+
+```typescript
+export function getDeprecatedModels(): ILLMDescription[]
+```
+
+---
+
 ### getEmbeddingModelsWithFeature `function`
 
-📍 [`src/domain/entities/EmbeddingModel.ts:459`](src/domain/entities/EmbeddingModel.ts)
+📍 [`src/domain/entities/EmbeddingModel.ts:557`](src/domain/entities/EmbeddingModel.ts)
 
 Get embedding models that support a specific feature
 
@@ -24375,7 +25811,7 @@ export function getEmbeddingModelsWithFeature(
 
 ### getModelInfo `function`
 
-📍 [`src/domain/entities/Model.ts:2847`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3570`](src/domain/entities/Model.ts)
 
 Get model information by name
 
@@ -24387,7 +25823,7 @@ export function getModelInfo(modelName: string): ILLMDescription | undefined
 
 ### getModelsByVendor `function`
 
-📍 [`src/domain/entities/Model.ts:2856`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3585`](src/domain/entities/Model.ts)
 
 Get all models for a specific vendor
 
@@ -24399,7 +25835,7 @@ export function getModelsByVendor(vendor: VendorType): ILLMDescription[]
 
 ### resolveModelCapabilities `function`
 
-📍 [`src/infrastructure/providers/base/ModelCapabilityResolver.ts:32`](src/infrastructure/providers/base/ModelCapabilityResolver.ts)
+📍 [`src/infrastructure/providers/base/ModelCapabilityResolver.ts:37`](src/infrastructure/providers/base/ModelCapabilityResolver.ts)
 
 Resolve model capabilities from the centralized registry, falling back to vendor defaults.
 
@@ -24412,9 +25848,21 @@ export function resolveModelCapabilities(
 
 ---
 
+### resolveModelName `function`
+
+📍 [`src/domain/entities/Model.ts:3576`](src/domain/entities/Model.ts)
+
+Resolve a direct model ID or floating alias to the registry's canonical ID.
+
+```typescript
+export function resolveModelName(modelName: string): string | undefined
+```
+
+---
+
 ### EMBEDDING_MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/EmbeddingModel.ts:110`](src/domain/entities/EmbeddingModel.ts)
+📍 [`src/domain/entities/EmbeddingModel.ts:140`](src/domain/entities/EmbeddingModel.ts)
 
 Complete embedding model registry
 Last full audit: March 2026
@@ -24520,12 +25968,76 @@ Last full audit: March 2026
       currency: 'USD',
     },
   }` | - |
+| `'gemini-embedding-2'` | `{
+    name: 'gemini-embedding-2',
+    displayName: 'Gemini Embedding 2',
+    provider: Vendor.Google,
+    description: 'Current multimodal embedding model mapping text, images, audio, video, and PDFs into one vector space',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['embeddings', 'batch'],
+    releaseDate: '2026-04-28',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-embedding-2',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      maxTokens: 8192,
+      defaultDimensions: 3072,
+      maxDimensions: 3072,
+      inputModalities: ['text', 'image', 'audio', 'video', 'document'],
+      features: { matryoshka: true, instructionAware: true, batchInput: true, multilingual: true },
+      limits: { maxBatchSize: 100 },
+    },
+    pricing: {
+      perMTokens: 0.20,
+      perMImageTokens: 0.45,
+      perMAudioTokens: 6.50,
+      perMVideoTokens: 12,
+      perImage: 0.00012,
+      perAudioSecond: 0.00016,
+      perVideoFrame: 0.00079,
+      batchMultiplier: 0.5,
+      currency: 'USD',
+    },
+  }` | - |
+| `'gemini-embedding-001'` | `{
+    name: 'gemini-embedding-001',
+    displayName: 'Gemini Embedding',
+    provider: Vendor.Google,
+    description: 'Stable text-only Gemini embedding model with flexible dimensions',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['embeddings', 'batch'],
+    releaseDate: '2025-06-01',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/embeddings',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      maxTokens: 2048,
+      defaultDimensions: 3072,
+      maxDimensions: 3072,
+      inputModalities: ['text'],
+      features: { matryoshka: true, instructionAware: true, batchInput: true, multilingual: true },
+      limits: { maxBatchSize: 100 },
+    },
+    pricing: { perMTokens: 0.15, batchMultiplier: 0.5, currency: 'USD' },
+  }` | - |
 | `'text-embedding-004'` | `{
     name: 'text-embedding-004',
     displayName: 'Text Embedding 004',
     provider: Vendor.Google,
     description: 'Gemini embedding model with dimension reduction support',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-01-14',
+    replacementModel: 'gemini-embedding-2',
     releaseDate: '2024-05-14',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/embeddings',
@@ -24742,16 +26254,132 @@ Last full audit: March 2026
 
 ### MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/Model.ts:240`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:344`](src/domain/entities/Model.ts)
 
 Complete model registry with all model metadata
-Updated: March 2026 - Verified from official vendor documentation
+Registry schema v2. Last full first-party documentation audit: 2026-08-08.
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
+| `'gpt-5.6-sol'` | `{
+    name: 'gpt-5.6-sol',
+    provider: Vendor.OpenAI,
+    description: 'Highest-capability GPT-5.6 model for demanding professional work, coding, and long-horizon agents',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['gpt-5.6'],
+    snapshots: ['gpt-5.6-sol-2026-07-09'],
+    endpoints: ['responses', 'chat_completions', 'batch'],
+    releaseDate: '2026-07-09',
+    knowledgeCutoff: '2026-02-16',
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-sol', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1050000, text: true, image: true, cpm: 5, cpmCached: 0.5 },
+      output: { tokens: 128000, text: true, cpm: 30 },
+      pricing: {
+        text: {
+          input: 5, cachedInput: 0.5, cacheWrite: 6.25, output: 30,
+          longContext: { thresholdTokens: 272000, input: 10, cachedInput: 1, cacheWrite: 12.5, output: 45 },
+        },
+        processingMultipliers: { batch: 0.5, fast: 2 },
+      },
+    },
+  }` | - |
+| `'gpt-5.6-terra'` | `{
+    name: 'gpt-5.6-terra',
+    provider: Vendor.OpenAI,
+    description: 'Balanced GPT-5.6 model for production agents, coding, and high-volume professional workloads',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    snapshots: ['gpt-5.6-terra-2026-07-09'],
+    endpoints: ['responses', 'chat_completions', 'batch'],
+    releaseDate: '2026-07-09',
+    knowledgeCutoff: '2026-02-16',
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-terra', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1050000, text: true, image: true, cpm: 2, cpmCached: 0.2 },
+      output: { tokens: 128000, text: true, cpm: 12 },
+      pricing: {
+        text: {
+          input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 12,
+          longContext: { thresholdTokens: 272000, input: 4, cachedInput: 0.4, cacheWrite: 5, output: 18 },
+        },
+        processingMultipliers: { batch: 0.5, fast: 2 },
+      },
+    },
+  }` | - |
+| `'gpt-5.6-luna'` | `{
+    name: 'gpt-5.6-luna',
+    provider: Vendor.OpenAI,
+    description: 'Fast, economical GPT-5.6 model for latency-sensitive and high-throughput workloads',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    snapshots: ['gpt-5.6-luna-2026-07-09'],
+    endpoints: ['responses', 'chat_completions', 'batch'],
+    releaseDate: '2026-07-09',
+    knowledgeCutoff: '2026-02-16',
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-luna', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1050000, text: true, image: true, cpm: 0.2, cpmCached: 0.02 },
+      output: { tokens: 128000, text: true, cpm: 1.2 },
+      pricing: {
+        text: {
+          input: 0.2, cachedInput: 0.02, cacheWrite: 0.25, output: 1.2,
+          longContext: { thresholdTokens: 272000, input: 0.4, cachedInput: 0.04, cacheWrite: 0.5, output: 1.8 },
+        },
+        processingMultipliers: { batch: 0.5, fast: 2 },
+      },
+    },
+  }` | - |
+| `'gpt-5.5-pro'` | `{
+    name: 'gpt-5.5-pro',
+    provider: Vendor.OpenAI,
+    description: 'Higher-compute GPT-5.5 variant for difficult reasoning tasks',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['responses', 'batch'],
+    releaseDate: '2026-04-25',
+    knowledgeCutoff: '2025-12-01',
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.5-pro', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      pricing: {
+        text: {
+          input: 30,
+          cachedInput: 3,
+          output: 180,
+          longContext: { thresholdTokens: 272000, input: 60, cachedInput: 6, output: 270 },
+        },
+        processingMultipliers: { standard: 1, batch: 0.5 },
+      },
+      input: { tokens: 1050000, text: true, image: true, cpm: 30, cpmCached: 3 },
+      output: { tokens: 128000, text: true, cpm: 180 },
+    },
+  }` | - |
 | `'gpt-5.5'` | `{
     name: 'gpt-5.5',
     provider: Vendor.OpenAI,
@@ -25686,7 +27314,7 @@ Updated: March 2026 - Verified from official vendor documentation
       functionCalling: true,
       fineTuning: false,
       predictedOutputs: true,
-      realtime: true,
+      realtime: false,
       vision: true,
       audio: false,
       video: false,
@@ -25720,7 +27348,7 @@ Updated: March 2026 - Verified from official vendor documentation
       functionCalling: true,
       fineTuning: true,
       predictedOutputs: false,
-      realtime: true,
+      realtime: false,
       vision: true,
       audio: false,
       video: false,
@@ -25843,12 +27471,124 @@ Updated: March 2026 - Verified from official vendor documentation
       },
     },
   }` | - |
+| `'gpt-realtime-2.1'` | `{
+    name: 'gpt-realtime-2.1',
+    provider: Vendor.OpenAI,
+    description: 'Most capable realtime reasoning voice model, with improved alphanumeric recognition, silence/noise handling, interruptions, instruction following, and tool use',
+    isActive: true,
+    preferred: true,
+    knowledgeCutoff: '2024-09-30',
+    voices: OPENAI_REALTIME_VOICES,
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: true,
+      vision: true,
+      audio: true,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      pricing: {
+        text: { input: 4, cachedInput: 0.4, output: 24 },
+        audio: { input: 32, cachedInput: 0.4, output: 64 },
+        image: { input: 5, cachedInput: 0.5 },
+      },
+      input: { tokens: 128000, text: true, image: true, audio: true, cpm: 4, cpmCached: 0.4 },
+      output: { tokens: 32000, text: true, audio: true, cpm: 24 },
+    },
+  }` | - |
+| `'gpt-realtime-2.1-mini'` | `{
+    name: 'gpt-realtime-2.1-mini',
+    provider: Vendor.OpenAI,
+    description: 'Fast, lower-cost distilled realtime reasoning model with speech, tools, and improved alphanumeric recognition',
+    isActive: true,
+    knowledgeCutoff: '2024-09-30',
+    voices: OPENAI_REALTIME_VOICES,
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: true,
+      vision: true,
+      audio: true,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      pricing: {
+        text: { input: 0.6, cachedInput: 0.06, output: 2.4 },
+        audio: { input: 10, cachedInput: 0.3, output: 20 },
+        image: { input: 0.8, cachedInput: 0.08 },
+      },
+      input: { tokens: 128000, text: true, image: true, audio: true, cpm: 0.6, cpmCached: 0.06 },
+      output: { tokens: 32000, text: true, audio: true, cpm: 2.4 },
+    },
+  }` | - |
+| `'gpt-realtime-2'` | `{
+    name: 'gpt-realtime-2',
+    provider: Vendor.OpenAI,
+    description: 'Realtime reasoning model with configurable effort and reliable tool use for complex voice-agent workflows',
+    isActive: true,
+    knowledgeCutoff: '2024-09-30',
+    voices: OPENAI_REALTIME_VOICES,
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: true,
+      vision: true,
+      audio: true,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      pricing: {
+        text: { input: 4, cachedInput: 0.4, output: 24 },
+        audio: { input: 32, cachedInput: 0.4, output: 64 },
+        image: { input: 5, cachedInput: 0.5 },
+      },
+      input: { tokens: 128000, text: true, image: true, audio: true, cpm: 4, cpmCached: 0.4 },
+      output: { tokens: 32000, text: true, audio: true, cpm: 24 },
+    },
+  }` | - |
+| `'gpt-realtime-translate'` | `{
+    name: 'gpt-realtime-translate',
+    provider: Vendor.OpenAI,
+    description: 'Streaming speech-to-speech translation model using the dedicated realtime translations endpoint',
+    isActive: true,
+    knowledgeCutoff: '2024-09-30',
+    voices: OPENAI_REALTIME_VOICES,
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: false,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: true,
+      vision: false,
+      audio: true,
+      video: false,
+      batchAPI: false,
+      promptCaching: false,
+      pricing: { audioDurationPerMinute: 0.034 },
+      input: { tokens: 16000, text: false, audio: true, cpm: 0 },
+      output: { tokens: 2000, text: true, audio: true, cpm: 0 },
+    },
+  }` | - |
 | `'gpt-realtime-1.5'` | `{
     name: 'gpt-realtime-1.5',
     provider: Vendor.OpenAI,
     description: 'Latest realtime model for voice/audio streaming. Text+audio+image input, text+audio output',
     isActive: true,
-    preferred: true,
     releaseDate: '2025-12-01',
     knowledgeCutoff: '2024-09-30',
     voices: OPENAI_REALTIME_VOICES,
@@ -25865,6 +27605,11 @@ Updated: March 2026 - Verified from official vendor documentation
       video: false,
       batchAPI: false,
       promptCaching: false,
+      pricing: {
+        text: { input: 4, cachedInput: 0.4, output: 16 },
+        audio: { input: 32, cachedInput: 0.4, output: 64 },
+        image: { input: 5, cachedInput: 0.5 },
+      },
       input: {
         tokens: 32000,
         text: true,
@@ -25884,7 +27629,7 @@ Updated: March 2026 - Verified from official vendor documentation
     name: 'gpt-realtime',
     provider: Vendor.OpenAI,
     description: 'Realtime model for voice/audio streaming. Text+audio+image input, text+audio output',
-    isActive: true,
+    isActive: false,
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     voices: OPENAI_REALTIME_VOICES,
@@ -25901,6 +27646,11 @@ Updated: March 2026 - Verified from official vendor documentation
       video: false,
       batchAPI: false,
       promptCaching: false,
+      pricing: {
+        text: { input: 4, cachedInput: 0.4, output: 16 },
+        audio: { input: 32, cachedInput: 0.4, output: 64 },
+        image: { input: 5, cachedInput: 0.5 },
+      },
       input: {
         tokens: 32000,
         text: true,
@@ -25920,7 +27670,7 @@ Updated: March 2026 - Verified from official vendor documentation
     name: 'gpt-realtime-mini',
     provider: Vendor.OpenAI,
     description: 'Cost-efficient realtime model for voice/audio streaming',
-    isActive: true,
+    isActive: false,
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     voices: OPENAI_REALTIME_VOICES,
@@ -25937,6 +27687,11 @@ Updated: March 2026 - Verified from official vendor documentation
       video: false,
       batchAPI: false,
       promptCaching: false,
+      pricing: {
+        text: { input: 0.6, cachedInput: 0.06, output: 2.4 },
+        audio: { input: 10, cachedInput: 0.3, output: 20 },
+        image: { input: 0.8, cachedInput: 0.08 },
+      },
       input: {
         tokens: 32000,
         text: true,
@@ -26252,16 +28007,68 @@ Updated: March 2026 - Verified from official vendor documentation
       },
     },
   }` | - |
+| `'claude-opus-5'` | `{
+    name: 'claude-opus-5',
+    provider: Vendor.Anthropic,
+    description: 'Frontier Claude model for complex agentic coding and enterprise work; adaptive thinking is enabled by default',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['messages', 'batch'],
+    releaseDate: '2026-07-01',
+    knowledgeCutoff: '2026-05-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1000000, text: true, image: true, cpm: 5, cpmCached: 0.5 },
+      output: { tokens: 128000, text: true, cpm: 25 },
+      pricing: {
+        text: { input: 5, cachedInput: 0.5, cacheWrite: 6.25, output: 25 },
+        processingMultipliers: { batch: 0.5, fast: 2 },
+      },
+    },
+  }` | - |
+| `'claude-mythos-5'` | `{
+    name: 'claude-mythos-5',
+    provider: Vendor.Anthropic,
+    description: 'Limited-release counterpart to Claude Fable 5 without its safety classifiers; always-on adaptive thinking',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'invite_only',
+    endpoints: ['messages', 'batch'],
+    releaseDate: '2026-06-09',
+    knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1000000, text: true, image: true, cpm: 10, cpmCached: 1 },
+      output: { tokens: 128000, text: true, cpm: 50 },
+      pricing: {
+        text: { input: 10, cachedInput: 1, cacheWrite: 12.5, output: 50 },
+        processingMultipliers: { batch: 0.5 },
+      },
+    },
+  }` | - |
 | `'claude-opus-4-8'` | `{
     name: 'claude-opus-4-8',
     provider: Vendor.Anthropic,
     description: 'Most capable Opus-tier model — highly autonomous, state-of-the-art long-horizon agentic work, knowledge work, and memory. 1M context, 128K output, adaptive thinking (low/medium/high/xhigh/max effort), high-resolution vision. Does not accept `temperature`.',
     isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['messages', 'batch'],
     preferred: true,
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-01-01',
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -26271,7 +28078,7 @@ Updated: March 2026 - Verified from official vendor documentation
       vision: true,
       audio: false,
       video: false,
-      extendedThinking: false,
+      extendedThinking: true,
       batchAPI: true,
       promptCaching: true,
       parameters: {
@@ -26296,11 +28103,14 @@ Updated: March 2026 - Verified from official vendor documentation
     provider: Vendor.Anthropic,
     description: 'Best combination of speed and intelligence; near-Opus quality on coding and agentic work. 1M context, 128K output, adaptive thinking on by default (low/medium/high/xhigh/max effort), high-resolution vision. New tokenizer. Does not accept `temperature`.',
     isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['messages', 'batch'],
     preferred: true,
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-01-01',
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -26310,7 +28120,7 @@ Updated: March 2026 - Verified from official vendor documentation
       vision: true,
       audio: false,
       video: false,
-      extendedThinking: false,
+      extendedThinking: true,
       batchAPI: true,
       promptCaching: true,
       parameters: {
@@ -26335,10 +28145,14 @@ Updated: March 2026 - Verified from official vendor documentation
     provider: Vendor.Anthropic,
     description: 'Anthropic\'s most capable widely released model, for the most demanding reasoning and long-horizon agentic work. 1M context, 128K output, thinking always on (raw chain of thought never returned). Does not accept `temperature`. Requires 30-day data retention.',
     isActive: true,
-    releaseDate: '2026-06-01',
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['messages', 'batch'],
+    releaseDate: '2026-06-09',
     knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -26348,7 +28162,7 @@ Updated: March 2026 - Verified from official vendor documentation
       vision: true,
       audio: false,
       video: false,
-      extendedThinking: false,
+      extendedThinking: true,
       batchAPI: true,
       promptCaching: true,
       parameters: {
@@ -26585,7 +28399,10 @@ Updated: March 2026 - Verified from official vendor documentation
     name: 'claude-opus-4-1-20250805',
     provider: Vendor.Anthropic,
     description: 'Legacy Opus 4.1 focused on agentic tasks, real-world coding, and reasoning',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-08-05',
+    replacementModel: 'claude-opus-5',
     releaseDate: '2025-08-05',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -26620,7 +28437,10 @@ Updated: March 2026 - Verified from official vendor documentation
     name: 'claude-opus-4-20250514',
     provider: Vendor.Anthropic,
     description: 'Legacy Opus 4. Agentic tasks and reasoning',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-15',
+    replacementModel: 'claude-opus-5',
     releaseDate: '2025-05-14',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -26655,7 +28475,10 @@ Updated: March 2026 - Verified from official vendor documentation
     name: 'claude-sonnet-4-20250514',
     provider: Vendor.Anthropic,
     description: 'Legacy Sonnet 4. Supports 1M context beta',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-15',
+    replacementModel: 'claude-sonnet-5',
     releaseDate: '2025-05-14',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -26690,7 +28513,10 @@ Updated: March 2026 - Verified from official vendor documentation
     name: 'claude-3-7-sonnet-20250219',
     provider: Vendor.Anthropic,
     description: 'Deprecated. Claude 3.7 Sonnet with extended thinking',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-02-19',
+    replacementModel: 'claude-sonnet-5',
     releaseDate: '2025-02-19',
     knowledgeCutoff: '2024-10-01',
     features: {
@@ -26718,6 +28544,111 @@ Updated: March 2026 - Verified from official vendor documentation
         tokens: 64000,
         text: true,
         cpm: 15,
+      },
+    },
+  }` | - |
+| `'gemini-3.6-flash'` | `{
+    name: 'gemini-3.6-flash',
+    provider: Vendor.Google,
+    description: 'Current production Gemini Flash model for agentic, coding, spatial, and multimodal work',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['gemini-flash-latest'],
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-07-21',
+    knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1048576, text: true, image: true, audio: true, video: true, cpm: 1.5, cpmCached: 0.15 },
+      output: { tokens: 65536, text: true, cpm: 7.5 },
+      pricing: {
+        text: { input: 1.5, cachedInput: 0.15, output: 7.5 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
+      },
+    },
+  }` | - |
+| `'gemini-3.5-flash'` | `{
+    name: 'gemini-3.5-flash',
+    provider: Vendor.Google,
+    description: 'High-capability Gemini Flash model for multimodal and agentic production workloads',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-05-01',
+    knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1048576, text: true, image: true, audio: true, video: true, cpm: 1.5, cpmCached: 0.15 },
+      output: { tokens: 65536, text: true, cpm: 9 },
+      pricing: {
+        text: { input: 1.5, cachedInput: 0.15, output: 9 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
+      },
+    },
+  }` | - |
+| `'gemini-3.5-flash-lite'` | `{
+    name: 'gemini-3.5-flash-lite',
+    provider: Vendor.Google,
+    description: 'Current low-latency production model for high-throughput subagents and extraction',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['gemini-flash-lite-latest'],
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-07-21',
+    knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1048576, text: true, image: true, audio: true, video: true, cpm: 0.3, cpmCached: 0.03 },
+      output: { tokens: 65536, text: true, cpm: 2.5 },
+      pricing: {
+        text: { input: 0.3, cachedInput: 0.03, output: 2.5 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
+      },
+    },
+  }` | - |
+| `'gemini-3.1-flash-lite'` | `{
+    name: 'gemini-3.1-flash-lite',
+    provider: Vendor.Google,
+    description: 'Stable cost-efficient Gemini 3.1 model for high-volume multimodal workloads',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-05-25',
+    knowledgeCutoff: '2025-12-01',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1048576, text: true, image: true, audio: true, video: true, cpm: 0.25, cpmCached: 0.025 },
+      output: { tokens: 65536, text: true, cpm: 1.5 },
+      pricing: {
+        text: { input: 0.25, cachedInput: 0.025, output: 1.5 },
+        audio: { input: 0.5, cachedInput: 0.05, output: 1.5 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
       },
     },
   }` | - |
@@ -26762,7 +28693,10 @@ Updated: March 2026 - Verified from official vendor documentation
     name: 'gemini-3.1-flash-lite-preview',
     provider: Vendor.Google,
     description: 'High performance, budget-friendly for high-volume agentic tasks and data extraction',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-05-25',
+    replacementModel: 'gemini-3.5-flash-lite',
     releaseDate: '2026-03-01',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -26797,7 +28731,10 @@ Updated: March 2026 - Verified from official vendor documentation
     name: 'gemini-3.1-flash-image-preview',
     provider: Vendor.Google,
     description: 'High-efficiency image generation with up to 4K output, search grounding support',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-25',
+    replacementModel: 'gemini-3.1-flash-image',
     releaseDate: '2026-02-01',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -26904,7 +28841,10 @@ Updated: March 2026 - Verified from official vendor documentation
     name: 'gemini-3-pro-image-preview',
     provider: Vendor.Google,
     description: 'Nano Banana Pro — state-of-the-art native image generation and editing with reasoning',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-25',
+    replacementModel: 'gemini-3-pro-image',
     releaseDate: '2025-11-18',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -27075,10 +29015,153 @@ Updated: March 2026 - Verified from official vendor documentation
       },
     },
   }` | - |
+| `'grok-4.5'` | `{
+    name: 'grok-4.5',
+    provider: Vendor.Grok,
+    description: 'Current flagship xAI reasoning model for agents, coding, and multimodal tasks',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['responses', 'chat_completions'],
+    releaseDate: '2026-06-01',
+    knowledgeCutoff: '2026-02-01',
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.5', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, frequencyPenalty: true, presencePenalty: true },
+      input: { tokens: 500000, text: true, image: true, cpm: 2, cpmCached: 0.3 },
+      output: { tokens: 65536, text: true, cpm: 6 },
+      pricing: {
+        text: {
+          input: 2, cachedInput: 0.3, output: 6,
+          longContext: { thresholdTokens: 200000, input: 4, cachedInput: 0.6, output: 12 },
+        },
+      },
+    },
+  }` | - |
+| `'grok-4.3'` | `{
+    name: 'grok-4.3',
+    provider: Vendor.Grok,
+    description: 'Production xAI model with a 1M-token context window and native agent tools',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['responses', 'chat_completions'],
+    releaseDate: '2026-05-15',
+    knowledgeCutoff: '2026-02-01',
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.3', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, frequencyPenalty: true, presencePenalty: true },
+      input: { tokens: 1000000, text: true, image: true, cpm: 1.25, cpmCached: 0.2 },
+      output: { tokens: 65536, text: true, cpm: 2.5 },
+      pricing: {
+        text: {
+          input: 1.25, cachedInput: 0.2, output: 2.5,
+          longContext: { thresholdTokens: 200000, input: 2.5, cachedInput: 0.4, output: 5 },
+        },
+      },
+    },
+  }` | - |
+| `'grok-build-0.1'` | `{
+    name: 'grok-build-0.1',
+    provider: Vendor.Grok,
+    description: 'Specialized xAI software-building model for repository-scale coding agents',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['responses'],
+    releaseDate: '2026-05-01',
+    knowledgeCutoff: '2026-02-01',
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-build-0.1', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: false, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 256000, text: true, image: true, cpm: 1, cpmCached: 0.2 },
+      output: { tokens: 65536, text: true, cpm: 2 },
+      pricing: {
+        text: {
+          input: 1, cachedInput: 0.2, output: 2,
+          longContext: { thresholdTokens: 200000, input: 2, cachedInput: 0.4, output: 4 },
+        },
+      },
+    },
+  }` | - |
+| `'grok-voice-think-fast-2.0'` | `{
+    name: 'grok-voice-think-fast-2.0',
+    provider: Vendor.Grok,
+    description: 'Current xAI speech-to-speech reasoning model for low-latency voice agents',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['grok-voice-latest'],
+    endpoints: ['realtime'],
+    releaseDate: '2026-07-29',
+    sources: { documentation: 'https://docs.x.ai/developers/models/voice-agent-api', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    voices: XAI_VOICES,
+    features: {
+      reasoning: true, streaming: true, structuredOutput: false, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: true, vision: false,
+      audio: true, video: false, batchAPI: false, promptCaching: false,
+      parameters: { temperature: false, topP: false, topK: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: null, text: true, audio: true, cpm: 0 },
+      output: { tokens: null, text: true, audio: true, cpm: 0 },
+      pricing: { audioDurationPerMinute: 0.05, textInputPerMessage: 0.004 },
+    },
+  }` | - |
+| `'grok-voice-think-fast-1.0'` | `{
+    name: 'grok-voice-think-fast-1.0',
+    provider: Vendor.Grok,
+    description: 'Previous xAI reasoning voice model; pin only when model stability is required',
+    isActive: true,
+    lifecycle: 'legacy',
+    availability: 'public',
+    endpoints: ['realtime'],
+    replacementModel: 'grok-voice-think-fast-2.0',
+    voices: XAI_VOICES,
+    features: {
+      reasoning: true, streaming: true, structuredOutput: false, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: true, vision: false,
+      audio: true, video: false, batchAPI: false, promptCaching: false,
+      parameters: { temperature: false, topP: false, topK: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: null, text: true, audio: true, cpm: 0 },
+      output: { tokens: null, text: true, audio: true, cpm: 0 },
+      pricing: { audioDurationPerMinute: 0.05, textInputPerMessage: 0.004 },
+    },
+  }` | - |
+| `'grok-voice-fast-1.0'` | `{
+    name: 'grok-voice-fast-1.0',
+    provider: Vendor.Grok,
+    description: 'Deprecated first-generation xAI voice-agent model',
+    isActive: true,
+    lifecycle: 'deprecated',
+    availability: 'public',
+    endpoints: ['realtime'],
+    replacementModel: 'grok-voice-think-fast-2.0',
+    voices: XAI_VOICES,
+    features: {
+      reasoning: false, streaming: true, structuredOutput: false, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: true, vision: false,
+      audio: true, video: false, batchAPI: false, promptCaching: false,
+      parameters: { temperature: false, topP: false, topK: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: null, text: true, audio: true, cpm: 0 },
+      output: { tokens: null, text: true, audio: true, cpm: 0 },
+      pricing: { audioDurationPerMinute: 0.05, textInputPerMessage: 0.004 },
+    },
+  }` | - |
 | `'grok-4.20-0309-reasoning'` | `{
     name: 'grok-4.20-0309-reasoning',
     provider: Vendor.Grok,
-    description: 'Flagship Grok 4.20 with reasoning, 2M context, vision support',
+    description: 'Grok 4.20 reasoning model with a 1M-token context window and vision support',
     isActive: true,
     preferred: true,
     releaseDate: '2026-03-09',
@@ -27097,22 +29180,29 @@ Updated: March 2026 - Verified from official vendor documentation
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 2000000,
+        tokens: 1000000,
         text: true,
         image: true,
-        cpm: 2.00,
+        cpm: 1.25,
+        cpmCached: 0.20,
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 6.00,
+        cpm: 2.50,
+      },
+      pricing: {
+        text: {
+          input: 1.25, cachedInput: 0.20, output: 2.50,
+          longContext: { thresholdTokens: 200000, input: 2.50, cachedInput: 0.40, output: 5.00 },
+        },
       },
     },
   }` | - |
 | `'grok-4.20-0309-non-reasoning'` | `{
     name: 'grok-4.20-0309-non-reasoning',
     provider: Vendor.Grok,
-    description: 'Flagship Grok 4.20 without reasoning, 2M context, vision support',
+    description: 'Grok 4.20 non-reasoning model with a 1M-token context window and vision support',
     isActive: true,
     releaseDate: '2026-03-09',
     knowledgeCutoff: '2024-11-01',
@@ -27130,22 +29220,29 @@ Updated: March 2026 - Verified from official vendor documentation
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 2000000,
+        tokens: 1000000,
         text: true,
         image: true,
-        cpm: 2.00,
+        cpm: 1.25,
+        cpmCached: 0.20,
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 6.00,
+        cpm: 2.50,
+      },
+      pricing: {
+        text: {
+          input: 1.25, cachedInput: 0.20, output: 2.50,
+          longContext: { thresholdTokens: 200000, input: 2.50, cachedInput: 0.40, output: 5.00 },
+        },
       },
     },
   }` | - |
 | `'grok-4.20-multi-agent-0309'` | `{
     name: 'grok-4.20-multi-agent-0309',
     provider: Vendor.Grok,
-    description: 'Grok 4.20 optimized for multi-agent workflows, 2M context, vision + reasoning',
+    description: 'Grok 4.20 optimized for multi-agent workflows with a 1M-token context window',
     isActive: true,
     releaseDate: '2026-03-09',
     knowledgeCutoff: '2024-11-01',
@@ -27163,15 +29260,22 @@ Updated: March 2026 - Verified from official vendor documentation
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 2000000,
+        tokens: 1000000,
         text: true,
         image: true,
-        cpm: 2.00,
+        cpm: 1.25,
+        cpmCached: 0.20,
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 6.00,
+        cpm: 2.50,
+      },
+      pricing: {
+        text: {
+          input: 1.25, cachedInput: 0.20, output: 2.50,
+          longContext: { thresholdTokens: 200000, input: 2.50, cachedInput: 0.40, output: 5.00 },
+        },
       },
     },
   }` | - |
@@ -27179,7 +29283,10 @@ Updated: March 2026 - Verified from official vendor documentation
     name: 'grok-4-1-fast-reasoning',
     provider: Vendor.Grok,
     description: 'Fast Grok 4.1 with reasoning, 2M context, vision support',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-05-15',
+    replacementModel: 'grok-4.3',
     releaseDate: '2025-11-01',
     knowledgeCutoff: '2024-11-01',
     features: {
@@ -27212,7 +29319,10 @@ Updated: March 2026 - Verified from official vendor documentation
     name: 'grok-4-1-fast-non-reasoning',
     provider: Vendor.Grok,
     description: 'Fast Grok 4.1 without reasoning, 2M context, vision support',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-05-15',
+    replacementModel: 'grok-4.3',
     releaseDate: '2025-11-01',
     knowledgeCutoff: '2024-11-01',
     features: {
@@ -30375,7 +32485,7 @@ constructor(reason: string)
 
 ### StructuredOutputError `class`
 
-📍 [`src/core/StructuredOutput.ts:77`](src/core/StructuredOutput.ts)
+📍 [`src/core/StructuredOutput.ts:79`](src/core/StructuredOutput.ts)
 
 Thrown when the model's output cannot be parsed as valid JSON after all
 repair attempts. Carries the raw output + requested format for debugging —
@@ -30928,7 +33038,7 @@ TypeScript interfaces for extensibility
 
 ### AdvancedTextCapabilities `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:73`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:79`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -30939,6 +33049,8 @@ TypeScript interfaces for extensibility
     mode: PromptCachingMode;
     ttlModes: Array&lt;'short' | 'extended'&gt;;
     reportsCacheUsage: boolean;
+    /** Supports explicit per-content cache breakpoints. */
+    explicitBreakpoints?: boolean;
   };` | - |
 | `batch` | `batch: {
     supported: boolean;
@@ -31030,7 +33142,7 @@ Agent definition summary for listing
 
 ### BatchHandle `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:123`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:131`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -31059,7 +33171,7 @@ Agent definition summary for listing
 
 ### BatchSubmitOptions `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:117`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:125`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -31076,7 +33188,7 @@ Agent definition summary for listing
 
 ### BatchTextRequest `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:111`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:119`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -31092,7 +33204,7 @@ Agent definition summary for listing
 
 ### BatchTextResult `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:141`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:149`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -31179,7 +33291,7 @@ Summary of a stored correlation
 
 ### DataHandlingPolicy `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:46`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:52`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -31199,7 +33311,7 @@ when the option is false or omitted. |
 
 ### EmbeddingOptions `interface`
 
-📍 [`src/domain/interfaces/IEmbeddingProvider.ts:10`](src/domain/interfaces/IEmbeddingProvider.ts)
+📍 [`src/domain/interfaces/IEmbeddingProvider.ts:14`](src/domain/interfaces/IEmbeddingProvider.ts)
 
 Options for generating embeddings
 
@@ -31210,8 +33322,11 @@ Options for generating embeddings
 |----------|------|-------------|
 | `model` | `model: string;` | Model to use for embedding |
 | `input` | `input: string | string[];` | Text(s) to embed — single string or array |
+| `content?` | `content?: EmbeddingContentPart[];` | Optional multimodal content for models such as Gemini Embedding 2. |
 | `dimensions?` | `dimensions?: number;` | Output dimensions (for models that support MRL / dimension reduction) |
 | `encodingFormat?` | `encodingFormat?: 'float' | 'base64';` | Encoding format for the embedding values |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Provider-specific controls. Google supports `taskType`, `title`, and
+`mediaDownloadTimeoutMs` (30 seconds by default for external media). |
 
 </details>
 
@@ -31219,7 +33334,7 @@ Options for generating embeddings
 
 ### EmbeddingResponse `interface`
 
-📍 [`src/domain/interfaces/IEmbeddingProvider.ts:24`](src/domain/interfaces/IEmbeddingProvider.ts)
+📍 [`src/domain/interfaces/IEmbeddingProvider.ts:35`](src/domain/interfaces/IEmbeddingProvider.ts)
 
 Response from an embedding request
 
@@ -31241,7 +33356,7 @@ Response from an embedding request
 
 ### FileSearchOptions `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:61`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:67`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -31565,7 +33680,7 @@ destroy(): Promise&lt;void&gt;;
 
 ### IAsyncTextBatchProvider `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:154`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:162`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -32164,7 +34279,7 @@ Methods should check this before performing operations. |
 
 ### IEmbeddingProvider `interface`
 
-📍 [`src/domain/interfaces/IEmbeddingProvider.ts:39`](src/domain/interfaces/IEmbeddingProvider.ts)
+📍 [`src/domain/interfaces/IEmbeddingProvider.ts:50`](src/domain/interfaces/IEmbeddingProvider.ts)
 
 Embedding provider interface
 
@@ -33340,7 +35455,7 @@ has(id: string): boolean;
 
 ### ISpeechToTextProvider `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:184`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:197`](src/domain/interfaces/IAudioProvider.ts)
 
 Speech-to-Text provider interface
 
@@ -33379,7 +35494,7 @@ translate?(options: STTOptions): Promise&lt;STTResponse&gt;;
 
 ### ITextProvider `interface`
 
-📍 [`src/domain/interfaces/ITextProvider.ts:71`](src/domain/interfaces/ITextProvider.ts)
+📍 [`src/domain/interfaces/ITextProvider.ts:83`](src/domain/interfaces/ITextProvider.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -33462,7 +35577,7 @@ listModels(): Promise&lt;string[]&gt;;
 
 ### ITextToSpeechProvider `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:62`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:65`](src/domain/interfaces/IAudioProvider.ts)
 
 Text-to-Speech provider interface
 
@@ -33771,7 +35886,7 @@ Base provider interface
 
 ### RemoteMcpDescriptor `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:32`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:38`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -33838,7 +35953,7 @@ cancel(): void;
 
 ### SegmentTimestamp `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:153`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:166`](src/domain/interfaces/IAudioProvider.ts)
 
 Segment-level timestamp
 
@@ -33998,7 +36113,7 @@ Used by edit UIs to re-populate form fields without needing to decrypt config.au
 
 ### TextGenerateOptions `interface`
 
-📍 [`src/domain/interfaces/ITextProvider.ts:19`](src/domain/interfaces/ITextProvider.ts)
+📍 [`src/domain/interfaces/ITextProvider.ts:37`](src/domain/interfaces/ITextProvider.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -34025,15 +36140,26 @@ but cannot disable provider-implicit caching. |
 | `native_tools?` | `native_tools?: NativeToolRequest[];` | Provider-hosted tools. These are not executed by ToolManager. |
 | `data_handling?` | `data_handling?: DataHandlingPolicy;` | Host policy for retention-sensitive provider features. |
 | `credential_context?` | `credential_context?: { userId?: string; connectorRegistry?: IConnectorRegistry };` | - |
-| `thinking?` | `thinking?: {
-    enabled: boolean;
-    /** Budget in tokens for thinking (Anthropic & Google) */
-    budgetTokens?: number;
-    /** Reasoning effort level (OpenAI) */
-    effort?: 'low' | 'medium' | 'high';
-  };` | Vendor-agnostic thinking/reasoning configuration |
+| `thinking?` | `thinking?: ThinkingConfig;` | Vendor-agnostic thinking/reasoning configuration |
 | `vendorOptions?` | `vendorOptions?: Record&lt;string, any&gt;;` | Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) |
 | `skipContextLimitCheck?` | `skipContextLimitCheck?: boolean;` | Skip pre-flight context limit check. Default: false (check is ON) |
+
+</details>
+
+---
+
+### ThinkingConfig `interface`
+
+📍 [`src/domain/interfaces/ITextProvider.ts:29`](src/domain/interfaces/ITextProvider.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `enabled` | `enabled: boolean;` | - |
+| `budgetTokens?` | `budgetTokens?: number;` | Fixed reasoning-token budget for models that still expose budget-based thinking. |
+| `effort?` | `effort?: ReasoningEffort;` | Model-selected reasoning depth for OpenAI, Anthropic, and Gemini models. |
 
 </details>
 
@@ -34068,7 +36194,7 @@ User information is stored per userId - each user has their own isolated data.
 
 ### WordTimestamp `interface`
 
-📍 [`src/domain/interfaces/IAudioProvider.ts:144`](src/domain/interfaces/IAudioProvider.ts)
+📍 [`src/domain/interfaces/IAudioProvider.ts:153`](src/domain/interfaces/IAudioProvider.ts)
 
 Word-level timestamp
 
@@ -34080,6 +36206,8 @@ Word-level timestamp
 | `word` | `word: string;` | - |
 | `start` | `start: number;` | - |
 | `end` | `end: number;` | - |
+| `speaker?` | `speaker?: string | number;` | Provider speaker label for diarized transcription. |
+| `channel?` | `channel?: number;` | Source channel for multichannel transcription. |
 
 </details>
 
@@ -34087,7 +36215,7 @@ Word-level timestamp
 
 ### BatchProcessingState `type`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:102`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:110`](src/domain/interfaces/IAdvancedInference.ts)
 
 ```typescript
 type BatchProcessingState = | 'queued'
@@ -34111,6 +36239,17 @@ Library imposes no structure — consumers define their own shape
 
 ```typescript
 type ConnectorAccessContext = Record&lt;string, unknown&gt;
+```
+
+---
+
+### EmbeddingContentPart `type`
+
+📍 [`src/domain/interfaces/IEmbeddingProvider.ts:7`](src/domain/interfaces/IEmbeddingProvider.ts)
+
+```typescript
+type EmbeddingContentPart = | { type: 'text'; text: string }
+  | { type: 'image' | 'audio' | 'video' | 'document'; data: Buffer | string; mimeType?: string }
 ```
 
 ---
@@ -34164,6 +36303,12 @@ type PromptCachePolicy = | {
       mode: 'auto';
       ttl?: 'short' | 'extended';
       key?: string;
+      /**
+       * OpenAI GPT-5.6+ cache-breakpoint selection. `implicit` keeps the
+       * provider-selected breakpoint; `explicit` only uses content blocks
+       * marked with `promptCacheBreakpoint`.
+       */
+      breakpointMode?: 'implicit' | 'explicit';
       strict?: boolean;
     }
 ```
@@ -34172,10 +36317,28 @@ type PromptCachePolicy = | {
 
 ### PromptCachingMode `type`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:23`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:29`](src/domain/interfaces/IAdvancedInference.ts)
 
 ```typescript
 type PromptCachingMode = 'unsupported' | 'implicit' | 'request_controlled' | 'explicit_resource'
+```
+
+---
+
+### ReasoningEffort `type`
+
+📍 [`src/domain/interfaces/ITextProvider.ts:20`](src/domain/interfaces/ITextProvider.ts)
+
+Cross-vendor reasoning-depth controls. Individual models may support a subset.
+
+```typescript
+type ReasoningEffort = | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max'
 ```
 
 ---
@@ -36106,7 +38269,7 @@ extract(raw: EmailSignal): ExtractedSignal
 
 ### Embeddings `class`
 
-📍 [`src/capabilities/embeddings/Embeddings.ts:56`](src/capabilities/embeddings/Embeddings.ts)
+📍 [`src/capabilities/embeddings/Embeddings.ts:57`](src/capabilities/embeddings/Embeddings.ts)
 
 Embeddings capability class
 
@@ -36159,7 +38322,24 @@ async embed(
 
 **Parameters:**
 - `input`: `string | string[]`
-- `options`: `{ model?: string | undefined; dimensions?: number | undefined; } | undefined` *(optional)*
+- `options`: `{ model?: string | undefined; dimensions?: number | undefined; encodingFormat?: "float" | "base64" | undefined; vendorOptions?: Record&lt;string, unknown&gt; | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;EmbeddingResponse&gt;`
+
+#### `embedMultimodal()`
+
+Embed mixed text, image, audio, video, or document content.
+Currently supported by Google's Gemini Embedding 2 model.
+
+```typescript
+async embedMultimodal(
+    content: EmbeddingContentPart[],
+    options?:
+```
+
+**Parameters:**
+- `content`: `EmbeddingContentPart[]`
+- `options`: `{ model?: string | undefined; dimensions?: number | undefined; vendorOptions?: Record&lt;string, unknown&gt; | undefined; } | undefined` *(optional)*
 
 **Returns:** `Promise&lt;EmbeddingResponse&gt;`
 
@@ -36754,6 +38934,76 @@ static getExtension(filename: string): string
 - `filename`: `string`
 
 **Returns:** `string`
+
+</details>
+
+---
+
+### GrokRealtimeAPI `class`
+
+📍 [`src/capabilities/voice/grok/GrokRealtimeAPI.ts:9`](src/capabilities/voice/grok/GrokRealtimeAPI.ts)
+
+REST helpers for xAI browser credentials and SIP call control.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(connector: string | Connector)
+```
+
+**Parameters:**
+- `connector`: `string | Connector`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `createClientSecret()`
+
+```typescript
+async createClientSecret(expiresAfterSeconds = 300): Promise&lt;GrokRealtimeClientSecret&gt;
+```
+
+**Parameters:**
+- `expiresAfterSeconds`: `number` *(optional)* (default: `300`)
+
+**Returns:** `Promise&lt;GrokRealtimeClientSecret&gt;`
+
+#### `hangupCall()`
+
+```typescript
+async hangupCall(callId: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `callId`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `referCall()`
+
+```typescript
+async referCall(callId: string, targetUri: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `callId`: `string`
+- `targetUri`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: Connector` | - |
 
 </details>
 
@@ -37815,6 +40065,113 @@ async focusWindow(windowId: number): Promise&lt;void&gt;
 - `windowId`: `number`
 
 **Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+---
+
+### OpenAIRealtimeAPI `class`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:22`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
+
+REST helpers for browser/WebRTC credentials and server-side SIP call control.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(connector: string | Connector)
+```
+
+**Parameters:**
+- `connector`: `string | Connector`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `createClientSecret()`
+
+```typescript
+async createClientSecret(options: CreateRealtimeClientSecretOptions): Promise&lt;OpenAIRealtimeClientSecret&gt;
+```
+
+**Parameters:**
+- `options`: `CreateRealtimeClientSecretOptions`
+
+**Returns:** `Promise&lt;OpenAIRealtimeClientSecret&gt;`
+
+#### `createTranslationClientSecret()`
+
+```typescript
+async createTranslationClientSecret(
+    options: CreateRealtimeTranslationClientSecretOptions,
+  ): Promise&lt;OpenAIRealtimeClientSecret&gt;
+```
+
+**Parameters:**
+- `options`: `CreateRealtimeTranslationClientSecretOptions`
+
+**Returns:** `Promise&lt;OpenAIRealtimeClientSecret&gt;`
+
+#### `acceptCall()`
+
+```typescript
+async acceptCall(callId: string, session: OpenAIRealtimeSessionConfig): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `callId`: `string`
+- `session`: `OpenAIRealtimeSessionConfig`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `rejectCall()`
+
+```typescript
+async rejectCall(callId: string, statusCode?: number): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `callId`: `string`
+- `statusCode`: `number | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `hangupCall()`
+
+```typescript
+async hangupCall(callId: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `callId`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `referCall()`
+
+```typescript
+async referCall(callId: string, targetUri: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `callId`: `string`
+- `targetUri`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: Connector` | - |
 
 </details>
 
@@ -39074,7 +41431,7 @@ async withTransaction&lt;R&gt;(fn: () =&gt; Promise&lt;R&gt;): Promise&lt;R&gt;
 
 ### RealtimePipeline `class`
 
-📍 [`src/capabilities/voice/pipelines/RealtimePipeline.ts:65`](src/capabilities/voice/pipelines/RealtimePipeline.ts)
+📍 [`src/capabilities/voice/pipelines/RealtimePipeline.ts:82`](src/capabilities/voice/pipelines/RealtimePipeline.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -39220,9 +41577,10 @@ async destroy(): Promise&lt;void&gt;
 |----------|------|-------------|
 | `config` | `config: RealtimePipelineInitConfig` | - |
 | `session` | `session: VoiceSession` | - |
+| `agent` | `agent: Agent` | - |
 | `toolManager` | `toolManager: ToolManager` | - |
 | `tools` | `tools: ToolFunction&lt;any, any&gt;[]` | - |
-| `ws` | `ws: any` | - |
+| `realtime` | `realtime: OpenAIRealtimeSession | null` | - |
 | `state` | `state: SessionState` | - |
 | `destroyed` | `destroyed: boolean` | - |
 | `ignoringEvents` | `ignoringEvents: boolean` | - |
@@ -39230,6 +41588,8 @@ async destroy(): Promise&lt;void&gt;
 | `transcript` | `transcript: TranscriptMessage[]` | - |
 | `agentTranscriptBuffer` | `agentTranscriptBuffer: string` | - |
 | `pendingToolCalls` | `pendingToolCalls: Map&lt;string, { name: string; arguments: string; }&gt;` | - |
+| `activeToolExecutions` | `activeToolExecutions: number` | - |
+| `awaitingToolContinuation` | `awaitingToolContinuation: boolean` | - |
 | `isResponseActive` | `isResponseActive: boolean` | - |
 | `currentResponseId` | `currentResponseId: string | null` | - |
 | `currentAssistantItemId` | `currentAssistantItemId: string | null` | - |
@@ -42060,7 +44420,7 @@ Extends PolicyContext with the deny decision and UI-relevant info.
 
 ### AudioFrame `interface`
 
-📍 [`src/capabilities/voice/types.ts:29`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:33`](src/capabilities/voice/types.ts)
 
 A single frame of audio data exchanged between adapter and pipeline.
 All voice processing operates on these frames.
@@ -42289,7 +44649,7 @@ in signalText; only the deterministic `attended` seed fact is skipped). |
 
 ### CallSummary `interface`
 
-📍 [`src/capabilities/voice/types.ts:127`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:131`](src/capabilities/voice/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -42430,7 +44790,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionItem `interface`
 
-📍 [`src/domain/entities/Message.ts:20`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:21`](src/domain/entities/Message.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -42855,6 +45215,39 @@ Conversation message in history
 | `role` | `role: 'user' | 'assistant' | 'system';` | - |
 | `content` | `content: string;` | - |
 | `timestamp` | `timestamp: number;` | - |
+
+</details>
+
+---
+
+### CreateRealtimeClientSecretOptions `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:10`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `session` | `session: OpenAIRealtimeSessionConfig | OpenAIRealtimeTranscriptionSessionConfig;` | - |
+| `expiresAfterSeconds?` | `expiresAfterSeconds?: number;` | - |
+| `safetyIdentifier?` | `safetyIdentifier?: string;` | - |
+
+</details>
+
+---
+
+### CreateRealtimeTranslationClientSecretOptions `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:16`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `session` | `session: OpenAIRealtimeTranslationClientSessionConfig;` | - |
+| `safetyIdentifier?` | `safetyIdentifier?: string;` | - |
 
 </details>
 
@@ -43400,17 +45793,12 @@ Options for direct LLM calls (bypassing AgentContext).
 | `includeTools?` | `includeTools?: boolean;` | Include registered tools in the call. Default: false |
 | `temperature?` | `temperature?: number;` | Temperature for generation |
 | `maxOutputTokens?` | `maxOutputTokens?: number;` | Maximum output tokens |
+| `previousResponseId?` | `previousResponseId?: string;` | Continue a provider-stored response/interaction without resending its history. |
 | `responseFormat?` | `responseFormat?: ResponseFormat;` | Vendor-agnostic structured (JSON) output. When set, the response is
 constrained to JSON — via the vendor's native mechanism where supported,
 otherwise a strict prompt instruction — and parsed into
 `response.output_parsed`. See `src/core/StructuredOutput.ts`. |
-| `thinking?` | `thinking?: {
-    enabled: boolean;
-    /** Budget in tokens for thinking (Anthropic & Google) */
-    budgetTokens?: number;
-    /** Reasoning effort level (OpenAI) */
-    effort?: 'low' | 'medium' | 'high';
-  };` | Vendor-agnostic thinking/reasoning configuration |
+| `thinking?` | `thinking?: ThinkingConfig;` | Vendor-agnostic thinking/reasoning configuration |
 | `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Vendor-specific options |
 | `promptCache?` | `promptCache?: PromptCachePolicy;` | Provider-neutral prompt caching policy. |
 | `nativeTools?` | `nativeTools?: NativeToolRequest[];` | Provider-hosted tools, separate from client-executed ToolFunctions. |
@@ -43686,7 +46074,7 @@ list; pass a custom list to override entirely (not extend). Case-insensitive. |
 
 ### EmbeddingsCreateOptions `interface`
 
-📍 [`src/capabilities/embeddings/Embeddings.ts:44`](src/capabilities/embeddings/Embeddings.ts)
+📍 [`src/capabilities/embeddings/Embeddings.ts:45`](src/capabilities/embeddings/Embeddings.ts)
 
 Options for creating an Embeddings instance
 
@@ -43705,7 +46093,7 @@ Options for creating an Embeddings instance
 
 ### EnergyVADConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:63`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:67`](src/capabilities/voice/types.ts)
 
 Configuration for the default energy-based VAD
 
@@ -45168,6 +47556,22 @@ Result of a grep operation
 
 ---
 
+### GrokRealtimeClientSecret `interface`
+
+📍 [`src/capabilities/voice/grok/GrokRealtimeAPI.ts:3`](src/capabilities/voice/grok/GrokRealtimeAPI.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `value` | `value: string;` | - |
+| `expires_at` | `expires_at: number;` | - |
+
+</details>
+
+---
+
 ### HookConfig `interface`
 
 📍 [`src/capabilities/agents/types/HookTypes.ts:127`](src/capabilities/agents/types/HookTypes.ts)
@@ -46520,7 +48924,7 @@ withTransaction?&lt;R&gt;(fn: () =&gt; Promise&lt;R&gt;): Promise&lt;R&gt;;
 
 ### IncomingCallInfo `interface`
 
-📍 [`src/capabilities/voice/types.ts:384`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:421`](src/capabilities/voice/types.ts)
 
 Metadata for an incoming call from the telephony provider.
 The adapter maps provider-specific data to this structure.
@@ -46677,7 +49081,7 @@ resolver falls back to legacy behavior. |
 
 ### InputTextContent `interface`
 
-📍 [`src/domain/entities/Content.ts:19`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:21`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47040,7 +49444,7 @@ search(query: string, options?: SearchOptions): Promise&lt;SearchResponse&gt;;
 
 ### ISourceLinks `interface`
 
-📍 [`src/domain/types/SharedTypes.ts:41`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:77`](src/domain/types/SharedTypes.ts)
 
 Source links for model documentation and maintenance
 Used to track where information came from and when it was last verified
@@ -47203,7 +49607,7 @@ storeAction?(action: string, params?: Record&lt;string, unknown&gt;, context?: T
 
 ### ITelephonyAdapter `interface`
 
-📍 [`src/capabilities/voice/types.ts:421`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:458`](src/capabilities/voice/types.ts)
 
 Abstraction over telephony providers (Twilio, Vonage, etc.).
 The adapter handles the provider-specific protocol and exposes
@@ -47491,7 +49895,7 @@ Used by "View Full Context" UI panels.
 
 ### IVoiceActivityDetector `interface`
 
-📍 [`src/capabilities/voice/types.ts:53`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:57`](src/capabilities/voice/types.ts)
 
 Voice Activity Detector interface.
 Implementations detect when the caller starts and stops speaking.
@@ -47554,7 +49958,7 @@ Eliminates duplication across TTS model registries
 
 ### IVoicePipeline `interface`
 
-📍 [`src/capabilities/voice/types.ts:346`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:383`](src/capabilities/voice/types.ts)
 
 Voice pipeline strategy interface.
 TextPipeline and RealtimePipeline both implement this.
@@ -47785,7 +50189,7 @@ optional fields (`identifiers`, `aliases`, `metadata`, `permissions`,
 
 ### LLMResponse `interface`
 
-📍 [`src/domain/entities/Response.ts:56`](src/domain/entities/Response.ts)
+📍 [`src/domain/entities/Response.ts:58`](src/domain/entities/Response.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48171,7 +50575,7 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 
 ### Message `interface`
 
-📍 [`src/domain/entities/Message.ts:13`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:14`](src/domain/entities/Message.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48610,6 +51014,96 @@ toHexString(): string;
 
 ---
 
+### OpenAIRealtimeClientEvent `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:228`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: string;` | - |
+| `event_id?` | `event_id?: string;` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeClientSecret `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:212`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `value` | `value: string;` | - |
+| `expires_at` | `expires_at: number;` | - |
+| `session` | `session: OpenAIRealtimeSessionConfig
+    | OpenAIRealtimeTranscriptionSessionConfig
+    | OpenAIRealtimeTranslationClientSessionConfig;` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeServerEvent `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:220`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: string;` | - |
+| `event_id?` | `event_id?: string;` | - |
+
+</details>
+
+---
+
+### OpenAISemanticVAD `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:55`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'semantic_vad';` | - |
+| `eagerness?` | `eagerness?: 'low' | 'medium' | 'high' | 'auto';` | - |
+| `create_response?` | `create_response?: boolean;` | - |
+| `interrupt_response?` | `interrupt_response?: boolean;` | - |
+
+</details>
+
+---
+
+### OpenAIServerVAD `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:45`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'server_vad';` | - |
+| `threshold?` | `threshold?: number;` | - |
+| `prefix_padding_ms?` | `prefix_padding_ms?: number;` | - |
+| `silence_duration_ms?` | `silence_duration_ms?: number;` | - |
+| `idle_timeout_ms?` | `idle_timeout_ms?: number;` | - |
+| `create_response?` | `create_response?: boolean;` | - |
+| `interrupt_response?` | `interrupt_response?: boolean;` | - |
+
+</details>
+
+---
+
 ### OperationOutcome `interface`
 
 📍 [`src/memory/integration/ExtractionResolver.ts:131`](src/memory/integration/ExtractionResolver.ts)
@@ -48666,7 +51160,7 @@ Default: false |
 
 ### OutboundCallConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:452`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:489`](src/capabilities/voice/types.ts)
 
 Configuration for initiating an outbound call.
 
@@ -48686,7 +51180,7 @@ Configuration for initiating an outbound call.
 
 ### OutputTextContent `interface`
 
-📍 [`src/domain/entities/Content.ts:37`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:39`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -49445,7 +51939,7 @@ cannot reference them in the updated profile, only remove existing mentions. |
 
 ### ProviderStopDetails `interface`
 
-📍 [`src/domain/entities/Response.ts:47`](src/domain/entities/Response.ts)
+📍 [`src/domain/entities/Response.ts:49`](src/domain/entities/Response.ts)
 
 Structured stop detail from a provider. Currently populated for Anthropic
 refusals (`{ type: 'refusal', category, explanation }`) — `category` names
@@ -49707,7 +52201,7 @@ Result of a file read operation
 
 ### RealtimePipelineConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:225`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:233`](src/capabilities/voice/types.ts)
 
 Realtime pipeline configuration — direct voice-to-voice via OpenAI Realtime API.
 No separate STT/TTS needed — the model handles audio natively.
@@ -49718,14 +52212,25 @@ No separate STT/TTS needed — the model handles audio natively.
 | Property | Type | Description |
 |----------|------|-------------|
 | `pipeline` | `pipeline: 'realtime';` | - |
-| `voice?` | `voice?: string;` | Voice for the realtime model (e.g., 'alloy', 'echo', 'shimmer'). Default: 'alloy' |
-| `turnDetection?` | `turnDetection?: 'server_vad' | 'none';` | Turn detection mode:
-- 'server_vad': OpenAI handles VAD (default, recommended)
-- 'none': Manual turn management |
+| `voice?` | `voice?: OpenAIRealtimeVoice;` | Voice for the realtime model. OpenAI recommends marin or cedar. Default: marin. |
+| `speed?` | `speed?: number;` | Audio playback speed from 0.25 to 1.5. Default: 1.0. |
+| `turnDetection?` | `turnDetection?: 'server_vad' | 'semantic_vad' | 'none';` | Turn detection mode:
+- 'server_vad': silence-based server VAD (default)
+- 'semantic_vad': model-based end-of-turn detection (OpenAI only)
+- 'none': local EnergyVAD commits each turn manually |
 | `vadThreshold?` | `vadThreshold?: number;` | VAD threshold (0.0-1.0) for server_vad mode. Default: 0.5 |
 | `silenceDurationMs?` | `silenceDurationMs?: number;` | Silence duration in ms before end-of-turn. Default: 500 |
+| `prefixPaddingMs?` | `prefixPaddingMs?: number;` | Audio retained before server VAD speech start. Default: 400ms. |
+| `idleTimeoutMs?` | `idleTimeoutMs?: number;` | Optional server VAD idle timeout that prompts the model after silence. |
+| `semanticVADEagerness?` | `semanticVADEagerness?: 'low' | 'medium' | 'high' | 'auto';` | Semantic VAD response eagerness. Default: auto. |
+| `noiseReduction?` | `noiseReduction?: 'near_field' | 'far_field' | 'none';` | Input noise reduction profile. Default: near_field. |
 | `inputTranscription?` | `inputTranscription?: boolean;` | Enable input audio transcription for hooks/logging. Default: true |
 | `transcriptionModel?` | `transcriptionModel?: string;` | Transcription model for input audio. Default: 'gpt-4o-transcribe' |
+| `transcriptionLanguage?` | `transcriptionLanguage?: string;` | Language hint for input transcription. |
+| `realtime?` | `realtime?: Omit&lt;OpenAIRealtimeSessionConfig, 'type' | 'model'&gt;;` | Advanced GA options including reasoning, tracing, truncation, stored
+prompts, remote MCP tools, parallel tool calls, and safety identifier.
+Agent instructions and local tools are merged automatically. |
+| `safetyIdentifier?` | `safetyIdentifier?: string;` | Stable, privacy-preserving end-user identifier sent in the OpenAI header. |
 
 </details>
 
@@ -49733,7 +52238,7 @@ No separate STT/TTS needed — the model handles audio natively.
 
 ### ReasoningItem `interface`
 
-📍 [`src/domain/entities/Message.ts:26`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:27`](src/domain/entities/Message.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -49742,7 +52247,7 @@ No separate STT/TTS needed — the model handles audio natively.
 |----------|------|-------------|
 | `type` | `type: 'reasoning';` | - |
 | `id` | `id: string;` | - |
-| `effort?` | `effort?: 'low' | 'medium' | 'high';` | - |
+| `effort?` | `effort?: ReasoningEffort;` | - |
 | `summary?` | `summary?: string;` | - |
 | `encrypted_content?` | `encrypted_content?: string;` | - |
 
@@ -51895,7 +54400,7 @@ Telegram User object
 
 ### TelephonyAdapterEvents `interface`
 
-📍 [`src/capabilities/voice/types.ts:403`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:440`](src/capabilities/voice/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -52050,7 +54555,7 @@ Result of running a full test suite against a connector.
 
 ### TextPipelineConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:195`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:203`](src/capabilities/voice/types.ts)
 
 Text pipeline configuration — STT → Agent → TTS
 
@@ -52085,7 +54590,7 @@ Text pipeline configuration — STT → Agent → TTS
 
 ### ThinkingContent `interface`
 
-📍 [`src/domain/entities/Content.ts:65`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:67`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -52126,8 +54631,9 @@ Token usage statistics
     extended_ttl_input_tokens?: number;
   };` | - |
 | `native_tool_calls?` | `native_tool_calls?: Record&lt;string, number | undefined&gt;;` | Provider-hosted tool usage that may be billed separately. |
-| `processing_mode?` | `processing_mode?: 'interactive' | 'batch';` | - |
+| `processing_mode?` | `processing_mode?: import('./Model.js').ProcessingMode;` | - |
 | `service_tier?` | `service_tier?: string;` | - |
+| `speed?` | `speed?: string;` | Provider-reported inference speed, currently Anthropic `standard`/`fast`. |
 
 </details>
 
@@ -52135,7 +54641,7 @@ Token usage statistics
 
 ### TranscriptMessage `interface`
 
-📍 [`src/capabilities/voice/types.ts:261`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:298`](src/capabilities/voice/types.ts)
 
 A single entry in the voice call transcript.
 Emitted by pipelines for UI display and logging.
@@ -52176,7 +54682,7 @@ Emitted by pipelines for UI display and logging.
 
 ### TwilioAdapterConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:467`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:504`](src/capabilities/voice/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -52577,7 +55083,7 @@ WITHOUT conversation history.
 
 ### VendorOptionSchema `interface`
 
-📍 [`src/domain/types/SharedTypes.ts:58`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:94`](src/domain/types/SharedTypes.ts)
 
 Vendor-specific option schema for validation and documentation
 Used to describe vendor-specific options that fall outside semantic options
@@ -52587,7 +55093,7 @@ Used to describe vendor-specific options that fall outside semantic options
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `type` | `type: 'string' | 'number' | 'boolean' | 'enum' | 'array';` | Data type of the option |
+| `type` | `type: 'string' | 'number' | 'boolean' | 'enum' | 'array' | 'object';` | Data type of the option |
 | `description` | `description: string;` | Description of the option |
 | `required?` | `required?: boolean;` | Whether the option is required |
 | `label?` | `label?: string;` | UI display label |
@@ -52646,7 +55152,7 @@ according to `kind`:
 
 ### VoiceHooks `interface`
 
-📍 [`src/capabilities/voice/types.ts:153`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:157`](src/capabilities/voice/types.ts)
 
 Lifecycle hooks for voice sessions.
 All hooks are async and called in order. Errors in hooks are logged
@@ -52660,9 +55166,13 @@ but do not terminate the call (except onCallStart returning false).
 | `onCallStart?` | `onCallStart?: (session: VoiceSessionInfo) =&gt; Promise&lt;boolean | void&gt;;` | Called when a new call connects (inbound or outbound).
 Return `false` to reject the call. Return void or true to accept. |
 | `beforeAgentResponse?` | `beforeAgentResponse?: (text: string, session: VoiceSessionInfo) =&gt; Promise&lt;string&gt;;` | Called after STT produces text, before sending to agent.
-Return modified text to alter what the agent sees. |
+Return modified text to alter what the agent sees.
+In the native realtime pipeline this hook is observational because the
+model has already consumed the audio; its return value is ignored. |
 | `afterAgentResponse?` | `afterAgentResponse?: (text: string, session: VoiceSessionInfo) =&gt; Promise&lt;string&gt;;` | Called after agent produces text, before TTS.
-Return modified text to alter what the caller hears. |
+Return modified text to alter what the caller hears.
+In the native realtime pipeline this hook is observational because audio
+is generated concurrently; its return value is ignored. |
 | `onInterrupt?` | `onInterrupt?: (session: VoiceSessionInfo) =&gt; Promise&lt;void&gt;;` | Called when the caller interrupts agent speech. |
 | `onError?` | `onError?: (error: Error, session: VoiceSessionInfo) =&gt; Promise&lt;void&gt;;` | Called when any error occurs during the call. |
 | `onCallEnd?` | `onCallEnd?: (session: VoiceSessionInfo, summary: CallSummary) =&gt; Promise&lt;void&gt;;` | Called when the call ends for any reason. |
@@ -52673,7 +55183,7 @@ Return modified text to alter what the caller hears. |
 
 ### VoicePipelineEvents `interface`
 
-📍 [`src/capabilities/voice/types.ts:327`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:364`](src/capabilities/voice/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -52754,7 +55264,7 @@ Content types based on OpenAI Responses API format
 
 ### MessageRole `enum`
 
-📍 [`src/domain/entities/Message.ts:7`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:8`](src/domain/entities/Message.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -52818,7 +55328,7 @@ type AgenticLoopEventName = keyof AgenticLoopEvents
 
 ### AgentResponse `type`
 
-📍 [`src/domain/entities/Response.ts:120`](src/domain/entities/Response.ts)
+📍 [`src/domain/entities/Response.ts:122`](src/domain/entities/Response.ts)
 
 ```typescript
 type AgentResponse = LLMResponse
@@ -52845,7 +55355,7 @@ type AgentStatus = | 'idle'         // Created but not started
 
 ### AspectRatio `type`
 
-📍 [`src/domain/types/SharedTypes.ts:15`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:51`](src/domain/types/SharedTypes.ts)
 
 Aspect ratios - normalized across all visual modalities (images, video)
 
@@ -52869,7 +55379,7 @@ type AudioChunkPlaybackCallback = (event: AudioChunkReadyEvent) =&gt; void
 
 ### AudioEncoding `type`
 
-📍 [`src/capabilities/voice/types.ts:23`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:27`](src/capabilities/voice/types.ts)
 
 Audio encoding formats used in voice pipelines.
 - pcm_s16le: 16-bit signed little-endian PCM (standard for STT/TTS)
@@ -52884,12 +55394,12 @@ type AudioEncoding = 'pcm_s16le' | 'mulaw' | 'alaw'
 
 ### AudioFormat `type`
 
-📍 [`src/domain/types/SharedTypes.ts:26`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:62`](src/domain/types/SharedTypes.ts)
 
 Audio output formats
 
 ```typescript
-type AudioFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm' | 'ogg'
+type AudioFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm' | 'ogg' | 'mulaw' | 'alaw'
 ```
 
 ---
@@ -52915,7 +55425,7 @@ type BeforeExecuteResult = | void
 
 ### CallDirection `type`
 
-📍 [`src/capabilities/voice/types.ts:78`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:82`](src/capabilities/voice/types.ts)
 
 ```typescript
 type CallDirection = 'inbound' | 'outbound'
@@ -52925,7 +55435,7 @@ type CallDirection = 'inbound' | 'outbound'
 
 ### CallEndReason `type`
 
-📍 [`src/capabilities/voice/types.ts:125`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:129`](src/capabilities/voice/types.ts)
 
 ```typescript
 type CallEndReason = 'caller_hangup' | 'agent_hangup' | 'timeout' | 'error' | 'rejected'
@@ -53052,7 +55562,7 @@ type ConnectorAuth = | OAuthConnectorAuth
 
 ### Content `type`
 
-📍 [`src/domain/entities/Content.ts:75`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:77`](src/domain/entities/Content.ts)
 
 ```typescript
 type Content = | InputTextContent
@@ -53270,6 +55780,21 @@ type FactKind = 'atomic' | 'document'
 
 ---
 
+### GrokRealtimeAudioFormat `type`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:39`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+xAI Voice Agent audio formats, including its full documented PCM rate set.
+
+```typescript
+type GrokRealtimeAudioFormat = | { type: 'audio/pcm'; rate: RealtimePCMSampleRate }
+  | { type: 'audio/opus'; rate?: 24000 }
+  | { type: 'audio/pcmu' }
+  | { type: 'audio/pcma' }
+```
+
+---
+
 ### HistoryMode `type`
 
 📍 [`src/capabilities/agents/ExecutionContext.ts:10`](src/capabilities/agents/ExecutionContext.ts)
@@ -53335,7 +55860,7 @@ type InContextPriority = 'low' | 'normal' | 'high' | 'critical'
 
 ### InputItem `type`
 
-📍 [`src/domain/entities/Message.ts:34`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:35`](src/domain/entities/Message.ts)
 
 ```typescript
 type InputItem = Message | CompactionItem
@@ -53345,7 +55870,7 @@ type InputItem = Message | CompactionItem
 
 ### JSONSchema `type`
 
-📍 [`src/core/StructuredOutput.ts:36`](src/core/StructuredOutput.ts)
+📍 [`src/core/StructuredOutput.ts:38`](src/core/StructuredOutput.ts)
 
 A JSON Schema object (draft-07 subset — see per-vendor limitations).
 
@@ -53495,9 +56020,64 @@ type ObjectIdCtor = (hex: string) =&gt; ObjectIdLike
 
 ---
 
+### OpenAIRealtimeAudioFormat `type`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:32`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+```typescript
+type OpenAIRealtimeAudioFormat = | { type: 'audio/pcm'; rate: OpenAIRealtimePCMSampleRate }
+  | { type: 'audio/opus'; rate?: 24000 }
+  | { type: 'audio/pcmu' }
+  | { type: 'audio/pcma' }
+```
+
+---
+
+### OpenAIRealtimePCMSampleRate `type`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:30`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+OpenAI Realtime PCM is fixed at 24 kHz.
+
+```typescript
+type OpenAIRealtimePCMSampleRate = 24000
+```
+
+---
+
+### OpenAIRealtimeTurnDetection `type`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:62`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+```typescript
+type OpenAIRealtimeTurnDetection = OpenAIServerVAD | OpenAISemanticVAD | null
+```
+
+---
+
+### OpenAIRealtimeVoice `type`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:13`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+```typescript
+type OpenAIRealtimeVoice = | 'alloy'
+  | 'ash'
+  | 'ballad'
+  | 'coral'
+  | 'echo'
+  | 'marin'
+  | 'sage'
+  | 'shimmer'
+  | 'verse'
+  | 'cedar'
+  | (string & {})
+```
+
+---
+
 ### OutputFormat `type`
 
-📍 [`src/domain/types/SharedTypes.ts:31`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:67`](src/domain/types/SharedTypes.ts)
 
 Output format preference for media
 
@@ -53509,7 +56089,7 @@ type OutputFormat = 'url' | 'base64' | 'buffer'
 
 ### OutputItem `type`
 
-📍 [`src/domain/entities/Message.ts:35`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:36`](src/domain/entities/Message.ts)
 
 ```typescript
 type OutputItem = Message | CompactionItem | ReasoningItem
@@ -53592,7 +56172,7 @@ type PermissionScope = 'once' | 'session' | 'always' | 'never'
 
 ### PipelineConfig `type`
 
-📍 [`src/capabilities/voice/types.ts:251`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:288`](src/capabilities/voice/types.ts)
 
 ```typescript
 type PipelineConfig = TextPipelineConfig | RealtimePipelineConfig
@@ -53685,13 +56265,25 @@ type PromptContext = ProfileGeneratorInput
 
 ### QualityLevel `type`
 
-📍 [`src/domain/types/SharedTypes.ts:21`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:57`](src/domain/types/SharedTypes.ts)
 
 Quality levels - normalized across vendors
 Providers map these to vendor-specific quality settings
 
 ```typescript
 type QualityLevel = 'draft' | 'standard' | 'high' | 'ultra'
+```
+
+---
+
+### RealtimePCMSampleRate `type`
+
+📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:27`](src/capabilities/voice/openai/RealtimeTypes.ts)
+
+PCM rates accepted by connector-shared Realtime sessions (xAI supports the full set).
+
+```typescript
+type RealtimePCMSampleRate = 8000 | 16000 | 22050 | 24000 | 32000 | 44100 | 48000
 ```
 
 ---
@@ -53766,7 +56358,7 @@ type ResolvedContextFeatures = Required&lt;KnownContextFeatures&gt; & Record&lt;
 
 ### ResponseFormat `type`
 
-📍 [`src/core/StructuredOutput.ts:41`](src/core/StructuredOutput.ts)
+📍 [`src/core/StructuredOutput.ts:43`](src/core/StructuredOutput.ts)
 
 Vendor-agnostic structured-output request. Identical across all vendors.
 
@@ -54017,7 +56609,7 @@ type StorageContext = Record&lt;string, unknown&gt;
 
 ### StructuredParseResult `type`
 
-📍 [`src/core/StructuredOutput.ts:211`](src/core/StructuredOutput.ts)
+📍 [`src/core/StructuredOutput.ts:213`](src/core/StructuredOutput.ts)
 
 ```typescript
 type StructuredParseResult = | { ok: true; value: unknown }
@@ -54052,7 +56644,7 @@ type TransportConfig = StdioTransportConfig | HTTPTransportConfig
 
 ### VADEvent `type`
 
-📍 [`src/capabilities/voice/types.ts:47`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:51`](src/capabilities/voice/types.ts)
 
 Result of VAD processing a single audio frame
 
@@ -54087,7 +56679,7 @@ type VisibilityPolicy = (ctx: VisibilityContext) =&gt; Permissions | undefined
 
 ### VoiceBridgeConfig `type`
 
-📍 [`src/capabilities/voice/types.ts:309`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:346`](src/capabilities/voice/types.ts)
 
 VoiceBridge configuration — discriminated union by pipeline type.
 
@@ -55684,7 +58276,7 @@ export function parseSkepticOutput(
 
 ### parseStructuredOutput `function`
 
-📍 [`src/core/StructuredOutput.ts:224`](src/core/StructuredOutput.ts)
+📍 [`src/core/StructuredOutput.ts:226`](src/core/StructuredOutput.ts)
 
 Parse an LLM response into a JSON value, reusing the library's permissive
 repair strategies (markdown-fence stripping, trailing commas, etc.).
@@ -55916,7 +58508,7 @@ export async function resolveFlowSource(
 
 ### resolveMaxContextTokens `function`
 
-📍 [`src/infrastructure/providers/base/ModelCapabilityResolver.ts:51`](src/infrastructure/providers/base/ModelCapabilityResolver.ts)
+📍 [`src/infrastructure/providers/base/ModelCapabilityResolver.ts:56`](src/infrastructure/providers/base/ModelCapabilityResolver.ts)
 
 Resolve the max context token limit for a specific model.
 Used primarily for accurate error messages.

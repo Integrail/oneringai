@@ -296,13 +296,20 @@ export type {
 // ============ Model Registries (pure data, zero Node deps) ============
 
 // LLM Models
-export type { ILLMDescription } from '../domain/entities/Model.js';
+export type {
+  ILLMDescription,
+  ProcessingMode,
+  TokenPricing,
+  LongContextTokenPricing,
+} from '../domain/entities/Model.js';
 export {
   LLM_MODELS,
   MODEL_REGISTRY,
   getModelInfo,
   getModelsByVendor,
   getActiveModels,
+  getDeprecatedModels,
+  resolveModelName,
   calculateCost,
 } from '../domain/entities/Model.js';
 
@@ -315,6 +322,7 @@ export {
   getTTSModelInfo,
   getTTSModelsByVendor,
   getActiveTTSModels,
+  getDeprecatedTTSModels,
   getTTSModelsWithFeature,
   calculateTTSCost,
 } from '../domain/entities/TTSModel.js';
@@ -327,6 +335,7 @@ export {
   getSTTModelInfo,
   getSTTModelsByVendor,
   getActiveSTTModels,
+  getDeprecatedSTTModels,
   getSTTModelsWithFeature,
   calculateSTTCost,
 } from '../domain/entities/STTModel.js';
@@ -339,6 +348,7 @@ export {
   getImageModelInfo,
   getImageModelsByVendor,
   getActiveImageModels,
+  getDeprecatedImageModels,
   getImageModelsWithFeature,
   calculateImageCost,
 } from '../domain/entities/ImageModel.js';
@@ -351,19 +361,21 @@ export {
   getVideoModelInfo,
   getVideoModelsByVendor,
   getActiveVideoModels,
+  getDeprecatedVideoModels,
   getVideoModelsWithFeature,
   getVideoModelsWithAudio,
   calculateVideoCost,
 } from '../domain/entities/VideoModel.js';
 
 // Embedding Models
-export type { IEmbeddingModelDescription, EmbeddingModelCapabilities, EmbeddingModelPricing } from '../domain/entities/EmbeddingModel.js';
+export type { IEmbeddingModelDescription, EmbeddingModelCapabilities, EmbeddingModelPricing, EmbeddingCostOptions } from '../domain/entities/EmbeddingModel.js';
 export {
   EMBEDDING_MODELS,
   EMBEDDING_MODEL_REGISTRY,
   getEmbeddingModelInfo,
   getEmbeddingModelsByVendor,
   getActiveEmbeddingModels,
+  getDeprecatedEmbeddingModels,
   getEmbeddingModelsWithFeature,
   calculateEmbeddingCost,
 } from '../domain/entities/EmbeddingModel.js';
@@ -429,6 +441,9 @@ export type {
   ISourceLinks,
   VendorOptionSchema,
   IBaseModelDescription,
+  ModelLifecycleStatus,
+  ModelAvailability,
+  ModelEndpoint,
 } from '../domain/types/SharedTypes.js';
 
 // ============ Errors (zero imports) ============
@@ -598,7 +613,7 @@ export const DEFAULT_MAX_DELAY_MS = 30000;
 
 // ============ Provider Interfaces (pure contracts) ============
 export type { IProvider, ProviderCapabilities } from '../domain/interfaces/IProvider.js';
-export type { ITextProvider, TextGenerateOptions, ModelCapabilities } from '../domain/interfaces/ITextProvider.js';
+export type { ITextProvider, TextGenerateOptions, ModelCapabilities, ReasoningEffort, ThinkingConfig } from '../domain/interfaces/ITextProvider.js';
 export type {
   AdvancedTextCapabilities,
   DataHandlingPolicy,
@@ -619,22 +634,28 @@ export type { IToolExecutor } from '../domain/interfaces/IToolExecutor.js';
 export type { IDisposable, IAsyncDisposable } from '../domain/interfaces/IDisposable.js';
 export type { IConnectorRegistry } from '../domain/interfaces/IConnectorRegistry.js';
 export type { IConnectorAccessPolicy, ConnectorAccessContext } from '../domain/interfaces/IConnectorAccessPolicy.js';
-export type { IEmbeddingProvider, EmbeddingOptions, EmbeddingResponse } from '../domain/interfaces/IEmbeddingProvider.js';
+export type { IEmbeddingProvider, EmbeddingContentPart, EmbeddingOptions, EmbeddingResponse } from '../domain/interfaces/IEmbeddingProvider.js';
 
 // Audio Interfaces
 export type {
   ITextToSpeechProvider,
   IStreamingTextToSpeechProvider,
   ISpeechToTextProvider,
+  IStreamingSpeechToTextProvider,
   TTSOptions,
   TTSResponse,
   TTSStreamChunk,
   STTOptions,
   STTResponse,
+  STTStreamOptions,
+  STTStreamEvent,
+  STTStreamInput,
   STTOutputFormat,
   WordTimestamp,
   SegmentTimestamp,
 } from '../domain/interfaces/IAudioProvider.js';
+
+export { MODEL_REGISTRY_SCHEMA_VERSION } from '../domain/types/SharedTypes.js';
 
 // Image Interfaces
 export type {

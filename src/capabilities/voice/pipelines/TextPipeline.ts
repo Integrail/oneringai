@@ -277,7 +277,11 @@ export class TextPipeline extends EventEmitter implements IVoicePipeline {
 
       // Step 1: STT
       const sttStart = Date.now();
-      const transcription = await this.stt.transcribe(audioBuffer);
+      const transcription = await this.stt.transcribe(audioBuffer, {
+        // TwilioAdapter decodes G.711 media into mono PCM s16le at 8 kHz.
+        encoding: 'pcm',
+        sampleRate: OUTPUT_SAMPLE_RATE,
+      });
       const sttDuration = Date.now() - sttStart;
       this.session.addSttTime(sttDuration);
 

@@ -9,7 +9,10 @@ import { Vendor } from './Vendor.js';
 import { OpenAITTSProvider } from '../infrastructure/providers/openai/OpenAITTSProvider.js';
 import { OpenAISTTProvider } from '../infrastructure/providers/openai/OpenAISTTProvider.js';
 import { GoogleTTSProvider } from '../infrastructure/providers/google/GoogleTTSProvider.js';
-import { extractOpenAICompatConfig, extractGoogleConfig } from './extractProviderConfig.js';
+import { GoogleSTTProvider } from '../infrastructure/providers/google/GoogleSTTProvider.js';
+import { GrokTTSProvider } from '../infrastructure/providers/grok/GrokTTSProvider.js';
+import { GrokSTTProvider } from '../infrastructure/providers/grok/GrokSTTProvider.js';
+import { extractOpenAICompatConfig, extractGoogleConfig, extractGrokMediaConfig } from './extractProviderConfig.js';
 
 /**
  * Create a Text-to-Speech provider from a connector
@@ -24,10 +27,13 @@ export function createTTSProvider(connector: Connector): ITextToSpeechProvider {
     case Vendor.Google:
       return new GoogleTTSProvider(extractGoogleConfig(connector));
 
+    case Vendor.Grok:
+      return new GrokTTSProvider(extractGrokMediaConfig(connector));
+
     default:
       throw new Error(
         `No TTS provider available for vendor: ${vendor}. ` +
-        `Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}`
+        `Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}, ${Vendor.Grok}`
       );
   }
 }
@@ -47,13 +53,15 @@ export function createSTTProvider(connector: Connector): ISpeechToTextProvider {
       throw new Error(`Groq STT provider not yet implemented`);
 
     case Vendor.Google:
-      // TODO: Implement GoogleSTTProvider
-      throw new Error(`Google STT provider not yet implemented`);
+      return new GoogleSTTProvider(extractGoogleConfig(connector));
+
+    case Vendor.Grok:
+      return new GrokSTTProvider(extractGrokMediaConfig(connector));
 
     default:
       throw new Error(
         `No STT provider available for vendor: ${vendor}. ` +
-        `Supported vendors: ${Vendor.OpenAI}, ${Vendor.Groq}`
+        `Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}, ${Vendor.Grok}`
       );
   }
 }

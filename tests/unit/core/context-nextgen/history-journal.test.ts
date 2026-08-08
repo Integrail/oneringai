@@ -9,7 +9,7 @@
  * - Turn index is restored on load
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -36,6 +36,19 @@ function makeAssistantOutputWithThinking(text: string, thinking: string): Output
       { type: ContentType.OUTPUT_TEXT, text },
     ],
   } as Message];
+}
+
+async function waitForJournalEntries(
+  ctx: AgentContextNextGen,
+  sessionId: string,
+  expectedCount: number,
+) {
+  let entries = await ctx.journal!.read(sessionId);
+  await vi.waitFor(async () => {
+    entries = await ctx.journal!.read(sessionId);
+    expect(entries).toHaveLength(expectedCount);
+  }, { timeout: 5_000, interval: 10 });
+  return entries;
 }
 
 describe('AgentContextNextGen - History Journal Integration', () => {
@@ -127,11 +140,7 @@ describe('AgentContextNextGen - History Journal Integration', () => {
     ctx.addUserMessage('Hello');
     ctx.addAssistantResponse(makeAssistantOutput('Hi!'));
 
-    // Small delay for fire-and-forget append to complete
-    await new Promise(r => setTimeout(r, 50));
-
-    const entries = await ctx.journal!.read('test-session-2');
-    expect(entries).toHaveLength(2);
+    const entries = await waitForJournalEntries(ctx, 'test-session-2', 2);
 
     ctx.destroy();
   });
@@ -174,8 +183,12 @@ describe('AgentContextNextGen - History Journal Integration', () => {
     )).toBe(true);
     expect(ctx.lastThinking).toBe('new thinking');
 
-    await new Promise(r => setTimeout(r, 50));
-    const entries = await ctx.journal!.read('test-session-replace-established');
+    let entries = await ctx.journal!.read('test-session-replace-established');
+    await vi.waitFor(async () => {
+      entries = await ctx.journal!.read('test-session-replace-established');
+      expect(entries).toHaveLength(2);
+      expect(JSON.stringify(entries)).toContain('\\"name\\":\\"Jane\\"');
+    }, { timeout: 5_000, interval: 10 });
 
     expect(entries).toHaveLength(2);
     expect(JSON.stringify(entries)).toContain('\\"name\\":\\"Jane\\"');
@@ -211,10 +224,7 @@ describe('AgentContextNextGen - History Journal Integration', () => {
       content: { results: ['cat1', 'cat2'] },
     }]);
 
-    await new Promise(r => setTimeout(r, 50));
-
-    const entries = await ctx.journal!.read('test-session-3');
-    expect(entries).toHaveLength(3);
+    const entries = await waitForJournalEntries(ctx, 'test-session-3', 3);
     const types = entries.map(e => e.type);
     expect(types).toContain('user');
     expect(types).toContain('assistant');
@@ -238,11 +248,8 @@ describe('AgentContextNextGen - History Journal Integration', () => {
       ctx.addAssistantResponse(makeAssistantOutput(`Answer ${i}`));
     }
 
-    await new Promise(r => setTimeout(r, 50));
-
     // Journal should have all 10 entries
-    const beforeCompaction = await ctx.journal!.read('test-session-4');
-    expect(beforeCompaction).toHaveLength(10);
+    const beforeCompaction = await waitForJournalEntries(ctx, 'test-session-4', 10);
 
     // Even if we clear the conversation (simulating compaction effect)
     ctx.clearConversation();
@@ -269,7 +276,7 @@ describe('AgentContextNextGen - History Journal Integration', () => {
     ctx1.addUserMessage('Q2');
     ctx1.addAssistantResponse(makeAssistantOutput('A2'));
 
-    await new Promise(r => setTimeout(r, 50));
+    await waitForJournalEntries(ctx1, 'test-session-5', 4);
     await ctx1.save('test-session-5');
     ctx1.destroy();
 
@@ -286,9 +293,7 @@ describe('AgentContextNextGen - History Journal Integration', () => {
     ctx2.addUserMessage('Q3');
     ctx2.addAssistantResponse(makeAssistantOutput('A3'));
 
-    await new Promise(r => setTimeout(r, 50));
-
-    const entries = await ctx2.journal!.read('test-session-5');
+    const entries = await waitForJournalEntries(ctx2, 'test-session-5', 6);
 
     // Should have all 6 entries (4 from first context + 2 new)
     expect(entries).toHaveLength(6);
@@ -329,7 +334,7 @@ describe('AgentContextNextGen - History Journal Integration', () => {
     ctx.addUserMessage('Q2');
     ctx.addAssistantResponse(makeAssistantOutput('A2'));
 
-    await new Promise(r => setTimeout(r, 50));
+    await waitForJournalEntries(ctx, 'test-session-6', 4);
 
     const userOnly = await ctx.journal!.read('test-session-6', { types: ['user'] });
     expect(userOnly).toHaveLength(2);

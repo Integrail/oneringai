@@ -155,6 +155,27 @@ describe('AnthropicConverter thinking', () => {
     expect(request.temperature).toBe(0.5);
   });
 
+  it('does not apply normalized Anthropic effort when thinking is disabled', () => {
+    const request = converter.convertRequest({
+      model: 'claude-sonnet-5',
+      input: 'Test',
+      thinking: { enabled: false, effort: 'high' },
+    });
+
+    expect(request.output_config).toBeUndefined();
+  });
+
+  it('preserves Anthropic-native effort independently of normalized thinking', () => {
+    const request = converter.convertRequest({
+      model: 'claude-sonnet-5',
+      input: 'Test',
+      thinking: { enabled: false, effort: 'low' },
+      vendorOptions: { effort: 'medium' },
+    });
+
+    expect(request.output_config?.effort).toBe('medium');
+  });
+
   it('should convert thinking blocks in response', () => {
     const response = {
       id: 'msg_123',
@@ -401,7 +422,7 @@ describe('GoogleConverter thinking', () => {
     });
 
     expect(request.generationConfig.thinkingConfig).toEqual({
-      thinkingBudget: 16384,
+      thinkingLevel: 'MEDIUM',
     });
   });
 
@@ -416,7 +437,7 @@ describe('GoogleConverter thinking', () => {
 
     // vendorOptions should take precedence
     expect(request.generationConfig.thinkingConfig).toEqual({
-      thinkingLevel: 'high',
+      thinkingLevel: 'HIGH',
     });
   });
 

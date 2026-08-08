@@ -396,6 +396,7 @@ describe('BaseAgent', () => {
         instructions: 'Be concise',
         temperature: 0.5,
         maxOutputTokens: 100,
+        previousResponseId: 'resp_previous',
       });
 
       expect(mockGenerate).toHaveBeenCalledWith(
@@ -405,6 +406,7 @@ describe('BaseAgent', () => {
           instructions: 'Be concise',
           temperature: 0.5,
           max_output_tokens: 100,
+          previous_response_id: 'resp_previous',
         })
       );
 

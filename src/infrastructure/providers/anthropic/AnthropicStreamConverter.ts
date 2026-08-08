@@ -223,6 +223,7 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
   private mapDetailedUsage(usage: Anthropic.Usage | Anthropic.MessageDeltaUsage) {
     const cacheCreation = 'cache_creation' in usage ? usage.cache_creation : null;
     const serverToolUse = usage.server_tool_use;
+    const speed = (usage as unknown as { speed?: unknown }).speed;
     return {
       cached_input_tokens: usage.cache_read_input_tokens ?? undefined,
       cache_creation_input_tokens: usage.cache_creation_input_tokens ?? undefined,
@@ -252,6 +253,7 @@ export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.Mess
       ...('service_tier' in usage && usage.service_tier
         ? { service_tier: usage.service_tier }
         : {}),
+      ...(typeof speed === 'string' ? { speed } : {}),
     };
   }
 

@@ -66,7 +66,11 @@ export interface STTModelCapabilities {
  */
 export interface STTModelPricing {
   /** Cost per minute of audio */
-  perMinute: number;
+  perMinute?: number;
+  /** Streaming WebSocket price per minute when it differs from batch/file transcription. */
+  streamingPerMinute?: number;
+  /** Audio-input token price for general multimodal models. */
+  perMInputTokens?: number;
   currency: 'USD';
 }
 
@@ -84,6 +88,10 @@ export interface ISTTModelDescription extends IBaseModelDescription {
 
 export const STT_MODELS = {
   [Vendor.OpenAI]: {
+    /** Current file transcription model. */
+    GPT_TRANSCRIBE: 'gpt-transcribe',
+    /** Cost-efficient GPT-4o transcription model. */
+    GPT_4O_MINI_TRANSCRIBE: 'gpt-4o-mini-transcribe',
     /** Recommended low-latency streaming transcription model */
     GPT_LIVE_TRANSCRIBE: 'gpt-live-transcribe',
     /** Streaming transcription over the Realtime API */
@@ -94,6 +102,14 @@ export const STT_MODELS = {
     GPT_4O_TRANSCRIBE_DIARIZE: 'gpt-4o-transcribe-diarize',
     /** Classic Whisper */
     WHISPER_1: 'whisper-1',
+  },
+  [Vendor.Google]: {
+    /** Current Gemini model used for general audio transcription. */
+    GEMINI_3_6_FLASH: 'gemini-3.6-flash',
+  },
+  [Vendor.Grok]: {
+    /** xAI Speech-to-Text endpoint (the API does not require a model field). */
+    XAI_STT: 'xai-stt',
   },
   [Vendor.Groq]: {
     /** Ultra-fast Whisper on Groq LPUs */
@@ -127,6 +143,55 @@ const WHISPER_BASE_CAPABILITIES: Omit<STTModelCapabilities, 'features' | 'limits
  */
 export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
   // ======================== OpenAI ========================
+
+  'gpt-transcribe': {
+    name: 'gpt-transcribe',
+    displayName: 'GPT Transcribe',
+    provider: Vendor.OpenAI,
+    description: 'Current accurate file-transcription model for multilingual audio',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['audio_transcription'],
+    releaseDate: '2026-07-09',
+    sources: {
+      documentation: 'https://developers.openai.com/api/docs/models/gpt-transcribe',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text'],
+      features: { translation: false, diarization: false, streaming: false, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 25, maxDurationSeconds: 7200 },
+    },
+    pricing: { perMinute: 0.0045, currency: 'USD' },
+  },
+
+  'gpt-4o-mini-transcribe': {
+    name: 'gpt-4o-mini-transcribe',
+    displayName: 'GPT-4o Mini Transcribe',
+    provider: Vendor.OpenAI,
+    description: 'Cost-efficient GPT-4o transcription for high-volume workloads',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['audio_transcription'],
+    releaseDate: '2025-03-20',
+    sources: {
+      documentation: 'https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text'],
+      features: { translation: false, diarization: false, streaming: false, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 25, maxDurationSeconds: 7200 },
+    },
+    pricing: { perMinute: 0.003, currency: 'USD' },
+  },
 
   'gpt-live-transcribe': {
     name: 'gpt-live-transcribe',
@@ -284,6 +349,77 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     pricing: { perMinute: 0.006, currency: 'USD' },
   },
 
+  // ======================== Google ========================
+
+  'gemini-3.6-flash': {
+    name: 'gemini-3.6-flash',
+    displayName: 'Gemini 3.6 Flash Audio Transcription',
+    provider: Vendor.Google,
+    description: 'Gemini Interactions transcription with language hints, normalized timestamps, diarization, and custom vocabulary',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['interactions'],
+    releaseDate: '2026-07-21',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/audio',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      inputFormats: ['wav', 'mp3', 'aiff', 'aac', 'ogg', 'flac'],
+      outputFormats: ['text'],
+      timestamps: { supported: true, granularities: ['segment'] },
+      features: { translation: true, diarization: true, streaming: false, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 20, maxDurationSeconds: 34200 },
+      vendorOptions: {
+        instructions: { type: 'string', description: 'Custom transcription, translation, or extraction instructions' },
+        customVocabulary: { type: 'array', description: 'Phrases to bias native speech recognition toward' },
+        diarizationMode: { type: 'string', description: 'Set to speaker to include speaker labels on words' },
+        transcriptionConfig: { type: 'object', description: 'Additional Gemini Interactions transcription_config fields' },
+      },
+    },
+    pricing: { perMInputTokens: 1.5, currency: 'USD' },
+  },
+
+  // ======================== xAI ========================
+
+  'xai-stt': {
+    name: 'xai-stt',
+    displayName: 'xAI Speech to Text',
+    provider: Vendor.Grok,
+    description: 'Low-cost xAI file and streaming transcription with timestamps, diarization, and multichannel support',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'region_limited',
+    preferred: true,
+    endpoints: ['audio_transcription', 'realtime'],
+    releaseDate: '2026-07-23',
+    sources: {
+      documentation: 'https://docs.x.ai/developers/model-capabilities/audio/speech-to-text',
+      pricing: 'https://docs.x.ai/developers/models/speech-to-text',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text', 'verbose_json'],
+      features: { translation: false, diarization: true, streaming: true, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 500 },
+      vendorOptions: {
+        format: { type: 'boolean', description: 'Apply automatic transcript formatting', default: false },
+        multichannel: { type: 'boolean', description: 'Transcribe channels independently', default: false },
+        channels: { type: 'number', description: 'Number of channels in raw audio', min: 2, max: 8 },
+        diarize: { type: 'boolean', description: 'Identify distinct speakers', default: false },
+        keyterm: { type: 'array', description: 'Terms whose recognition should be boosted' },
+        filler_words: { type: 'boolean', description: 'Retain filler words in the transcript', default: false },
+        vad_threshold: { type: 'number', description: 'Voice-activity detection threshold', min: 0, max: 1, default: 0.08 },
+      },
+    },
+    pricing: { perMinute: 0.0016666667, streamingPerMinute: 0.0033333333, currency: 'USD' },
+  },
+
   // ======================== Groq ========================
 
   'whisper-large-v3': {
@@ -353,6 +489,8 @@ const helpers = createRegistryHelpers(STT_MODEL_REGISTRY);
 export const getSTTModelInfo = helpers.getInfo;
 export const getSTTModelsByVendor = helpers.getByVendor;
 export const getActiveSTTModels = helpers.getActive;
+/** Get active STT models with a published deprecation notice. */
+export const getDeprecatedSTTModels = helpers.getDeprecated;
 
 /**
  * Get STT models that support a specific feature
@@ -368,8 +506,21 @@ export function getSTTModelsWithFeature(
 /**
  * Calculate estimated cost for STT
  */
-export function calculateSTTCost(modelName: string, durationSeconds: number): number | null {
+export function calculateSTTCost(
+  modelName: string,
+  durationSeconds: number,
+  options?: { inputTokens?: number; streaming?: boolean }
+): number | null {
   const model = getSTTModelInfo(modelName);
   if (!model?.pricing) return null;
-  return (durationSeconds / 60) * model.pricing.perMinute;
+  if (options?.streaming && model.pricing.streamingPerMinute !== undefined) {
+    return (durationSeconds / 60) * model.pricing.streamingPerMinute;
+  }
+  if (model.pricing.perMinute !== undefined) {
+    return (durationSeconds / 60) * model.pricing.perMinute;
+  }
+  if (model.pricing.perMInputTokens !== undefined && options?.inputTokens !== undefined) {
+    return (options.inputTokens / 1_000_000) * model.pricing.perMInputTokens;
+  }
+  return null;
 }

@@ -14,6 +14,8 @@ export enum ContentType {
 
 export interface BaseContent {
   type: ContentType;
+  /** OpenAI GPT-5.6+ explicit prompt-cache breakpoint after this content block. */
+  promptCacheBreakpoint?: boolean;
 }
 
 export interface InputTextContent extends BaseContent {

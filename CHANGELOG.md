@@ -7,7 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [1.0.0] — 2026-08-08
+
+Version 1.0.0 establishes the supported production contract for OneRingAI's
+connector-first, multi-vendor inference layer. It aligns the model and media
+registries with the current OpenAI, Anthropic, Google, and xAI APIs; promotes
+Realtime voice to a first-class capability; and introduces an explicit,
+source-backed registry lifecycle schema suitable for model routing, migration,
+and cost accounting.
+
+### Highlights
+
+- **A current multi-vendor foundation.** Text, reasoning, vision, image, video,
+  embeddings, TTS, STT, and realtime voice now use audited current model
+  families and provider-native API contracts.
+- **Production realtime voice.** OpenAI voice agents, transcription,
+  translation, WebRTC credentials, SIP controls, and Twilio media bridging are
+  supported alongside xAI Voice Agent sessions, browser credentials, SIP call
+  control, resumption, and binary audio.
+- **Registry data applications can trust.** Schema v2 separates callability
+  from lifecycle, resolves floating aliases without duplicate records, records
+  endpoint and replacement metadata, and models current billing dimensions.
+- **Verified against live services.** The release was exercised with real
+  OpenAI, Anthropic, Google, and xAI credentials in addition to the full unit,
+  type, lint, and distributable-build suites.
+
+### Breaking changes and migration
+
+1. **Node.js 22 is now required.** The package `engines` field and main build
+   target moved from Node.js 18 to Node.js 22. Upgrade the runtime used by
+   applications, CI, containers, and serverless deployments before installing
+   1.0.0.
+2. **Registry token limits are nullable.** `features.input.tokens` and
+   `features.output.tokens` are now `number | null`. `null` means the vendor
+   does not publish a token window for that duration- or message-priced model;
+   it no longer means zero. Narrow explicitly or call
+   `resolveMaxContextTokens(model, fallback)` when a number is required.
+3. **Lifecycle and callability are separate.** `isActive` means a model remains
+   callable. Use `lifecycle` to distinguish `preview`, `active`, `legacy`,
+   `deprecated`, and `retired`. A deprecated model may remain active until its
+   `retirementDate`; use `replacementModel` and the `getDeprecated*Models()`
+   helpers to drive migrations.
+4. **Aliases resolve through helpers, not direct indexing.** For example,
+   `getModelInfo('gpt-5.6')` resolves to `gpt-5.6-sol`, while
+   `MODEL_REGISTRY['gpt-5.6']` remains undefined. Persist canonical `name`
+   values when stable identity matters.
+5. **Gemini 3.5+ defaults to Google Interactions.** Applications that inspect
+   raw Google requests/responses or depend on `generateContent` wire behavior
+   must migrate to the `steps`/`step.delta` contract or temporarily set
+   `vendorOptions.api = 'generateContent'`. Set `api = 'interactions'` to force
+   the new path on another compatible model.
+6. **Current provider SDKs are the compatibility baseline.** OpenAI 7.4,
+   Anthropic 0.116, and Google Gen AI 2.16 are used by the built-in adapters.
+   Custom wrappers that depend on SDK-internal request or response types should
+   be recompiled and retested.
+7. **Realtime configuration follows the current GA schema.** New code should
+   use `gpt-realtime-2.1`, nested `session.audio.input/output`, current
+   `response.output_*` events, `intent=transcription` for transcription, and the
+   dedicated translation endpoint. Legacy realtime registry entries remain for
+   discovery but are inactive.
+
+The connector-first `Connector.create()`/`Agent.create()` workflow, canonical
+registry keys, and existing positional cost-helper calls remain supported.
+Media cost helpers accept richer usage objects without invalidating their
+previous signatures. See the README's 1.0 migration summary, the User Guide's
+complete upgrade checklist, and `docs/MODEL_REGISTRY_AUDIT.md` for the audited
+before/after matrix.
+
 ### Added
+
+- **Model registry schema v2 and full four-vendor audit.** Added
+  `MODEL_REGISTRY_SCHEMA_VERSION`, lifecycle/availability states, aliases,
+  snapshots, normalized endpoints, retirement/replacement metadata, preferred
+  choices, source tracking, and modality-aware pricing. Alias-aware lookup and
+  `getDeprecated*Models()` helpers apply consistently across text, image, video,
+  TTS, STT, and embedding registries.
+- **Current OpenAI, Anthropic, Google, and xAI models.** Registered GPT-5.6
+  Sol/Terra/Luna, GPT-5.5 Pro, Claude Opus/Mythos/Fable 5, Gemini 3.6/3.5,
+  Grok 4.5/4.3/Build, GPT Image 2, current Gemini image/TTS/Veo/Omni and
+  embedding models, current Grok image/video, and current OpenAI/xAI speech and
+  realtime voice models with audited limits, lifecycle, features, and pricing.
+- **xAI audio and realtime voice.** Added native REST/WebSocket TTS, dynamic
+  voice discovery, REST/WebSocket STT with typed streaming events, Smart Turn,
+  keyterms, diarization and multichannel controls, plus xAI Realtime browser
+  credentials, resumption, SIP refer/hangup, and JSON/binary audio transport.
+- **Google Interactions API.** Gemini 3.5+ now supports the GA `steps` response
+  schema and `step.delta` streaming protocol, with tools, reasoning, structured
+  output, usage conversion, and previous-interaction continuity.
 
 - **Complete OpenAI Realtime API support.** New connector-first
   `OpenAIRealtimeSession` and `OpenAIRealtimeAPI` surfaces support GA server
@@ -28,6 +116,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Current SDK/runtime baseline.** Upgraded `openai` to 7.4,
+  `@anthropic-ai/sdk` to 0.116, and `@google/genai` to 2.16. The package and
+  build target now require Node.js 22 or newer.
+- **Provider defaults follow current vendor APIs.** Gemini 3.5+ selects
+  Interactions by default (`vendorOptions.api = 'generateContent'` opts out),
+  OpenAI Responses accepts current reasoning/service/cache options, Anthropic
+  supports adaptive effort and fast mode, and xAI media providers use their
+  dedicated native contracts.
+- **High-level media defaults are lifecycle-aware.** `ImageGeneration` now
+  selects GPT Image 2, Gemini 3.1 Flash Image, or Grok Imagine Image Quality
+  instead of retired generation/editing models. Google `Embeddings` now
+  defaults to Gemini Embedding 2, exposes task/vendor controls, and adds
+  `embedMultimodal()` for text, image, audio, video, and document parts.
+  Image generation now forwards normalized aspect ratio, current quality
+  values, and vendor-specific controls; image edits and video extensions no
+  longer require a redundant `model` when the vendor default is desired.
+- **Cost helpers preserve old calls and accept current billing dimensions.**
+  Text cost calculation supports long-context and processing tiers; media
+  helpers support resolution, duration, REST-vs-streaming, image tokens, and
+  multimodal embedding usage. Unknown voice-model token windows are now `null`
+  instead of a synthetic zero.
+
 - **Realtime defaults and events use the GA contract.** The preferred default is
   `gpt-realtime-2.1`; output configuration lives under `session.audio.output`,
   current `response.output_*` events are handled, transcription connects with
@@ -36,6 +146,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   available but are marked inactive.
 
 ### Fixed
+
+- **Registry/API drift.** Retired preview identifiers no longer appear as
+  current recommendations, floating aliases resolve without duplicate records,
+  Grok Build advertises its documented image input, and registry feature tests
+  now respect lifecycle rather than hardcoded historical counts.
+- **xAI wire correctness.** TTS handles the documented JSON/base64 response and
+  raw-audio responses defensively, sends `text.delta.delta`, and detects early
+  WebSocket closure. STT waits for `transcript.created`, streams raw binary
+  frames, maps interim/final events, waits for one `transcript.done` per channel,
+  and uses the distinct streaming rate. Realtime sessions now choose xAI's
+  WebSocket host when a Grok connector does not specify a custom `baseURL`;
+  voice/VAD use xAI's session-root fields and transcription uses
+  `language_hint`.
+- **Google Interactions continuity and ordering.** Interactions are stored by
+  default so `previous_interaction_id` is usable, `runDirect()` and
+  `streamDirect()` expose it as `previousResponseId`, explicit `store: false`
+  remains available, and mixed text/thought/tool history retains source order.
+- **Google Interactions stream termination.** Streaming now consumes
+  `interaction.status_update`, every terminal `interaction.completed` status,
+  and SSE `error` events. Cancelled/failed streams finish as `failed`,
+  `budget_exceeded` finishes as `incomplete`, and a truncated stream without a
+  terminal event no longer defaults to success.
+- **Google native image normalization.** Public square sizes now map to
+  Gemini's `512`/`1K`/`2K`/`4K` values, `auto` omits the resolution, edit input
+  carries its detected MIME type, and `n` uses bounded request fan-out because
+  current native models reject multiple `candidateCount` values.
+- **Compressed file transcription.** `SpeechToText.transcribeFile()` preserves
+  the source path so providers retain its format metadata; Google and xAI MIME
+  inference now includes FLAC, AAC, MP4/M4A, and existing MP3/WebM/Ogg/WAV paths.
+- **Raw-audio transcription metadata.** Batch `STTOptions` now exposes
+  `encoding` and `sampleRate`. `TextPipeline` identifies Twilio's decoded PCM as
+  8 kHz, while Google, xAI, and OpenAI preserve self-describing containers and
+  correctly wrap or label headerless PCM instead of assuming an incompatible
+  WAV or 16 kHz stream.
+- **Google Interactions tool and media requests.** Named function choices now
+  use `allowed_tools`; Gemini Omni fetches URL source images, preserves PNG/JPEG
+  MIME types, and sends duration in `response_format`; multimodal embeddings
+  fetch arbitrary HTTP(S) media inline instead of misusing Google-hosted
+  `fileData` references.
+- **Bounded Google embedding media downloads.** External HTTP(S) inputs now use
+  an abortable streaming reader with a 30-second default timeout,
+  `Content-Length` preflight, a 100 MB aggregate inline budget, and Google's
+  50 MB PDF ceiling. Chunked responses are cancelled when they cross the
+  remaining budget instead of being fully buffered first. Operators may tune
+  `vendorOptions.mediaDownloadTimeoutMs` without weakening provider limits.
+- **Google named-tool parity.** The legacy `generateContent` compatibility path
+  now maps a named `tool_choice` to `ANY` plus `allowedFunctionNames`, matching
+  the strict named-function behavior already implemented for Interactions.
+- **Media MIME and translation normalization.** Optional multimodal-embedding
+  MIME types are inferred from common image/audio/video/document signatures and
+  path extensions, including JPEG, MP3, and QuickTime MOV. AAC ADTS detection
+  covers both CRC-protected (`F0`/`F8`) and unprotected (`F1`/`F9`) headers
+  before the broader MP3 sync test, and `SpeechToText.translate()` now
+  forwards configured or per-call source-language hints.
+- **Gemini transcription contract.** Native Google STT now consumes normalized
+  language, timestamp, vocabulary, and diarization options, strips live
+  timestamp markers, returns normalized segments, and explicitly rejects
+  unsupported output formats. Registry metadata advertises the reliably
+  observable segment granularity rather than unsupported word-level results.
+- **xAI option validation.** Realtime sessions reject OpenAI-only
+  `semantic_vad` before connecting, and xAI TTS metadata now accepts every
+  documented streaming-latency level from 0 through 2.
+- **Provider-specific Realtime PCM types.** `OpenAIRealtimeAudioFormat` now
+  accepts only OpenAI's required 24 kHz PCM rate and is guarded at runtime.
+  `GrokRealtimeSession`/`GrokRealtimeAudioFormat` expose xAI's complete
+  documented set: 8, 16, 22.05, 24, 32, 44.1, and 48 kHz.
+- **xAI TTS response metadata.** Buffered synthesis maps the response
+  `Content-Type` or JSON `content_type` back to `TTSResponse.format`, including
+  when `vendorOptions.output_format` overrides the normalized caller default.
+- **OpenAI explicit-cache normalization.** GPT-5.6+ content breakpoints now use
+  the documented `{ mode: 'explicit' }` object and are emitted only after the
+  model/cache policy passes normalization. Older, unsupported, or cache-off
+  calls cannot leak `prompt_cache_breakpoint` into Responses requests. The
+  documented implicit policy remains composable with caller-marked content;
+  request mode `explicit` disables only OpenAI's automatic breakpoint.
+- **Anthropic request normalization.** Arbitrary shared metadata is narrowed to
+  the Messages API's supported `{ user_id }` shape. A disabled normalized
+  thinking configuration no longer emits its nested effort, while explicit
+  `vendorOptions.effort` remains available because Anthropic defines effort as
+  independent of thinking blocks.
+- **Partial image-cost accounting.** Supplying text/input token usage no longer
+  drops registry per-image output pricing. Per-image output is replaced only
+  when actual `imageOutputTokens` are available, preventing severe
+  underestimates for mixed partial usage.
+- **Non-PCM WAV correctness.** Raw μ-law and A-law transcription inputs now use
+  an 18-byte `WAVEFORMATEX` chunk with the required zero `cbSize`; PCM retains
+  its standard 16-byte `fmt` chunk.
+- **Realtime update validation.** OpenAI's 24 kHz PCM assertion now runs on
+  every `updateSession()` as well as initial configuration. The typed xAI
+  facade accepts its documented wider PCM range for initial and later updates.
+- **Embedding data-URI hardening.** Gemini Embedding media now rejects malformed
+  base64, preflights decoded size before allocation, and transmits canonical
+  base64, so invalid characters cannot bypass the aggregate media budget.
 
 - **Realtime transport and schema correctness.** REST helpers now resolve absolute
   connector URLs. Translation WebSocket updates omit client-secret-only fields,
@@ -49,6 +252,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Vendor audit and migration guide.** README and User Guide now describe
+  current text/media models, schema-v2 compatibility, Google Interactions,
+  xAI TTS/STT and realtime voice, binary audio, and current cost APIs. Added
+  `docs/MODEL_REGISTRY_AUDIT.md` with the pre-implementation gap report,
+  implemented status, supported boundaries, migration notes, and official
+  source links. Regenerated the public API reference for all new exports.
+- **Major-release documentation.** Added a complete Node/runtime, registry-v2,
+  alias/lifecycle, Google Interactions, Realtime, media-default, and validation
+  upgrade checklist. Current image, video, voice, speech, embedding, and model
+  selection examples replace retired lead examples throughout the README and
+  User Guide.
+
 - **Realtime API documentation is now end-to-end.** The README highlights and
   links to a dedicated User Guide chapter covering voice agents, realtime
   transcription, realtime translation, WebSocket/WebRTC, SIP controls,
@@ -60,9 +275,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Seven live Realtime integration tests pass with the OpenAI API, covering native
   audio, text output, `gpt-realtime-2.1`, `gpt-realtime-2.1-mini`,
   `gpt-realtime-2`, both streaming transcription models, continuous translation,
-  and standard/translation client secrets. Existing live OpenAI Agent/STT/TTS
-  integration tests, strict typecheck, ESLint, the distributable build, and all
-  6,299 unit tests also pass.
+  and standard/translation client secrets. Thirteen additional live smoke tests
+  pass for GPT-5.6, Claude 5, Google Interactions and stored continuity, named
+  Gemini tool selection on both Interactions and `generateContent`, native
+  multi-image generation, bounded external-media
+  embedding, Omni image-to-video duration, raw 8 kHz Google/xAI transcription,
+  Grok 4.5, xAI TTS latency level 2, and an acknowledged 32 kHz PCM xAI Voice
+  Agent session update. Strict typecheck, ESLint, the distributable build, and
+  all 6,381 unit tests across 284 files also pass.
 
 ## [0.11.0] — 2026-07-24
 
@@ -2621,5 +2841,6 @@ StorageRegistry.setContext({ userId: currentUser.id });
 [0.1.2]: https://github.com/aantich/oneringai/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/aantich/oneringai/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aantich/oneringai/releases/tag/v0.1.0
-[Unreleased]: https://github.com/aantich/oneringai/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/aantich/oneringai/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/aantich/oneringai/compare/v0.11.0...v1.0.0
 [0.11.0]: https://github.com/aantich/oneringai/compare/v0.10.3...v0.11.0

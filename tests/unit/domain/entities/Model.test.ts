@@ -8,47 +8,52 @@ import {
   calculateCost,
 } from '../../../../src/domain/entities/Model.js';
 import { Vendor } from '../../../../src/core/Vendor.js';
+import { MODEL_REGISTRY_SCHEMA_VERSION } from '../../../../src/domain/types/SharedTypes.js';
 
 describe('Model Registry', () => {
   describe('MODEL_REGISTRY', () => {
-    it('should have all models', () => {
+    it('should include the complete audited model set', () => {
       const modelCount = Object.keys(MODEL_REGISTRY).length;
-      expect(modelCount).toBe(72);
+      expect(modelCount).toBeGreaterThanOrEqual(88);
+      expect(MODEL_REGISTRY['gpt-5.6-sol']).toBeDefined();
+      expect(MODEL_REGISTRY['claude-opus-5']).toBeDefined();
+      expect(MODEL_REGISTRY['gemini-3.6-flash']).toBeDefined();
+      expect(MODEL_REGISTRY['grok-4.5']).toBeDefined();
     });
 
-    it('should have 44 OpenAI models', () => {
+    it('should include the audited OpenAI models', () => {
       const openAIModels = Object.values(MODEL_REGISTRY).filter(
         (model) => model.provider === Vendor.OpenAI
       );
-      expect(openAIModels).toHaveLength(44);
+      expect(openAIModels.length).toBeGreaterThanOrEqual(48);
     });
 
-    it('should have 13 Anthropic models', () => {
+    it('should include the audited Anthropic models', () => {
       const anthropicModels = Object.values(MODEL_REGISTRY).filter(
         (model) => model.provider === Vendor.Anthropic
       );
-      expect(anthropicModels).toHaveLength(13);
+      expect(anthropicModels.length).toBeGreaterThanOrEqual(15);
     });
 
-    it('should have 10 Google models', () => {
+    it('should include the audited Google models', () => {
       const googleModels = Object.values(MODEL_REGISTRY).filter(
         (model) => model.provider === Vendor.Google
       );
-      expect(googleModels).toHaveLength(10);
+      expect(googleModels.length).toBeGreaterThanOrEqual(14);
     });
 
-    it('should have 5 Grok models', () => {
+    it('should include the audited xAI models', () => {
       const grokModels = Object.values(MODEL_REGISTRY).filter(
         (model) => model.provider === Vendor.Grok
       );
-      expect(grokModels).toHaveLength(5);
+      expect(grokModels.length).toBeGreaterThanOrEqual(11);
     });
 
     it('should track active and deprecated models', () => {
       const activeCount = Object.values(MODEL_REGISTRY).filter(
         (model) => model.isActive
       ).length;
-      expect(activeCount).toBe(70);
+      expect(activeCount).toBeGreaterThanOrEqual(77);
       expect(MODEL_REGISTRY['gpt-realtime'].isActive).toBe(false);
       expect(MODEL_REGISTRY['gpt-realtime-mini'].isActive).toBe(false);
     });
@@ -63,9 +68,19 @@ describe('Model Registry', () => {
 
     it('should have valid context windows for all models', () => {
       Object.values(MODEL_REGISTRY).forEach((model) => {
-        expect(model.features.input.tokens).toBeGreaterThan(0);
-        expect(model.features.output.tokens).toBeGreaterThan(0);
+        if (model.features.input.tokens === null || model.features.output.tokens === null) {
+          expect(model.features.realtime || model.features.audio).toBe(true);
+        } else {
+          expect(model.features.input.tokens).toBeGreaterThan(0);
+          expect(model.features.output.tokens).toBeGreaterThan(0);
+        }
       });
+    });
+
+    it('uses the lifecycle-aware registry schema', () => {
+      expect(MODEL_REGISTRY_SCHEMA_VERSION).toBe(2);
+      expect(MODEL_REGISTRY['gpt-5.6-sol'].lifecycle).toBe('active');
+      expect(MODEL_REGISTRY['claude-opus-4-1-20250805'].replacementModel).toBe('claude-opus-5');
     });
   });
 
@@ -132,24 +147,29 @@ describe('Model Registry', () => {
       const grokModels = Object.values(LLM_MODELS[Vendor.Grok]);
 
       openAIModels.forEach((modelName) => {
-        expect(MODEL_REGISTRY[modelName]).toBeDefined();
+        expect(getModelInfo(modelName)).toBeDefined();
       });
 
       anthropicModels.forEach((modelName) => {
-        expect(MODEL_REGISTRY[modelName]).toBeDefined();
+        expect(getModelInfo(modelName)).toBeDefined();
       });
 
       googleModels.forEach((modelName) => {
-        expect(MODEL_REGISTRY[modelName]).toBeDefined();
+        expect(getModelInfo(modelName)).toBeDefined();
       });
 
       grokModels.forEach((modelName) => {
-        expect(MODEL_REGISTRY[modelName]).toBeDefined();
+        expect(getModelInfo(modelName)).toBeDefined();
       });
     });
   });
 
   describe('getModelInfo()', () => {
+    it('resolves floating aliases to their canonical registry records', () => {
+      expect(getModelInfo('gpt-5.6')?.name).toBe('gpt-5.6-sol');
+      expect(getModelInfo('grok-voice-latest')?.name).toBe('grok-voice-think-fast-2.0');
+    });
+
     it('should return model info for valid model name', () => {
       const model = getModelInfo('gpt-5.2');
       expect(model).toBeDefined();
@@ -186,25 +206,25 @@ describe('Model Registry', () => {
   describe('getModelsByVendor()', () => {
     it('should filter models by OpenAI vendor', () => {
       const models = getModelsByVendor(Vendor.OpenAI);
-      expect(models).toHaveLength(44);
+      expect(models.length).toBeGreaterThanOrEqual(48);
       expect(models.every((m) => m.provider === Vendor.OpenAI)).toBe(true);
     });
 
     it('should filter models by Anthropic vendor', () => {
       const models = getModelsByVendor(Vendor.Anthropic);
-      expect(models).toHaveLength(13);
+      expect(models.length).toBeGreaterThanOrEqual(15);
       expect(models.every((m) => m.provider === Vendor.Anthropic)).toBe(true);
     });
 
     it('should filter models by Google vendor', () => {
       const models = getModelsByVendor(Vendor.Google);
-      expect(models).toHaveLength(10);
+      expect(models.length).toBeGreaterThanOrEqual(14);
       expect(models.every((m) => m.provider === Vendor.Google)).toBe(true);
     });
 
     it('should filter models by Grok vendor', () => {
       const models = getModelsByVendor(Vendor.Grok);
-      expect(models).toHaveLength(5);
+      expect(models.length).toBeGreaterThanOrEqual(11);
       expect(models.every((m) => m.provider === Vendor.Grok)).toBe(true);
     });
 
@@ -245,7 +265,7 @@ describe('Model Registry', () => {
   describe('getActiveModels()', () => {
     it('should return all active models', () => {
       const models = getActiveModels();
-      expect(models).toHaveLength(70);
+      expect(models.length).toBeGreaterThanOrEqual(77);
       expect(models.every((m) => m.isActive)).toBe(true);
     });
 

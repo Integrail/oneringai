@@ -77,6 +77,9 @@ export interface SimpleVideoGenerateOptions {
   vendorOptions?: Record<string, unknown>;
 }
 
+/** High-level extension options; the current extend-capable model is selected when omitted. */
+export type SimpleVideoExtendOptions = Omit<VideoExtendOptions, 'model'> & { model?: string };
+
 /**
  * VideoGeneration capability class
  */
@@ -190,7 +193,7 @@ export class VideoGeneration {
    * Extend an existing video
    * Note: Not all models/vendors support this
    */
-  async extend(options: VideoExtendOptions): Promise<VideoResponse> {
+  async extend(options: SimpleVideoExtendOptions): Promise<VideoResponse> {
     if (!this.provider.extendVideo) {
       throw new Error(`Video extension not supported by ${this.provider.name}`);
     }
@@ -307,7 +310,7 @@ export class VideoGeneration {
       case Vendor.OpenAI:
         return VIDEO_MODELS[Vendor.OpenAI].SORA_2;
       case Vendor.Google:
-        return VIDEO_MODELS[Vendor.Google].VEO_3_1;
+        return VIDEO_MODELS[Vendor.Google].VEO_3_1_LITE;
       case Vendor.Grok:
         return VIDEO_MODELS[Vendor.Grok].GROK_IMAGINE_VIDEO;
       default:

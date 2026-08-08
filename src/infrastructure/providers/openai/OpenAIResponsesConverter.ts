@@ -27,7 +27,8 @@ export class OpenAIResponsesConverter {
    */
   convertInput(
     input: string | InputItem[],
-    instructions?: string
+    instructions?: string,
+    allowPromptCacheBreakpoints = false,
   ): { input: string | ResponsesAPIInputItem[]; instructions?: string } {
     // Simple string input
     if (typeof input === 'string') {
@@ -58,6 +59,9 @@ export class OpenAIResponsesConverter {
               messageContent.push({
                 type: isAssistant ? 'output_text' : 'input_text',
                 text: content.text,
+                ...(allowPromptCacheBreakpoints && content.promptCacheBreakpoint && {
+                  prompt_cache_breakpoint: { mode: 'explicit' },
+                }),
               });
               break;
 
@@ -68,6 +72,21 @@ export class OpenAIResponsesConverter {
                   type: 'input_image',
                   image_url: content.image_url.url,
                   ...(content.image_url.detail && { detail: content.image_url.detail }),
+                  ...(allowPromptCacheBreakpoints && content.promptCacheBreakpoint && {
+                    prompt_cache_breakpoint: { mode: 'explicit' },
+                  }),
+                });
+              }
+              break;
+
+            case 'input_file':
+              if (!isAssistant) {
+                messageContent.push({
+                  type: 'input_file',
+                  file_id: content.file_id,
+                  ...(allowPromptCacheBreakpoints && content.promptCacheBreakpoint && {
+                    prompt_cache_breakpoint: { mode: 'explicit' },
+                  }),
                 });
               }
               break;

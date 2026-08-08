@@ -1,6 +1,6 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 0.11.0
+**Version:** 1.0.0
 **Last Updated:** 2026-08-08
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
@@ -9,6 +9,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 
 ## Table of Contents
 
+- [Upgrading to 1.0.0](#upgrading-to-100) — runtime requirements, breaking changes, compatibility guarantees, and migration checklist
 1. [Getting Started](#getting-started)
 2. [Core Concepts](#core-concepts)
 3. [Basic Text Generation](#basic-text-generation)
@@ -43,18 +44,18 @@ A comprehensive guide to using all features of the @everworker/oneringai library
    - Lifecycle Hooks
 11. [Unified Store Tools](#unified-store-tools)
     - Generic CRUD Interface (store_get, store_set, store_delete, store_list, store_action)
-    - Available Stores (memory, context, instructions, user_info, workspace)
+    - Available Stores (notes, whiteboard, instructions, user_info, workspace)
     - Custom Store Plugins
 12. [Shared Workspace](#shared-workspace)
     - Multi-Agent Coordination
     - Entry Model and Actions
-13. [InContextMemory](#in-context-memory)
+13. [InContextMemory](#incontextmemory-nextgen-plugin)
     - Setup and Configuration
     - Priority-Based Eviction
     - Tools (store_set/store_delete/store_list with store="whiteboard")
     - UI Display (`showInUI`) and User Pinning
     - Use Cases and Best Practices
-14. [Persistent Instructions](#persistent-instructions)
+14. [Persistent Instructions](#persistent-instructions-nextgen-plugin)
     - Setup and Configuration
     - Tools (store_set/store_delete/store_list/store_action with store="instructions")
     - Storage and Persistence
@@ -65,7 +66,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Tools (store_set/store_get/store_delete/store_action with store="user_info", plus todo_add, todo_update, todo_remove)
     - Storage and Multi-User Isolation
     - Use Cases and Best Practices
-16. [Self-Learning Memory](#self-learning-memory-nextgen-plugin) — `MemoryPluginNextGen` + `MemoryWritePluginNextGen` + 11 `memory_*` tools (entities, facts, graph, semantic search, profile auto-regen, three-principal permissions)
+16. [Self-Learning Memory](#self-learning-memory-nextgen-plugin) — `MemoryPluginNextGen` + `MemoryWritePluginNextGen` + 12 `memory_*` tools (entities, facts, graph, document search, semantic search, profile auto-regen, three-principal permissions)
     - What it is — entities + facts data model
     - When to use which plugin (working / in-context / memory / memoryWrite / session ingestor)
     - Quick Start (in-process, dev)
@@ -107,7 +108,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 20. [MCP (Model Context Protocol)](#mcp-model-context-protocol)
 21. [Multimodal (Vision)](#multimodal-vision)
 22. [Audio (TTS/STT)](#audio-ttsstt)
-23. [OpenAI Realtime API](#openai-realtime-api) — voice agents, live transcription/translation, WebSocket/WebRTC, SIP, and telephony
+23. [Realtime Voice APIs](#openai-realtime-api) — OpenAI and xAI voice agents, live transcription/translation, WebSocket/WebRTC, SIP, and telephony
 24. [Image Generation](#image-generation)
 25. [Embeddings](#embeddings)
 26. [Video Generation](#video-generation)
@@ -119,7 +120,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 29. [Streaming](#streaming)
 30. [External API Integration](#external-api-integration)
 31. [Vendor Templates](#vendor-templates)
-    - Quick Setup for 45+ Services
+    - Quick Setup for 50 Services
     - Authentication Methods
     - Complete Vendor Reference
 32. [OAuth for External APIs](#oauth-for-external-apis)
@@ -147,6 +148,217 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 
 ---
 
+## Upgrading to 1.0.0
+
+OneRingAI 1.0.0 is the first major release and the supported baseline for the
+current OpenAI, Anthropic, Google, and xAI APIs. The connector-first application
+flow remains the same, but the runtime baseline, registry contract, and the
+default Google API path have changed.
+
+### Migration summary
+
+| Change | Who is affected | Required action |
+|--------|-----------------|-----------------|
+| Node.js 22 minimum | Every application and build pipeline | Upgrade local runtimes, CI, containers, and serverless functions before installing 1.0.0 |
+| Registry schema v2 | Code reading model metadata | Handle nullable token limits and use lifecycle/alias helpers as described below |
+| Gemini 3.5+ uses Interactions | Google callers that inspect native wire data or provider options | Adopt `steps`/`step.delta`, or temporarily opt out with `vendorOptions.api = 'generateContent'` |
+| Current SDK baseline | Custom provider wrappers or code importing SDK-native types | Recompile against OpenAI 7.4, Anthropic 0.116, and Google Gen AI 2.16 |
+| Current Realtime contract | Preview Realtime integrations | Move audio settings under `session.audio`, consume current output events, and use the dedicated transcription/translation paths |
+| Updated model lifecycle | Routers and model pickers | Stop assuming every `isActive` model is recommended; filter by `lifecycle`, `availability`, and `preferred` |
+
+### 1. Upgrade the runtime and dependencies
+
+OneRingAI now declares `node >= 22.0.0` and builds its primary output for
+Node.js 22. Confirm every execution environment before upgrading:
+
+```bash
+node --version
+npm install @everworker/oneringai@^1.0.0
+```
+
+The built-in providers use `openai@7.4`, `@anthropic-ai/sdk@0.116`, and
+`@google/genai@2.16`. Applications normally do not need to import those SDKs
+directly. If a custom provider or proxy depends on their native types, rebuild
+and run its contract tests after the upgrade.
+
+### 2. Migrate registry consumers to schema v2
+
+The stable v1 fields remain available: `name`, `provider`, `isActive`,
+`features`, and the original cost fields. Schema v2 adds:
+
+- `lifecycle`, `availability`, and `preferred` for selection policy;
+- `aliases` and `snapshots` for floating and pinned identifiers;
+- `endpoints` for API routing;
+- `deprecationDate`, `retirementDate`, and `replacementModel` for migrations;
+- source links and verification dates; and
+- long-context, processing-tier, duration, resolution, message, cached-write,
+  and multimodal pricing dimensions.
+
+The only narrowing change to existing registry value types is that token limits
+are now `number | null`:
+
+```typescript
+import {
+  MODEL_REGISTRY_SCHEMA_VERSION,
+  getModelInfo,
+  resolveMaxContextTokens,
+} from '@everworker/oneringai';
+
+if (MODEL_REGISTRY_SCHEMA_VERSION !== 2) {
+  throw new Error('Unsupported registry schema');
+}
+
+const model = getModelInfo('grok-voice-latest');
+const publishedLimit = model?.features.input.tokens; // number | null
+const operationalLimit = resolveMaxContextTokens(model?.name ?? '', 128_000);
+```
+
+Do not coerce `null` to zero. It means the vendor bills or constrains that model
+using another dimension and has not published a token window.
+
+### 3. Separate model identity, callability, and recommendation
+
+Lookup helpers resolve aliases without inserting duplicate registry records:
+
+```typescript
+import {
+  MODEL_REGISTRY,
+  getDeprecatedModels,
+  getModelInfo,
+} from '@everworker/oneringai';
+
+getModelInfo('gpt-5.6')?.name;          // 'gpt-5.6-sol'
+getModelInfo('grok-voice-latest')?.name; // 'grok-voice-think-fast-2.0'
+MODEL_REGISTRY['gpt-5.6'];              // undefined: direct keys are canonical
+
+const migrationQueue = getDeprecatedModels().map(model => ({
+  from: model.name,
+  to: model.replacementModel,
+  retireAt: model.retirementDate,
+}));
+```
+
+Use these fields deliberately:
+
+- `isActive`: the provider still accepts requests;
+- `lifecycle`: preview, active, legacy, deprecated, or retired;
+- `availability`: public, limited, invite-only, enterprise, or region-limited;
+- `preferred`: a recommended choice for that vendor/modality; and
+- `replacementModel`: the migration target when one is published.
+
+Persist canonical `model.name` values when stable identity matters. Persist an
+alias only when following the vendor's moving target is intentional.
+
+### 4. Adopt Google Interactions
+
+`gemini-3.5-*` and `gemini-3.6-*` use the Google Interactions API by default.
+Normal `Agent.run()`, `runDirect()`, and streaming callers receive the same
+OneRingAI response types; only callers depending on native Google wire details
+need immediate changes.
+
+```typescript
+const agent = Agent.create({
+  connector: 'google',
+  model: 'gemini-3.6-flash',
+});
+
+// Default: stored Interactions API (`steps` responses and `step.delta` streams).
+const first = await agent.runDirect('Remember the code word: aurora');
+
+// Continue the provider-stored interaction without resending its history.
+await agent.runDirect('What was the code word?', {
+  previousResponseId: first.id,
+});
+
+// Temporary compatibility path while migrating native integrations.
+await agent.runDirect('Summarize this document', {
+  vendorOptions: { api: 'generateContent' },
+});
+```
+
+Interactions supports tools, reasoning, structured output, usage conversion,
+streaming, and `previous_interaction_id` continuity through the normalized
+`previousResponseId` option. Interactions are stored by default because Google
+requires storage for this continuity flow; set `vendorOptions.store: false`
+only when the interaction will not be continued. Prefer the default path for
+new code; the opt-out is a migration bridge, not the recommended steady state.
+Named `toolChoice` values are translated to Interactions
+`generation_config.tool_choice.allowed_tools`. The temporary `generateContent`
+path emits `functionCallingConfig.mode = 'ANY'` together with
+`allowedFunctionNames`. Forcing one function therefore remains enforced on
+both Google API paths rather than degrading to automatic selection.
+Streaming conversion also consumes `interaction.status_update`, terminal
+`interaction.completed`, and SSE `error` events. Cancellation and failures map
+to `failed`, token-budget exhaustion maps to `incomplete`, and a stream that
+ends without a terminal event is never reported as successful.
+
+### 5. Migrate Realtime integrations
+
+For OpenAI, use `gpt-realtime-2.1` (or the mini variant), nest formats and VAD
+under `session.audio.input/output`, and consume `response.output_audio.*`,
+`response.output_text.*`, and `response.output_audio_transcript.*` events.
+Transcription connects with `intent=transcription`; continuous translation uses
+`/v1/realtime/translations` and its `session.*` event namespace.
+
+For xAI, create a normal `Vendor.Grok` connector and use
+`GrokRealtimeSession`. It shares the transport implementation but exposes
+xAI's provider-specific session type and full PCM rate set. Use
+`GrokRealtimeAPI` for ephemeral browser credentials and SIP refer/hangup.
+
+The complete protocols, events, and production checklists are documented in
+[OpenAI Realtime API](#openai-realtime-api) and
+[xAI Realtime Voice Agent API](#xai-realtime-voice-agent-api).
+
+### 6. Review model defaults and media behavior
+
+Recommended starting points in 1.0.0 are:
+
+| Workload | Recommended model/API |
+|----------|-----------------------|
+| Highest-capability OpenAI text/agents | `gpt-5.6-sol` (`gpt-5.6` alias) |
+| Balanced OpenAI production agents | `gpt-5.6-terra` |
+| Economical OpenAI high-throughput work | `gpt-5.6-luna` |
+| Anthropic frontier work | `claude-opus-5`; use `claude-sonnet-5` for a balanced general path |
+| Google multimodal/agent work | `gemini-3.6-flash` through Interactions |
+| xAI text/agent work | `grok-4.5` |
+| OpenAI image generation/editing | `gpt-image-2` |
+| Google native image | `gemini-3.1-flash-image` |
+| xAI image quality | `grok-imagine-image-quality` |
+| Google multimodal embeddings | `gemini-embedding-2` |
+| Google low-cost video | `veo-3.1-lite-generate-preview` |
+| xAI higher-fidelity image-to-video | `grok-imagine-video-1.5` |
+| OpenAI realtime voice | `gpt-realtime-2.1` |
+| xAI realtime voice | `grok-voice-latest` |
+| File transcription | `gpt-transcribe`, `gemini-3.6-flash`, or `xai-stt` |
+
+Sora 2 and Sora 2 Pro remain callable but carry published deprecation and
+retirement metadata. Do not hide them merely because `isActive` is true; surface
+their lifecycle status and dates to operators.
+
+### 7. Verify the upgrade
+
+At minimum, run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run test:unit
+npm run build
+```
+
+For applications with credentials, add a small authenticated smoke test for
+each enabled vendor and every production-critical Realtime/media flow. The
+library's 1.0.0 validation included 6,381 unit tests across 284 files and 21 live
+API checks covering current text models, Google stored Interactions, strict
+named-tool selection on both API paths, native images, bounded external-media
+embeddings, Omni video, OpenAI Realtime protocols, and xAI TTS/STT/Voice Agent
+flows including 32 kHz PCM.
+
+For the complete vendor-by-vendor before/after analysis, see
+[`docs/MODEL_REGISTRY_AUDIT.md`](./docs/MODEL_REGISTRY_AUDIT.md).
+
+---
+
 ## Getting Started
 
 ### Installation
@@ -165,6 +377,7 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=...
 GROQ_API_KEY=...
+XAI_API_KEY=xai-...
 
 # Optional: OAuth encryption key for external APIs
 OAUTH_ENCRYPTION_KEY=your-32-byte-hex-key
@@ -185,7 +398,7 @@ Connector.create({
 // 2. Create an agent
 const agent = Agent.create({
   connector: 'openai',
-  model: 'gpt-4.1',
+  model: 'gpt-5.6-terra',
 });
 
 // 3. Run the agent
@@ -236,7 +449,7 @@ Connector.create({
 
 const agent = Agent.create({
   connector: 'anthropic',
-  model: 'claude-opus-4-5-20251101',
+  model: 'claude-fable-5',
 });
 
 // Ask a question
@@ -251,7 +464,7 @@ Agents maintain conversation history automatically:
 ```typescript
 const agent = Agent.create({
   connector: 'openai',
-  model: 'gpt-4.1',
+  model: 'gpt-5.6-terra',
 });
 
 // First turn
@@ -286,11 +499,11 @@ Change settings during execution:
 ```typescript
 const agent = Agent.create({
   connector: 'openai',
-  model: 'gpt-4.1',
+  model: 'gpt-5.6-terra',
 });
 
-// Change model
-agent.setModel('gpt-4o');
+// Change to a model that supports sampling controls.
+agent.setModel('gpt-4.1');
 
 // Change temperature
 agent.setTemperature(0.9);
@@ -442,6 +655,7 @@ interface AdvancedTextCapabilities {
     mode: 'unsupported' | 'implicit' | 'request_controlled' | 'explicit_resource';
     ttlModes: Array<'short' | 'extended'>;
     reportsCacheUsage: boolean;
+    explicitBreakpoints?: boolean;
   };
   batch: {
     supported: boolean;
@@ -497,6 +711,7 @@ type PromptCachePolicy =
       mode: 'auto';
       ttl?: 'short' | 'extended';
       key?: string;
+      breakpointMode?: 'implicit' | 'explicit';
       strict?: boolean;
     };
 ```
@@ -509,6 +724,7 @@ optional fields is deliberately normalized:
 | `ttl: 'short'` | Use the provider's default/short-lived cache behavior |
 | `ttl: 'extended'` | Request the provider's supported extended retention mode |
 | `key` | Stable routing/affinity key where the provider exposes one |
+| `breakpointMode` | GPT-5.6+ implicit or explicit content-breakpoint selection |
 | `strict: true` | Reject unsupported caching or TTL before inference instead of degrading |
 
 Without `strict`, an unsupported cache request is removed and the call proceeds normally. If
@@ -545,7 +761,14 @@ a provider/deployment with the required data posture.
 - **Anthropic:** `auto` emits an ephemeral cache control marker. `extended` selects the provider's
   extended TTL; usage can report both short- and extended-TTL cache creation.
 - **OpenAI:** eligible prompts benefit from implicit caching. A normalized `key` and supported
-  extended retention are mapped to Responses API controls.
+  extended retention are mapped to Responses API controls. GPT-5.6+ can also
+  mark supported input text/image/file blocks with
+  `promptCacheBreakpoint: true`; set `breakpointMode: 'explicit'` to disable
+  the automatic latest-message breakpoint. The default `implicit` mode keeps
+  that automatic breakpoint and also honors caller-marked content blocks. The converter emits
+  `prompt_cache_breakpoint: { mode: 'explicit' }` only when caching is enabled
+  and the selected model reports `explicitBreakpoints`. Non-strict degradation
+  removes both unsupported request controls and content-level markers.
 - **Google:** eligible prompts may report implicit cached-content tokens. Explicit cached-content
   resource creation/lifecycle is not hidden behind this request policy and is not currently part of
   the normalized contract.
@@ -3760,7 +3983,7 @@ Each entry renders as `**key** (priority): description` followed by a plain fenc
 
 ### UI Display (`showInUI`)
 
-Each InContextMemory entry has an optional `showInUI` boolean flag. When set to `true`, the entry is displayed in the host application's UI (e.g., HOSEA's "Dynamic UI" sidebar panel) with full rich markdown rendering — the same rendering capabilities as the chat window (code blocks, tables, LaTeX math, Mermaid diagrams, Vega-Lite charts, mindmaps, etc.).
+Each InContextMemory entry has an optional `showInUI` boolean flag. When set to `true`, the host application can display the entry in a sidebar or dashboard with full rich markdown rendering — the same rendering capabilities as a chat view (code blocks, tables, LaTeX math, Mermaid diagrams, Vega-Lite charts, mindmaps, etc.).
 
 This enables agents to create **live dashboards**, **progress displays**, and **structured results** that the user can see at a glance without scrolling through chat history.
 
@@ -3839,7 +4062,7 @@ Users can **pin** specific entries to always show them in the UI, regardless of 
 - The user wants to monitor a specific key during a session
 - The agent sets `showInUI: false` on an entry the user still wants to see
 
-Pinned keys are persisted per-agent (in HOSEA: `~/.oneringai/agents/<agentId>/ui_config.json`), so they survive app restarts.
+Pin persistence belongs to the host application. A host can store the selected keys per agent so they survive application restarts; OneRingAI supplies the entry data and change callback, not a UI-specific persistence layer.
 
 #### Rendering
 
@@ -4479,7 +4702,7 @@ Vendor-agnostic reasoning configuration that maps to each provider's native API:
 | Provider | `effort` maps to | `budgetTokens` maps to |
 |----------|-----------------|----------------------|
 | OpenAI | `reasoning.effort` | N/A |
-| Anthropic | N/A | `thinking.budget_tokens` |
+| Anthropic | `output_config.effort` | `thinking.budget_tokens` on fixed-budget models |
 | Google | N/A | `thinkingConfig.thinkingBudget` |
 
 ```typescript
@@ -4500,6 +4723,11 @@ await agent2.run('Deep reasoning task', { thinking: { enabled: true, budgetToken
 // runDirect() also supports thinking
 await agent.runDirect('Quick Q', { thinking: { enabled: true, effort: 'low' } });
 ```
+
+The normalized `thinking.enabled` flag gates both its nested `effort` and
+budget. Anthropic also supports native effort independently of thinking; use
+`vendorOptions: { effort: 'low' | 'medium' | 'high' | ... }` when that distinct
+provider behavior is intended while normalized thinking is disabled.
 
 ### Comparison: run() vs runDirect()
 
@@ -9409,20 +9637,20 @@ Output example:
 9. **Retry Logic**: Automatically retry failed tool calls
 10. **Transformation**: Sanitize inputs or transform outputs
 
-### Integration with Hosea
+### Frontend UI Integration
 
-The Hosea desktop app uses the plugin system to emit Dynamic UI content when browser tools execute:
+A host application can use the plugin system to emit UI updates when browser
+or other long-running tools execute:
 
 ```typescript
-// apps/hosea/src/main/plugins/HoseaUIPlugin.ts
 import type { IToolExecutionPlugin, PluginExecutionContext } from '@everworker/oneringai';
 
-export class HoseaUIPlugin implements IToolExecutionPlugin {
-  readonly name = 'hosea-ui';
+export class BrowserUIPlugin implements IToolExecutionPlugin {
+  readonly name = 'browser-ui';
   readonly priority = 200; // Run late
 
   constructor(private options: {
-    emitDynamicUI: (instanceId: string, content: DynamicUIContent) => void;
+    emitUI: (instanceId: string, content: BrowserUIContent) => void;
     getInstanceId: () => string;
   }) {}
 
@@ -9438,7 +9666,7 @@ export class HoseaUIPlugin implements IToolExecutionPlugin {
       const typedResult = result as { success?: boolean; url?: string };
 
       if (typedResult?.success) {
-        this.options.emitDynamicUI(instanceId, {
+        this.options.emitUI(instanceId, {
           type: 'display',
           title: 'Browser',
           elements: [{ type: 'browser', instanceId, currentUrl: typedResult.url }],
@@ -9454,8 +9682,8 @@ export class HoseaUIPlugin implements IToolExecutionPlugin {
 }
 
 // Register with agent
-agent.tools.executionPipeline.use(new HoseaUIPlugin({
-  emitDynamicUI: (id, content) => mainWindow?.send('dynamic-ui', id, content),
+agent.tools.executionPipeline.use(new BrowserUIPlugin({
+  emitUI: (id, content) => frontendEvents.emit('browser-ui', { id, content }),
   getInstanceId: () => currentInstanceId,
 }));
 ```
@@ -11439,7 +11667,7 @@ import { Agent, createMessageWithImages } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
-  model: 'gpt-4o',
+  model: 'gpt-5.6-terra',
 });
 
 // From file path
@@ -11480,7 +11708,7 @@ import { Agent, readClipboardImage, hasClipboardImage } from '@everworker/onerin
 
 const agent = Agent.create({
   connector: 'anthropic',
-  model: 'claude-opus-4-5-20251101',
+  model: 'claude-opus-5',
 });
 
 // Check if clipboard has an image
@@ -11505,7 +11733,7 @@ if (await hasClipboardImage()) {
 ```typescript
 const agent = Agent.create({
   connector: 'openai',
-  model: 'gpt-4o',
+  model: 'gpt-5.6-terra',
   tools: [extractTextTool, identifyObjectsTool],
 });
 
@@ -11530,7 +11758,8 @@ const response = await agent.run([
 The library provides comprehensive Text-to-Speech (TTS) and Speech-to-Text (STT) capabilities.
 These APIs are request-based and work best for files or bounded generation. For
 live speech-to-speech, streaming transcription, or continuous translation, use
-the [OpenAI Realtime API](#openai-realtime-api).
+the [OpenAI Realtime API](#openai-realtime-api) or
+[xAI Voice Agent API](#xai-realtime-voice-agent-api).
 
 ### Text-to-Speech
 
@@ -11716,9 +11945,42 @@ for await (const event of voice.wrap(agent.stream('Tell me a story'))) {
 **Streaming notes:**
 - **MP3 format** (default) is recommended — best compatibility and quality
 - **PCM format** enables streaming mode but browser playback is experimental
-- Streaming providers (OpenAI) yield chunks as they arrive from the API
+- Streaming providers (OpenAI and xAI) yield chunks as they arrive from the API
 - Non-streaming providers fall back to buffered synthesis automatically
 - VoiceStream accumulates small API chunks into ~125ms buffers before emitting events
+
+#### xAI TTS and WebSocket streaming
+
+Use a Grok connector with the endpoint model id `xai-tts`. xAI accepts expressive
+tags such as `[laugh]` and `[pause]`, custom voice ids, BCP-47 language codes,
+telephony codecs, and bidirectional WebSocket streaming.
+For buffered synthesis, `vendorOptions.output_format.codec` may override the
+normalized `format`; `TTSResponse.format` follows xAI's response `Content-Type`
+or JSON `content_type`, so returned WAV/PCM/telephony bytes are never mislabeled
+with the caller's earlier default.
+
+```typescript
+Connector.create({
+  name: 'xai',
+  vendor: Vendor.Grok,
+  auth: { type: 'api_key', apiKey: process.env.XAI_API_KEY! },
+});
+
+const xaiTTS = TextToSpeech.create({
+  connector: 'xai', model: 'xai-tts', voice: 'eve',
+});
+
+for await (const chunk of xaiTTS.synthesizeStream('[laugh] Hello!', {
+  format: 'mulaw',
+  vendorOptions: {
+    language: 'en',
+    sample_rate: 8000,
+    optimize_streaming_latency: 2, // xAI accepts levels 0, 1, and 2
+  },
+})) {
+  if (chunk.audio.length) sendToPhone(chunk.audio);
+}
+```
 
 ### Speech-to-Text
 
@@ -11737,7 +11999,7 @@ Connector.create({
 // Create STT instance
 const stt = SpeechToText.create({
   connector: 'openai',
-  model: 'whisper-1',
+  model: 'gpt-transcribe',
 });
 
 // Transcribe from file path
@@ -11750,11 +12012,37 @@ const audioBuffer = await fs.readFile('./audio.mp3');
 const result2 = await stt.transcribe(audioBuffer);
 ```
 
+When a `Buffer` contains a normal audio container, OneRingAI detects WAV, AIFF,
+MP3, FLAC, Ogg, WebM, MP4/M4A, or AAC bytes and preserves that format. For a
+headerless raw buffer, provide the normalized wire metadata. AAC ADTS headers,
+including the `F0`/`F8` CRC-protected variants and `F1`/`F9` unprotected
+variants, are checked before MPEG frame sync so AAC is never mislabeled as MP3:
+
+```typescript
+const telephoneAudio = await stt.transcribe(pcm16le8kBuffer, {
+  encoding: 'pcm',       // 'pcm', 'mulaw', or 'alaw'
+  sampleRate: 8000,
+});
+```
+
+Raw input otherwise defaults to signed 16-bit little-endian PCM at 16 kHz.
+This is especially important for Twilio audio, which is 8 kHz; `TextPipeline`
+sets that metadata automatically after the adapter decodes PCMU to PCM. When
+OpenAI receives raw μ-law or A-law, OneRingAI wraps it in a non-PCM WAV with an
+18-byte `WAVEFORMATEX` chunk and the required zero `cbSize`; PCM keeps the
+standard 16-byte `fmt` chunk.
+
 #### Timestamps
 
 ```typescript
+// Whisper remains available when word/segment timestamp formats are required.
+const timestampedStt = SpeechToText.create({
+  connector: 'openai',
+  model: 'whisper-1',
+});
+
 // Word-level timestamps
-const withWords = await stt.transcribeWithTimestamps(audioBuffer, 'word');
+const withWords = await timestampedStt.transcribeWithTimestamps(audioBuffer, 'word');
 console.log(withWords.words);
 // [
 //   { word: 'Hello', start: 0.0, end: 0.5 },
@@ -11762,11 +12050,31 @@ console.log(withWords.words);
 // ]
 
 // Segment-level timestamps
-const withSegments = await stt.transcribeWithTimestamps(audioBuffer, 'segment');
+const withSegments = await timestampedStt.transcribeWithTimestamps(audioBuffer, 'segment');
 console.log(withSegments.segments);
 // [
 //   { id: 0, text: 'Hello world.', start: 0.0, end: 1.5 },
 // ]
+```
+
+Google's native `gemini-3.6-flash` transcription uses the Interactions API and
+supports normalized segment timestamps. The API currently returns timestamped
+text markers rather than reliable per-word annotations in live responses, so
+the registry deliberately advertises `segment` only. Google output is plain
+text; `json`, `verbose_json`, `srt`, and `vtt` are rejected instead of being
+silently ignored. Native language hints, custom vocabulary, and diarization can
+be supplied with `language` and `vendorOptions`:
+
+```typescript
+const googleResult = await googleStt.transcribe(audio, {
+  language: 'en',
+  includeTimestamps: true,
+  timestampGranularity: 'segment',
+  vendorOptions: {
+    customVocabulary: ['OneRingAI'],
+    diarizationMode: 'speaker',
+  },
+});
 ```
 
 #### Translation
@@ -11777,12 +12085,18 @@ Translate audio to English:
 const stt = SpeechToText.create({
   connector: 'openai',
   model: 'whisper-1',
+  language: 'fr', // default source-language hint for transcribe and translate
 });
 
 // Translate French audio to English
 const english = await stt.translate(frenchAudioBuffer);
+const germanHint = await stt.translate(germanAudioBuffer, { language: 'de' });
 console.log(english.text);  // English translation
 ```
+
+`translate()` forwards the instance default unless a per-call `language` is
+provided. The language is a source-language hint; the selected model/provider
+still determines the translation target.
 
 #### Output Formats
 
@@ -11811,6 +12125,40 @@ const result = await stt.transcribe(audio, { language: 'fr' });  // French
 const result2 = await stt.transcribe(audio, { language: 'es' }); // Spanish
 ```
 
+#### xAI live streaming transcription
+
+`SpeechToText.transcribeStream()` is available when the selected provider
+implements `IStreamingSpeechToTextProvider`. It accepts real-time-paced raw
+audio chunks and yields `created`, `transcript`, and `done` events. xAI supports
+PCM16, G.711 µ-law/A-law, interim results, keyterms, diarization, multichannel
+audio, VAD endpointing, and Smart Turn.
+
+```typescript
+const liveSTT = SpeechToText.create({ connector: 'xai', model: 'xai-stt' });
+
+for await (const event of liveSTT.transcribeStream(microphoneChunks(), {
+  sampleRate: 16000,
+  encoding: 'pcm',
+  interimResults: true,
+  language: 'en',
+  vendorOptions: {
+    keyterms: ['OneRingAI'],
+    smart_turn: 0.7,
+    smart_turn_timeout: 3000,
+  },
+})) {
+  if (event.type === 'transcript') {
+    renderTranscript(event.text ?? '', { final: event.isFinal });
+  }
+}
+```
+
+The library waits for `transcript.created` before sending binary frames and
+sends `audio.done` after the input iterator completes. The iterator must pace
+audio in real time; buffered audio is not automatically delayed. Yield
+`{ type: 'finalize' }` (or include `channel`) for push-to-talk utterance
+finalization without closing the session.
+
 #### Model Introspection
 
 ```typescript
@@ -11827,7 +12175,7 @@ const inputFormats = stt.getSupportedInputFormats();
 const outputFormats = stt.getSupportedOutputFormats();
 
 // Get timestamp granularities
-const granularities = stt.getTimestampGranularities();  // ['word', 'segment']
+const granularities = stt.getTimestampGranularities();  // model-specific
 ```
 
 ### Available Models
@@ -11836,23 +12184,28 @@ const granularities = stt.getTimestampGranularities();  // ['word', 'segment']
 
 | Model | Provider | Features | Price/1k chars |
 |-------|----------|----------|----------------|
+| `gpt-4o-mini-tts` | OpenAI | Instruction steering, emotions | $0.015 |
 | `tts-1` | OpenAI | Fast, low-latency | $0.015 |
 | `tts-1-hd` | OpenAI | High-quality audio | $0.030 |
-| `gpt-4o-mini-tts` | OpenAI | Instruction steering, emotions | $0.015 |
+| `gemini-3.1-flash-tts-preview` | Google | Current controllable low-latency TTS | token priced |
 | `gemini-2.5-flash-preview-tts` | Google | Low latency, 30 voices | - |
 | `gemini-2.5-pro-preview-tts` | Google | High quality, 30 voices | - |
+| `xai-tts` | xAI | REST/WebSocket, expressive tags, custom voices, telephony codecs | $0.015 |
 
 #### STT Models
 
 | Model | Provider | Features | Price/minute |
 |-------|----------|----------|--------------|
+| `gpt-transcribe` | OpenAI | Current accurate file transcription | $0.0045 |
 | `gpt-live-transcribe` | OpenAI | Recommended realtime streaming transcription, latency control, vocabulary/language hints | $0.017 |
 | `gpt-realtime-whisper` | OpenAI | Low-latency realtime streaming transcription | $0.017 |
-| `whisper-1` | OpenAI | General-purpose, 50+ languages | $0.006 |
 | `gpt-4o-transcribe` | OpenAI | Superior accuracy | $0.006 |
 | `gpt-4o-transcribe-diarize` | OpenAI | Speaker identification | $0.012 |
+| `whisper-1` | OpenAI | Legacy-compatible general-purpose transcription | $0.006 |
 | `whisper-large-v3` | Groq | Ultra-fast (12x cheaper!) | $0.0005 |
 | `distil-whisper-large-v3-en` | Groq | English-only, fastest | $0.00033 |
+| `gemini-3.6-flash` | Google | Interactions transcription, normalized segment timestamps, vocabulary/diarization controls | audio-token priced |
+| `xai-stt` | xAI | REST + WebSocket, diarization, multichannel, Smart Turn | $0.00167 REST / $0.00333 stream |
 
 ### Voice Assistant Pipeline
 
@@ -11868,8 +12221,8 @@ Connector.create({
   auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
 });
 
-const stt = SpeechToText.create({ connector: 'openai', model: 'whisper-1' });
-const agent = Agent.create({ connector: 'openai', model: 'gpt-4.1' });
+const stt = SpeechToText.create({ connector: 'openai', model: 'gpt-transcribe' });
+const agent = Agent.create({ connector: 'openai', model: 'gpt-5.6-terra' });
 const tts = TextToSpeech.create({ connector: 'openai', model: 'tts-1-hd', voice: 'nova' });
 
 // Voice assistant pipeline
@@ -11898,12 +12251,14 @@ const ttsCost = calculateTTSCost('tts-1-hd', 5000);  // 5000 characters
 console.log(`TTS cost: $${ttsCost}`);  // $0.15
 
 // STT cost (per minute)
-const sttCost = calculateSTTCost('whisper-1', 300);  // 5 minutes
-console.log(`STT cost: $${sttCost}`);  // $0.03
+const sttCost = calculateSTTCost('gpt-transcribe', 300);  // 5 minutes
+console.log(`STT cost: $${sttCost}`);  // $0.0225
 
 // Groq is much cheaper for STT
 const groqCost = calculateSTTCost('whisper-large-v3', 300);  // 5 minutes
 console.log(`Groq STT cost: $${groqCost}`);  // $0.0025
+
+const xaiStreaming = calculateSTTCost('xai-stt', 300, { streaming: true });
 ```
 
 ---
@@ -12080,9 +12435,22 @@ Supported audio formats are:
 ```typescript
 type OpenAIRealtimeAudioFormat =
   | { type: 'audio/pcm'; rate: 24000 }
+  | { type: 'audio/opus'; rate?: 24000 }
+  | { type: 'audio/pcmu' }
+  | { type: 'audio/pcma' };
+
+type GrokRealtimeAudioFormat =
+  | { type: 'audio/pcm'; rate: 8000 | 16000 | 22050 | 24000 | 32000 | 44100 | 48000 }
+  | { type: 'audio/opus'; rate?: 24000 }
   | { type: 'audio/pcmu' }
   | { type: 'audio/pcma' };
 ```
+
+`OpenAIRealtimeAudioFormat` accepts only OpenAI's 24 kHz PCM contract, while
+`GrokRealtimeAudioFormat` carries xAI's full PCM range. REST and WebSocket
+OpenAI boundaries—including every `updateSession()` call—also validate the rate
+at runtime to protect JavaScript and type-escape callers. The xAI-specific
+session accepts its wider rate set in both initial configuration and updates.
 
 Turn detection accepts `server_vad`, `semantic_vad`, or `null`:
 
@@ -12550,19 +12918,118 @@ microphone or play sound. The WebRTC helper mints credentials but does not manag
 provision phone numbers or receive webhooks. `VoiceBridge` supplies those media
 and lifecycle integrations for supported telephony adapters.
 
+### xAI Realtime Voice Agent API
+
+xAI's Voice Agent API is wire-compatible with the OpenAI Realtime protocol, so
+`GrokRealtimeSession`, `RealtimePipeline`, and `VoiceBridge` select xAI behavior
+from a `Vendor.Grok` connector. `grok-voice-latest` currently resolves through
+the registry to `grok-voice-think-fast-2.0`.
+
+```typescript
+import {
+  Connector,
+  GrokRealtimeAPI,
+  GrokRealtimeSession,
+  Vendor,
+} from '@everworker/oneringai';
+
+Connector.create({
+  name: 'xai',
+  vendor: Vendor.Grok,
+  auth: { type: 'api_key', apiKey: process.env.XAI_API_KEY! },
+});
+
+const voice = new GrokRealtimeSession({
+  connector: 'xai',
+  model: 'grok-voice-latest',
+  reasoningEffort: 'high', // handshake option: 'high' or 'none'
+  session: {
+    instructions: 'Be concise and helpful.',
+    voice: 'eve',
+    turn_detection: { type: 'server_vad' },
+    resumption: { enabled: true },
+    audio: {
+      input: {
+        format: { type: 'audio/pcm', rate: 32000 },
+        transport: 'binary',
+        transcription: {
+          language_hint: 'en',
+          keyterms: ['OneRingAI'],
+        },
+      },
+      output: {
+        format: { type: 'audio/pcm', rate: 32000 },
+        transport: 'binary',
+        speed: 1,
+      },
+    },
+  },
+});
+
+voice.on('event', (event) => {
+  if (event.type === 'response.output_audio.delta') playBase64(event.delta);
+});
+await voice.connect();
+```
+
+Unlike OpenAI's Realtime session shape, xAI requires `voice` and
+`turn_detection` directly under `session`. Transcription uses
+`session.audio.input.transcription.language_hint` (not `language`).
+`RealtimePipeline` and `VoiceBridge` translate their normalized options to this
+xAI layout automatically.
+
+Set `audio.input.transport` or `audio.output.transport` to `binary` to use raw
+WebSocket frames. `appendAudio(Buffer)` then sends binary input directly and the
+session emits the typed `audio` event for binary assistant frames. JSON remains
+the default and is the transport used by `RealtimePipeline`.
+
+xAI accepts PCM sample rates of 8,000, 16,000, 22,050, 24,000, 32,000, 44,100,
+and 48,000 Hz for both input and output. PCMU/PCMA keep their native telephony
+rate. `GrokRealtimeSessionConfig` represents that range; the OpenAI session
+type and runtime boundary remain fixed at 24,000 Hz.
+
+Resume a disconnected conversation by constructing a new session with the
+previous `conversationId`. For inbound SIP, pass `callId`; the model query is
+then omitted because the call already owns its session.
+
+Browser clients must use an ephemeral secret instead of exposing the team API key:
+
+```typescript
+const api = new GrokRealtimeAPI('xai');
+const secret = await api.createClientSecret(300);
+
+await api.referCall('call_123', 'tel:+14155550123');
+await api.hangupCall('call_123');
+```
+
+xAI also supports MCP, hosted web/X/collections search, custom functions,
+pronunciation replacement, language hints, keyterms, Opus/PCM/G.711 codecs,
+custom voices, session resumption, and SIP. Provider-specific session fields can
+be sent through the typed session shape where represented or via raw protocol
+events with `send()`.
+
+xAI currently accepts `server_vad` or disabled turn detection. Do not reuse an
+OpenAI `semantic_vad` configuration for a Grok session: `RealtimePipeline`
+rejects it during initialization so an unsupported session update never reaches
+the provider.
+
 ### Public Realtime Exports
 
 The package root exports:
 
 - runtime classes: `OpenAIRealtimeSession`, `OpenAIRealtimeAPI`,
-  `RealtimePipeline`, and `VoiceBridge`;
+  `GrokRealtimeSession`, `GrokRealtimeAPI`, `RealtimePipeline`, and
+  `VoiceBridge`;
 - session/API types: `OpenAIRealtimeSessionOptions`,
   `CreateRealtimeClientSecretOptions`, and
   `CreateRealtimeTranslationClientSecretOptions`;
 - configuration types: `OpenAIRealtimeSessionConfig`,
   `OpenAIRealtimeTranscriptionSessionConfig`,
   `OpenAIRealtimeTranslationSessionConfig`, and
-  `OpenAIRealtimeTranslationClientSessionConfig`;
+  `OpenAIRealtimeTranslationClientSessionConfig`, plus
+  `GrokRealtimeSessionConfig`;
+- audio types: `OpenAIRealtimePCMSampleRate`, `RealtimePCMSampleRate`,
+  `OpenAIRealtimeAudioFormat`, and `GrokRealtimeAudioFormat`;
 - protocol types: `OpenAIRealtimeClientEvent`,
   `OpenAIRealtimeServerEvent`, `OpenAIRealtimeClientSecret`, audio/VAD types,
   function/MCP tool types, voices, and model ids; and
@@ -12586,7 +13053,7 @@ and [SIP](https://developers.openai.com/api/docs/guides/realtime-sip).
 
 ## Image Generation
 
-The library provides comprehensive image generation capabilities with support for OpenAI (DALL-E) and Google (Imagen).
+The unified image API supports current OpenAI GPT Image, Google Gemini native-image/Imagen, and xAI Grok Imagine generation and editing. The high-level helper now defaults to `gpt-image-2`, `gemini-3.1-flash-image`, or `grok-imagine-image-quality` according to the connector vendor.
 
 ### Basic Usage
 
@@ -12607,9 +13074,10 @@ const imageGen = ImageGeneration.create({ connector: 'openai' });
 // Generate an image
 const result = await imageGen.generate({
   prompt: 'A futuristic city at sunset with flying cars',
-  model: 'dall-e-3',
+  model: 'gpt-image-2',       // optional: current vendor default
   size: '1024x1024',
-  quality: 'hd',
+  quality: 'high',
+  vendorOptions: { output_format: 'png' },
 });
 
 // Save to file
@@ -12617,37 +13085,32 @@ const buffer = Buffer.from(result.data[0].b64_json!, 'base64');
 await fs.writeFile('./output.png', buffer);
 ```
 
-### OpenAI DALL-E
+### OpenAI GPT Image
 
 ```typescript
-// DALL-E 3 (recommended for quality)
+// GPT Image 2 is the current default for generation and editing.
 const result = await imageGen.generate({
   prompt: 'A serene mountain landscape',
-  model: 'dall-e-3',
-  size: '1024x1024',      // 1024x1024, 1024x1792, 1792x1024
-  quality: 'hd',           // standard or hd
-  style: 'vivid',          // vivid or natural
+  model: 'gpt-image-2',
+  size: '1536x1024',
+  quality: 'high',         // auto, low, medium, high
+  vendorOptions: {
+    output_format: 'webp',
+    background: 'opaque',
+  },
 });
 
-// DALL-E 3 often revises prompts for better results
-console.log('Revised prompt:', result.data[0].revised_prompt);
-
-// DALL-E 2 (faster, supports multiple images)
-const multiResult = await imageGen.generate({
-  prompt: 'A colorful abstract pattern',
-  model: 'dall-e-2',
-  size: '512x512',         // 256x256, 512x512, 1024x1024
-  n: 4,                    // Generate up to 10 images
+// The high-level edit API also selects GPT Image 2 when model is omitted.
+const edited = await imageGen.edit({
+  image: './source.png',
+  prompt: 'Keep the composition and change the weather to snowfall',
+  vendorOptions: { input_fidelity: 'high' },
 });
-
-// Process all generated images
-for (let i = 0; i < multiResult.data.length; i++) {
-  const buffer = Buffer.from(multiResult.data[i].b64_json!, 'base64');
-  await fs.writeFile(`./output-${i}.png`, buffer);
-}
 ```
 
-### Google Imagen
+`dall-e-2` and `dall-e-3` remain in the registry as retired records for migration and historical cost lookup; do not use them in new integrations.
+
+### Google Gemini native image
 
 ```typescript
 // Setup Google connector
@@ -12659,43 +13122,70 @@ Connector.create({
 
 const googleGen = ImageGeneration.create({ connector: 'google' });
 
-// Imagen 4.0 (standard quality)
+// Nano Banana 2: current general-purpose native image model.
 const result = await googleGen.generate({
   prompt: 'A beautiful butterfly in a garden',
-  model: 'imagen-4.0-generate-001',
-  n: 2,  // Up to 4 images
+  model: 'gemini-3.1-flash-image',
+  size: '2048x2048',
+  aspectRatio: '16:9',
+  n: 2,
 });
 
-// Imagen 4.0 Fast (optimized for speed)
+// Nano Banana 2 Lite: low-latency 1K generation and editing.
 const fastResult = await googleGen.generate({
   prompt: 'A simple geometric pattern',
-  model: 'imagen-4.0-fast-generate-001',
+  model: 'gemini-3.1-flash-lite-image',
 });
 
-// Imagen 4.0 Ultra (highest quality)
-const ultraResult = await googleGen.generate({
+// Nano Banana Pro: complex layouts and professional 4K output.
+const proResult = await googleGen.generate({
   prompt: 'A photorealistic portrait',
-  model: 'imagen-4.0-ultra-generate-001',
+  model: 'gemini-3-pro-image',
+  vendorOptions: { imageSize: '4096px' },
 });
+```
+
+Normalized square sizes map to Gemini's native values: `512x512` → `512`,
+`1024x1024` → `1K`, `2048x2048` → `2K`, and `4096x4096` → `4K`; `auto`
+leaves resolution selection to Google. Current native image models reject
+`candidateCount > 1`, so OneRingAI implements `n` (up to the registry limit of
+four) as bounded parallel `generateContent` requests. Image edits infer PNG,
+JPEG, WebP, or GIF MIME types from the source path or bytes.
+
+### xAI Grok Imagine
+
+```typescript
+Connector.create({
+  name: 'xai',
+  vendor: Vendor.Grok,
+  auth: { type: 'api_key', apiKey: process.env.XAI_API_KEY! },
+});
+
+const grokImages = ImageGeneration.create({ connector: 'xai' });
+const result = await grokImages.generate({
+  prompt: 'Editorial product photograph on a cobalt background',
+  model: 'grok-imagine-image-quality',
+  aspectRatio: '4:3',
+  vendorOptions: {
+    resolution: '2K',
+    storage_options: { public: true },
+  },
+});
+// Responses may include b64_json/url plus xAI file_id/public_url metadata.
 ```
 
 ### Available Models
 
-#### OpenAI Image Models
+| Vendor | Model | Lifecycle | Main use | Pricing representation |
+|--------|-------|-----------|----------|------------------------|
+| OpenAI | `gpt-image-2` | Active, preferred | High-quality generation/editing, transparent output | Text/image input and image-output tokens |
+| Google | `gemini-3.1-flash-image` | Active, preferred | General generation/editing up to 4K | $0.045-$0.151 by resolution |
+| Google | `gemini-3.1-flash-lite-image` | Active, preferred | Low-latency 1K work | $0.0336/image |
+| Google | `gemini-3-pro-image` | Active | Professional design and 4K | $0.134-$0.24/image |
+| xAI | `grok-imagine-image-quality` | Active, preferred | Higher-fidelity generation/multi-image editing | $0.05 at 1K, $0.07 at 2K; $0.01/input image |
+| xAI | `grok-imagine-image` | Active | Fast generation/editing | $0.02/image |
 
-| Model | Features | Max Images | Sizes | Price/Image |
-|-------|----------|------------|-------|-------------|
-| `dall-e-3` | **Deprecated** (migrate to `gpt-image-1.5`) — HD quality, style control, prompt revision | 1 | 1024², 1024x1792, 1792x1024 | $0.04-0.08 |
-| `dall-e-2` | **Deprecated** (migrate to `gpt-image-1-mini`) — Fast, multiple images, editing, variations | 10 | 256², 512², 1024² | $0.02 |
-| `gpt-image-1` | Previous-gen model (superseded by `gpt-image-1.5`), transparency support | 10 | 1024², 1024x1536, 1536x1024, auto | $0.042-0.167 |
-
-#### Google Image Models
-
-| Model | Features | Max Images | Price/Image |
-|-------|----------|------------|-------------|
-| `imagen-4.0-generate-001` | Standard quality, aspect ratios | 4 | $0.04 |
-| `imagen-4.0-ultra-generate-001` | Highest quality | 4 | $0.06 |
-| `imagen-4.0-fast-generate-001` | Speed optimized | 4 | $0.02 |
+Use `getActiveImageModels()` for callable entries and `getDeprecatedImageModels()` for still-callable models with a migration notice. Retired records remain queryable but are excluded from the active helper.
 
 ### Model Introspection
 
@@ -12705,10 +13195,11 @@ const models = await imageGen.listModels();
 console.log('Available models:', models);
 
 // Get model information
-const info = imageGen.getModelInfo('dall-e-3');
+const info = imageGen.getModelInfo('gpt-image-2');
 console.log('Max images:', info.capabilities.maxImagesPerRequest);
 console.log('Supported sizes:', info.capabilities.sizes);
-console.log('Has style control:', info.capabilities.features.styleControl);
+console.log('Lifecycle:', info.lifecycle);
+console.log('Official docs:', info.sources?.documentation);
 ```
 
 ### Cost Estimation
@@ -12716,24 +13207,37 @@ console.log('Has style control:', info.capabilities.features.styleControl);
 ```typescript
 import { calculateImageCost } from '@everworker/oneringai';
 
-// Standard quality
-const standardCost = calculateImageCost('dall-e-3', 5, 'standard');
-console.log(`5 standard images: $${standardCost}`);  // $0.20
+// GPT Image 2 uses actual modality-token usage.
+const openaiCost = calculateImageCost('gpt-image-2', 1, {
+  textInputTokens: 100_000,
+  cachedImageInputTokens: 200_000,
+  imageOutputTokens: 300_000,
+});
+console.log(openaiCost); // 9.9
 
-// HD quality
-const hdCost = calculateImageCost('dall-e-3', 5, 'hd');
-console.log(`5 HD images: $${hdCost}`);  // $0.40
+// Resolution and input-image accounting for current models.
+const googleCost = calculateImageCost('gemini-3.1-flash-image', 2, {
+  resolution: '2048px',
+  textInputTokens: 1_000,
+});
+console.log(googleCost); // 0.2025 (two images plus known text-input usage)
 
-// Google Imagen
-const imagenCost = calculateImageCost('imagen-4.0-generate-001', 4);
-console.log(`4 Imagen images: $${imagenCost}`);  // $0.16
+const xaiCost = calculateImageCost('grok-imagine-image-quality', 2, {
+  resolution: '2K',
+  inputImages: 1,
+});
+console.log(xaiCost); // 0.15
 ```
+
+Token fields are composable. Supplying only text or image-input token usage
+adds that known cost to the registry's per-image output estimate; per-image
+output pricing is replaced only when `imageOutputTokens` is supplied.
 
 ---
 
 ## Embeddings
 
-The library provides multi-vendor text embedding generation with a unified API. Embeddings convert text into dense vector representations for semantic search, RAG, clustering, classification, and similarity matching.
+The library provides multi-vendor text embeddings and Google Gemini Embedding 2 multimodal embeddings through one API. Text, image, audio, video, and document inputs can share one vector space for semantic search, RAG, clustering, classification, and similarity matching.
 
 ### Basic Usage
 
@@ -12782,7 +13286,7 @@ const tiny = await embeddings.embed('Hello world', { dimensions: 128 });
 console.log(tiny.embeddings[0].length);  // 128
 ```
 
-Models with MRL support: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-004` (Google), all `qwen3-embedding` variants, `nomic-embed-text`.
+Models with MRL support include `text-embedding-3-small`, `text-embedding-3-large`, `gemini-embedding-2`, `gemini-embedding-001`, all `qwen3-embedding` variants, and `nomic-embed-text`.
 
 ### Default Dimensions
 
@@ -12831,13 +13335,48 @@ Connector.create({
 
 const googleEmb = Embeddings.create({ connector: 'google' });
 
-// text-embedding-004 (768 dims, free tier)
+// gemini-embedding-2 is the current Google default (3072 dimensions).
 const result = await googleEmb.embed('search query');
-console.log(result.embeddings[0].length);  // 768
+console.log(result.embeddings[0].length);  // 3072
 
-// Reduce dimensions
-const compact = await googleEmb.embed('search query', { dimensions: 256 });
+// Task-aware text embedding with dimension reduction.
+const compact = await googleEmb.embed('search query', {
+  dimensions: 512,
+  vendorOptions: {
+    taskType: 'RETRIEVAL_QUERY',
+    title: 'Product documentation query',
+  },
+});
+
+// Multimodal content is exposed directly by the high-level API.
+const mixed = await googleEmb.embedMultimodal([
+  { type: 'text', text: 'Find assets similar to this launch brief' },
+  { type: 'image', data: './campaign.png', mimeType: 'image/png' },
+  { type: 'document', data: './brief.pdf', mimeType: 'application/pdf' },
+], {
+  dimensions: 1024,
+  vendorOptions: { taskType: 'RETRIEVAL_DOCUMENT' },
+});
 ```
+
+`embedMultimodal()` currently requires `gemini-embedding-2`; the provider
+rejects multimodal content for text-only models. `Buffer`, local-path, data-URI,
+and arbitrary HTTP(S) inputs are sent inline; HTTP(S) content is fetched first
+with a 30-second default timeout and a streaming size guard. One request has a
+100 MB aggregate inline-media budget; an individual PDF is limited to 50 MB.
+`Content-Length` is rejected before reading when present, and chunked responses
+are stopped as soon as they cross the budget. Configure a different positive
+timeout with `vendorOptions.mediaDownloadTimeoutMs`; the provider size ceilings
+remain fixed to Google's API contract. Only `gs://` and Gemini Files API URIs
+are emitted as provider-hosted `fileData` references. Data URIs are strictly
+validated as base64, checked against the remaining byte budget before decoding,
+and re-encoded canonically before transmission.
+
+`mimeType` is optional. Explicit values take precedence; otherwise the provider
+inspects common JPEG/PNG/BMP/WebP, WAV/AIFF/MP3/AAC/FLAC/Ogg/WebM/MP4, MOV/MP4/
+AVI/WebM/MPEG/3GP, and PDF signatures before falling back to the path extension.
+This keeps JPEG buffers out of `image/png`, MP3 buffers out of `audio/wav`, and
+MOV files out of `video/mp4`.
 
 ### Ollama Embeddings (Local)
 
@@ -12882,7 +13421,8 @@ const nomic = await local.embed('query', {
 |--------|-------|-------------|----------|-----|------------|-----------------|
 | OpenAI | `text-embedding-3-small` | 1536 | 1536 | Yes | 8,191 | $0.02 |
 | OpenAI | `text-embedding-3-large` | 3072 | 3072 | Yes | 8,191 | $0.13 |
-| Google | `text-embedding-004` | 768 | 768 | Yes | 2,048 | Free |
+| Google | `gemini-embedding-2` | 3072 | 3072 | Yes | 8,192 | $0.20 text; modality-specific media rates |
+| Google | `gemini-embedding-001` | 3072 | 3072 | Yes | 2,048 | $0.15 text |
 | Mistral | `mistral-embed` | 1024 | 1024 | No | 8,192 | $0.10 |
 | Ollama | `qwen3-embedding` | 4096 | 4096 | Yes | 8,192 | Free (local) |
 | Ollama | `qwen3-embedding:4b` | 4096 | 4096 | Yes | 8,192 | Free (local) |
@@ -12944,9 +13484,14 @@ console.log(`$${largeCost} per 1M tokens`);  // $0.13
 const localCost = calculateEmbeddingCost('qwen3-embedding', 1_000_000);
 console.log(localCost);  // null (free, local)
 
-// Google (free tier)
-const googleCost = calculateEmbeddingCost('text-embedding-004', 1_000_000);
-console.log(`$${googleCost}`);  // $0
+// Gemini Embedding 2 mixed-modality accounting plus the 50% batch discount.
+const googleCost = calculateEmbeddingCost('gemini-embedding-2', 1_000_000, {
+  images: 10,
+  audioSeconds: 60,
+  videoFrames: 30,
+  batch: true,
+});
+console.log(googleCost); // 0.11725
 ```
 
 ### Common Use Cases
@@ -12981,7 +13526,7 @@ const newText = await embeddings.embed('The team scored in the final minute');
 
 ## Video Generation
 
-The library provides comprehensive video generation capabilities with support for OpenAI (Sora) and Google (Veo). Video generation is **asynchronous** - you start a job and poll for completion.
+The unified asynchronous video API supports OpenAI Sora, Google Veo/Gemini Omni, and xAI Grok Imagine. Start a job, poll or wait for completion, then download through the same high-level surface.
 
 ### Basic Usage
 
@@ -13105,12 +13650,14 @@ const dataUrl = `data:video/mp4;base64,${base64}`;
 
 ### OpenAI Sora
 
+Sora 2 and Sora 2 Pro are still callable but have a published retirement date of 2026-09-24. The registry therefore reports `isActive: true` and `lifecycle: 'deprecated'`; use `getDeprecatedVideoModels()` to surface that state in production model pickers.
+
 ```typescript
-// Sora 2 (standard quality, good value)
+// Sora 2 (callable during the deprecation window)
 const result = await videoGen.generate({
   prompt: 'A futuristic city at sunset with flying cars',
   model: 'sora-2',
-  duration: 8,              // 4, 8, or 12 seconds
+  duration: 8,              // 4, 8, 12, 16, or 20 seconds
   resolution: '1280x720',   // 720p landscape
   seed: 42,                 // For reproducibility
 });
@@ -13146,11 +13693,12 @@ Connector.create({
 
 const googleVideo = VideoGeneration.create({ connector: 'google' });
 
-// Veo 2.0 (budget-friendly at $0.03/sec)
-const veo2 = await googleVideo.generate({
+// Veo 3.1 Lite is the current high-level Google default.
+const lite = await googleVideo.generate({
   prompt: 'A colorful butterfly landing on a flower',
-  model: 'veo-2.0-generate-001',
-  duration: 5,
+  model: 'veo-3.1-lite-generate-preview',
+  duration: 6,
+  resolution: '1080p',
   vendorOptions: {
     negativePrompt: 'blurry, low quality',  // What to avoid
   },
@@ -13166,7 +13714,7 @@ const veo3 = await googleVideo.generate({
   },
 });
 
-// Veo 3.1 (latest features, 4K support)
+// Veo 3.1 (full feature set and 4K support)
 const veo31 = await googleVideo.generate({
   prompt: 'A drone shot flying over mountains',
   model: 'veo-3.1-generate-preview',
@@ -13174,11 +13722,49 @@ const veo31 = await googleVideo.generate({
   resolution: '4k',
 });
 
-// Veo 3.1 Fast (optimized for speed)
-const fast = await googleVideo.generate({
-  prompt: 'Simple animation of bouncing balls',
-  model: 'veo-3.1-fast-generate-preview',
-  duration: 4,
+// Gemini Omni uses the Interactions API for conversational video editing.
+const omni = await googleVideo.generate({
+  prompt: 'Animate this storyboard with a gentle dolly movement',
+  model: 'gemini-omni-flash-preview',
+  image: './storyboard.png',
+  duration: 6,
+});
+```
+
+For Omni image-to-video, local paths, buffers, data URIs, and HTTP(S) source
+images are normalized to inline image blocks with their detected PNG or JPEG
+MIME type. The public `duration` option is serialized as
+`response_format.duration` (for example, `"6s"`); it is not placed in
+`generation_config.video_config`, whose public control is the generation task.
+
+`veo-2.0-generate-001` is retired and remains only as a registry migration record.
+
+### xAI Grok Imagine Video
+
+```typescript
+Connector.create({
+  name: 'xai',
+  vendor: Vendor.Grok,
+  auth: { type: 'api_key', apiKey: process.env.XAI_API_KEY! },
+});
+
+const grokVideo = VideoGeneration.create({ connector: 'xai' });
+
+// Current text-to-video default.
+const textJob = await grokVideo.generate({
+  prompt: 'A paper sculpture unfolding into a city skyline',
+  model: 'grok-imagine-video',
+  duration: 8,
+  resolution: '720p',
+});
+
+// Grok Imagine Video 1.5 is preferred for higher-fidelity image-to-video.
+const imageJob = await grokVideo.generate({
+  prompt: 'Slow cinematic push-in with moving clouds',
+  model: 'grok-imagine-video-1.5',
+  image: './keyframe.png',
+  duration: 8,
+  resolution: '1080p',
 });
 ```
 
@@ -13295,16 +13881,24 @@ const hd = await videoGen.generate({
 
 | Model | Features | Durations | Resolutions | Price/Second |
 |-------|----------|-----------|-------------|--------------|
-| `sora-2` | Text/image-to-video, audio, seed | 4, 8, 12s | 720p, custom | $0.10 |
-| `sora-2-pro` | + HD, upscaling, style control | 4, 8, 12s | 720p-1080p | $0.30 |
+| `sora-2` | Deprecated/callable; text/image-to-video, audio, extension | 4-20s | 720p | $0.10 ($0.05 batch) |
+| `sora-2-pro` | Deprecated/callable; higher resolution and frame control | 4-20s | 720p-1080p | $0.30-$0.70 ($0.15-$0.35 batch) |
 
 #### Google Veo Models
 
 | Model | Features | Durations | Resolutions | Price/Second |
 |-------|----------|-----------|-------------|--------------|
-| `veo-2.0-generate-001` | Negative prompts, frame control | 5-8s | 720p | $0.35 |
-| `veo-3.1-fast-generate-preview` | Fast inference, audio | 4-8s | 720p-4K | $0.15 |
+| `veo-3.1-lite-generate-preview` | Preferred low-cost preview, native audio | 4-8s | 720p-1080p | $0.05-$0.08 |
+| `veo-3.1-fast-generate-preview` | Fast inference, audio | 4-8s | 720p-4K | $0.10-$0.30 |
 | `veo-3.1-generate-preview` | Full features, 4K | 4-8s | 720p-4K | $0.40 |
+| `gemini-omni-flash-preview` | Conversational generation/editing via Interactions | 3-10s | 720p | $0.10 |
+
+#### xAI Grok Imagine Models
+
+| Model | Features | Durations | Resolutions | Price/Second |
+|-------|----------|-----------|-------------|--------------|
+| `grok-imagine-video` | Text/image-to-video with audio | 1-15s | 480p-720p | $0.05-$0.07 |
+| `grok-imagine-video-1.5` | Preferred higher-fidelity image-to-video | 1-15s | 480p-1080p | $0.08-$0.25 plus $0.01 input image |
 
 ### Model Introspection
 
@@ -13320,6 +13914,7 @@ console.log('Resolutions:', info.capabilities.resolutions);   // ['720x1280', ..
 console.log('Has audio:', info.capabilities.audio);           // true
 console.log('Image-to-video:', info.capabilities.imageToVideo); // true
 console.log('Style control:', info.capabilities.features.styleControl); // false
+console.log('Lifecycle:', info.lifecycle);                      // deprecated
 ```
 
 ### Cost Estimation
@@ -13335,13 +13930,18 @@ console.log(`Sora 2 (8s): $${soraCost}`);  // $0.80
 const proCost = calculateVideoCost('sora-2-pro', 12);  // 12 seconds
 console.log(`Sora 2 Pro (12s): $${proCost}`);  // $3.60
 
-// Veo 2.0: $0.35/second
-const veo2Cost = calculateVideoCost('veo-2.0-generate-001', 8);
-console.log(`Veo 2.0 (8s): $${veo2Cost}`);  // $2.80
+// Veo 3.1 Lite at 1080p: $0.08/second
+const veoCost = calculateVideoCost('veo-3.1-lite-generate-preview', 8, {
+  resolution: '1080p',
+});
+console.log(`Veo 3.1 Lite (8s, 1080p): $${veoCost}`); // $0.64
 
-// Veo 3.1: $0.40/second
-const veo3Cost = calculateVideoCost('veo-3.1-generate-preview', 8);
-console.log(`Veo 3.1 (8s): $${veo3Cost}`);  // $3.20
+// Grok 1.5 at 1080p plus one image input.
+const grokCost = calculateVideoCost('grok-imagine-video-1.5', 8, {
+  resolution: '1080p',
+  inputImages: 1,
+});
+console.log(`Grok Imagine 1.5 (8s, 1080p): $${grokCost}`); // $2.01
 ```
 
 ### Error Handling
@@ -14011,7 +14611,7 @@ for await (const event of agent.stream('What is the weather in Paris?')) {
 
 ## External API Integration
 
-Connect your AI agents to 45+ external services with enterprise-grade resilience. The library provides both connector-based tools and direct fetch capabilities.
+Connect your AI agents to 50 external services with enterprise-grade resilience. The library provides both connector-based tools and direct fetch capabilities.
 
 ### Overview
 
@@ -14097,9 +14697,9 @@ Connector.create({
 });
 ```
 
-### Supported Services (45+)
+### Supported Services (50)
 
-The library includes built-in definitions for 45+ popular services:
+The library includes built-in definitions for 50 popular services:
 
 | Category | Services |
 |----------|----------|
@@ -14520,7 +15120,7 @@ await agent.run(`
 
 ## Vendor Templates
 
-Quickly set up connectors for 45+ services with pre-configured authentication templates. No need to look up URLs, headers, or scopes - just provide your credentials!
+Quickly set up connectors for 50 services with pre-configured authentication templates. No need to look up URLs, headers, or scopes - just provide your credentials!
 
 ### Quick Start
 
@@ -15044,7 +15644,8 @@ await agent.run('Show me my recent emails');
 
 ## Model Registry
 
-The library includes a comprehensive model registry with metadata for 68+ models.
+The library includes registry schema v2 metadata for 88 text/realtime models,
+plus separate TTS, STT, image, video, and embedding registries.
 
 ### Using the Model Registry
 
@@ -15054,59 +15655,91 @@ import {
   calculateCost,
   getModelsByVendor,
   getActiveModels,
+  getDeprecatedModels,
   LLM_MODELS,
+  MODEL_REGISTRY_SCHEMA_VERSION,
   Vendor,
 } from '@everworker/oneringai';
 
 // Get model information
-const model = getModelInfo('gpt-5.2');
+const model = getModelInfo('gpt-5.6'); // alias -> gpt-5.6-sol
 console.log(model.provider);                   // 'openai'
-console.log(model.features.input.tokens);     // 400000
+console.log(MODEL_REGISTRY_SCHEMA_VERSION);   // 2
+console.log(model.features.input.tokens);     // 1050000
 console.log(model.features.output.tokens);    // 128000
 console.log(model.features.reasoning);        // true
 console.log(model.features.vision);           // true
-console.log(model.features.input.cpm);        // 1.75 (cost per million)
-console.log(model.features.output.cpm);       // 14
+console.log(model.lifecycle);                  // 'active'
+console.log(model.endpoints);                  // ['responses', 'chat_completions', 'batch']
 
 // Calculate API costs
-const cost = calculateCost('gpt-5.2', 50000, 2000);
-console.log(`Cost: $${cost}`); // $0.1155
+const cost = calculateCost('gpt-5.6-luna', 50000, 2000);
+console.log(`Cost: $${cost}`); // $0.0124
 
 // With mixed cached and uncached input, using batch pricing
-const cachedCost = calculateCost('gpt-5.2', 50000, 2000, {
+const cachedCost = calculateCost('gpt-5.6-luna', 50000, 2000, {
   cachedInputTokens: 30000,
   processingMode: 'batch',
 });
-console.log(`Optimized: $${cachedCost}`);
+console.log(`Optimized: $${cachedCost}`); // $0.0035
 
 // Get all models for a vendor
 const openaiModels = getModelsByVendor(Vendor.OpenAI);
 console.log(openaiModels.map(m => m.name));
-// ['gpt-5.5', 'gpt-5.4', 'gpt-5.2', 'gpt-5.1', ...]
+// ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', ...]
 
 // Get all active models
 const activeModels = getActiveModels();
-console.log(activeModels.length); // 68
+console.log(activeModels.length); // lifecycle-aware active records only
 
 // Use model constants
-const flagship = LLM_MODELS[Vendor.OpenAI].GPT_5_5;   // 'gpt-5.5' (current OpenAI flagship)
-const mini     = LLM_MODELS[Vendor.OpenAI].GPT_5_4_MINI; // 'gpt-5.4-mini'
-const nano     = LLM_MODELS[Vendor.OpenAI].GPT_5_4_NANO; // 'gpt-5.4-nano'
+const flagship = LLM_MODELS[Vendor.OpenAI].GPT_5_6_SOL;
+const efficient = LLM_MODELS[Vendor.OpenAI].GPT_5_6_LUNA;
 ```
 
-**GPT-5.4 mini / nano (added 2026-03-17):** smaller, cheaper siblings of
-`gpt-5.4` for high-volume work. 400K context, 128K max output, vision-in,
-text-out, structured output + function calling + prompt caching + batch.
-Pricing per 1M tokens: mini $0.75 in / $0.075 cached / $4.50 out;
-nano $0.20 in / $0.02 cached / $1.25 out. Use them via the registry the
-same way as any other OpenAI model:
+### Registry schema v2 and API compatibility
+
+Schema v2 is additive for existing consumers. `name`, `provider`, `isActive`,
+features, and the original cost fields retain their meaning. New metadata is:
+
+- `lifecycle`: `preview`, `active`, `legacy`, `deprecated`, or `retired`;
+- `availability`, `preferred`, `aliases`, and `snapshots`;
+- `endpoints`, `deprecationDate`, `retirementDate`, and `replacementModel`;
+- official `sources` on media records and newly audited text entries; and
+- long-context, processing-mode, duration, message, resolution, and modality
+  pricing where the vendor publishes it.
+
+Unknown token limits are represented as `null`, not `0`. This currently matters
+for duration-priced voice-agent models. Existing code that assumes a number
+should use `resolveMaxContextTokens()` or check for `null`.
+
+Lookup helpers resolve aliases. Direct indexing remains canonical-only:
 
 ```typescript
-const agent = Agent.create({
-  connector: 'openai',
-  model: 'gpt-5.4-nano',          // or 'gpt-5.4-mini' / 'gpt-5.5'
-});
+getModelInfo('gpt-5.6')?.name;          // 'gpt-5.6-sol'
+getModelInfo('grok-voice-latest')?.name; // 'grok-voice-think-fast-2.0'
+MODEL_REGISTRY['gpt-5.6'];              // undefined by design
 ```
+
+Use `getDeprecatedModels()` and the equivalent media helpers instead of treating
+every callable-but-deprecated model as inactive. `isActive` means the API can
+still be called; `lifecycle` carries the vendor's migration state.
+
+### Current provider API selection
+
+- OpenAI text models use Responses by default, including current reasoning,
+  service-tier, explicit/implicit prompt-cache, and long-context cost metadata.
+- Anthropic supports adaptive thinking, effort through `output_config`, and
+  Opus fast mode through the current SDK options. Generic request metadata is
+  narrowed to Anthropic's supported `{ user_id }` shape; unrelated host keys
+  remain local rather than producing invalid Messages requests.
+- Gemini 3.5+ uses the GA Interactions API (`steps`, `step.delta`) by default.
+  Set `vendorOptions.api = 'generateContent'` to retain the legacy path, or
+  `vendorOptions.api = 'interactions'` to force Interactions on another model.
+  Named function selection is strict on both paths (`allowed_tools` for
+  Interactions and `allowedFunctionNames` for `generateContent`).
+- xAI text remains OpenAI-compatible; dedicated image, video, TTS, STT, and
+  realtime voice endpoints use their native request contracts.
 
 ### Resolve Model Capabilities
 
@@ -15116,11 +15749,11 @@ Providers use the registry to resolve model capabilities automatically, but you 
 import { resolveModelCapabilities, resolveMaxContextTokens } from '@everworker/oneringai';
 
 // Get full capabilities for a registered model
-const caps = resolveModelCapabilities('gpt-5.2', {
+const caps = resolveModelCapabilities('gpt-5.6-terra', {
   supportsTools: true, supportsVision: false, supportsJSON: true,
   supportsJSONSchema: false, maxTokens: 128000, maxOutputTokens: 4096,
 });
-console.log(caps.maxTokens);       // 400000 (from registry)
+console.log(caps.maxTokens);       // 1050000 (from registry)
 console.log(caps.maxOutputTokens); // 128000 (from registry)
 
 // For unregistered models, vendor defaults are returned
@@ -15128,8 +15761,8 @@ const unknown = resolveModelCapabilities('my-custom-model', { ...vendorDefaults 
 console.log(unknown.maxTokens);    // falls back to vendorDefaults
 
 // Quick context limit lookup (useful for error messages)
-const limit = resolveMaxContextTokens('gpt-5.2', 128000);
-console.log(limit); // 400000
+const limit = resolveMaxContextTokens('gpt-5.6-terra', 128000);
+console.log(limit); // 1050000
 ```
 
 ### Model Information
@@ -15138,18 +15771,34 @@ console.log(limit); // 400000
 interface ILLMDescription {
   name: string;
   provider: string;
-  releaseDate: string;
+  description?: string;
+  isActive: boolean; // callable, not necessarily recommended
+  lifecycle?: 'preview' | 'active' | 'legacy' | 'deprecated' | 'retired';
+  availability?: 'public' | 'limited' | 'invite_only' | 'enterprise' | 'region_limited';
+  preferred?: boolean;
+  aliases?: readonly string[];
+  snapshots?: readonly string[];
+  endpoints?: readonly ModelEndpoint[];
+  releaseDate?: string;
+  deprecationDate?: string;
+  retirementDate?: string;
+  replacementModel?: string;
   knowledgeCutoff?: string;
-  isActive: boolean;
+  sources?: {
+    documentation: string;
+    pricing?: string;
+    apiReference?: string;
+    lastVerified: string;
+  };
 
   features: {
     input: {
-      tokens: number;
+      tokens: number | null;
       cpm: number;
       cpmCached?: number;
     };
     output: {
-      tokens: number;
+      tokens: number | null;
       cpm: number;
     };
 
@@ -15164,15 +15813,24 @@ interface ILLMDescription {
     extendedThinking: boolean;
     batchAPI: boolean;
     promptCaching: boolean;
+
+    pricing?: {
+      text?: TokenPricing;
+      audio?: TokenPricing;
+      image?: TokenPricing;
+      audioDurationPerMinute?: number;
+      textInputPerMessage?: number;
+      processingMultipliers?: Partial<Record<ProcessingMode, number>>;
+    };
   };
 }
 ```
 
 ### Available Models
 
-**OpenAI (44 models):**
-- GPT-5.5 (flagship)
-- GPT-5.4: standard, pro, mini, nano
+**OpenAI (48 models):**
+- GPT-5.6: Sol, Terra, Luna (current family)
+- GPT-5.5 Pro
 - GPT-5.3: codex, chat-latest
 - GPT-5.2: standard, pro, codex, chat-latest
 - GPT-5.1: standard, codex, codex-max, codex-mini, chat-latest
@@ -15186,22 +15844,35 @@ interface ILLMDescription {
 - Deep Research: o3-deep-research, o4-mini-deep-research
 - Open-weight: gpt-oss-120b, gpt-oss-20b
 
-**Anthropic (13 models):**
-- Claude 5 / Opus 4.8 series (current flagships): Opus 4.8, Sonnet 5, Fable 5
+**Anthropic (15 models):**
+- Claude 5: Opus 5, Mythos 5, Fable 5
+- Opus 4.8 and Sonnet 5
 - Claude 4.7: Opus 4.7 (legacy flagship)
 - Claude 4.6: Opus 4.6, Sonnet 4.6
 - Claude 4.5: Opus, Sonnet, Haiku
 - Claude 4.x legacy: Opus 4.1, Opus 4, Sonnet 4
 - Claude 3.7: Sonnet
 
-**Google (10 models):**
-- Gemini 3.1 (preview): Pro, Flash-Lite, Flash Image, Flash Live
+**Google (14 models):**
+- Gemini 3.6 Flash; Gemini 3.5 and 3.5 Flash-Lite
+- Gemini 3.1: Pro, Flash-Lite, Flash Image, Flash Live
 - Gemini 3 (preview): Flash, Pro Image
 - Gemini 2.5: Pro, Flash, Flash-Lite, Flash Image
 
-**Grok / xAI (5 models):**
+**Grok / xAI (11 models):**
+- Grok 4.5, Grok 4.3, and Grok Build 0.1
 - Grok 4.20 (2M context, flagship): reasoning, non-reasoning, multi-agent
 - Grok 4.1 fast (2M context): reasoning, non-reasoning
+- Grok Voice Think Fast 2.0 and maintained 1.0 migration entries
+
+Dedicated media registries add GPT Image 2, Gemini 3.1 Flash/Lite Image, Grok
+Imagine Image Quality, Sora 2, Veo/Omni, Grok Imagine Video 1.5, current OpenAI
+and xAI speech models, Google/xAI TTS/STT, and Gemini Embedding 2. Use
+`getImageModelInfo`, `getVideoModelInfo`, `getTTSModelInfo`, `getSTTModelInfo`,
+and `getEmbeddingModelInfo` for their modality-specific capability schemas.
+
+The complete official-source audit and migration table is in
+[`docs/MODEL_REGISTRY_AUDIT.md`](./docs/MODEL_REGISTRY_AUDIT.md).
 
 ---
 
@@ -16020,7 +16691,7 @@ const agent = Agent.create({
 
 #### Context Events
 
-Subscribe to context events for monitoring (as used in the hosea reference app):
+Subscribe to context events for monitoring or host UI updates:
 
 ```typescript
 const ctx = agent.context;
@@ -16309,9 +16980,9 @@ if (!toolManager.isDestroyed) {
 ### Performance Tips
 
 1. **Use appropriate models:**
-   - GPT-4.1-nano/Claude Haiku 4.5 for simple tasks
-   - GPT-4.1/Claude Sonnet 4.5 for complex tasks
-   - GPT-5.2/Claude Opus 4.5 for critical tasks
+   - `gpt-5.6-luna`, `gemini-3.5-flash-lite`, or `claude-sonnet-5` for low-latency/high-throughput work
+   - `gpt-5.6-terra`, `gemini-3.6-flash`, or `grok-4.5` for balanced production agents
+   - `gpt-5.6-sol`, `gpt-5.5-pro`, or `claude-opus-5` for the most demanding reasoning and long-horizon work
 
 2. **Leverage caching:**
    - Use provider-aware prompt caching where `getAdvancedCapabilities()` reports support
@@ -16368,9 +17039,9 @@ Connector.create({ name: 'anthropic', vendor: Vendor.Anthropic, auth: { ... } })
 Connector.create({ name: 'google', vendor: Vendor.Google, auth: { ... } });
 
 // Create agents for each
-const openaiAgent = Agent.create({ connector: 'openai', model: 'gpt-4.1' });
-const claudeAgent = Agent.create({ connector: 'anthropic', model: 'claude-opus-4-5-20251101' });
-const geminiAgent = Agent.create({ connector: 'google', model: 'gemini-3-flash-preview' });
+const openaiAgent = Agent.create({ connector: 'openai', model: 'gpt-5.6-terra' });
+const claudeAgent = Agent.create({ connector: 'anthropic', model: 'claude-opus-5' });
+const geminiAgent = Agent.create({ connector: 'google', model: 'gemini-3.6-flash' });
 
 // Compare responses
 const [r1, r2, r3] = await Promise.all([
@@ -16456,5 +17127,5 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Last Updated:** 2026-07-06
-**Version:** 0.10.3
+**Last Updated:** 2026-08-08
+**Version:** 1.0.0

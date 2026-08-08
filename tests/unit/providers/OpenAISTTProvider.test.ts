@@ -53,6 +53,8 @@ describe('OpenAISTTProvider — Buffer→File byte fidelity', () => {
     await provider.transcribe({
       model: 'whisper-1',
       audio: pcm,
+      encoding: 'pcm',
+      sampleRate: 8000,
     });
 
     const file = mockTranscriptionsCreate.mock.calls[0][0].file as File;
@@ -66,6 +68,7 @@ describe('OpenAISTTProvider — Buffer→File byte fidelity', () => {
     // RIFF/WAVE signature in the header.
     expect(bytes.subarray(0, 4).toString('latin1')).toBe('RIFF');
     expect(bytes.subarray(8, 12).toString('latin1')).toBe('WAVE');
+    expect(bytes.readUInt32LE(24)).toBe(8000);
     // PCM payload at offset 44 must equal the input bytes verbatim.
     expect(Buffer.compare(bytes.subarray(44), pcm)).toBe(0);
   });

@@ -64,12 +64,13 @@ export class GrokImageProvider extends BaseMediaProvider implements IImageProvid
             n: options.n,
           });
 
-          // xAI API uses aspect_ratio instead of size, and doesn't support quality
+          const vendorOptions = options.vendorOptions ?? {};
           const params: any = {
             model: options.model || 'grok-imagine-image',
             prompt: options.prompt,
             n: options.n || 1,
-            response_format: options.response_format || 'b64_json',
+            response_format: options.response_format || 'url',
+            ...vendorOptions,
           };
 
           // Add aspect_ratio if provided (xAI uses aspect_ratio, not size)
@@ -92,6 +93,8 @@ export class GrokImageProvider extends BaseMediaProvider implements IImageProvid
               url: img.url,
               b64_json: img.b64_json,
               revised_prompt: img.revised_prompt,
+              file_id: (img as any).file_output?.file_id,
+              public_url: (img as any).file_output?.public_url ?? (img as any).public_url,
             })),
           };
         } catch (error: any) {
@@ -128,7 +131,8 @@ export class GrokImageProvider extends BaseMediaProvider implements IImageProvid
             mask,
             size: options.size as any,
             n: options.n || 1,
-            response_format: options.response_format || 'b64_json',
+            response_format: options.response_format || 'url',
+            ...options.vendorOptions,
           };
 
           const response = await this.client.images.edit(params);
@@ -146,6 +150,8 @@ export class GrokImageProvider extends BaseMediaProvider implements IImageProvid
               url: img.url,
               b64_json: img.b64_json,
               revised_prompt: img.revised_prompt,
+              file_id: (img as any).file_output?.file_id,
+              public_url: (img as any).file_output?.public_url ?? (img as any).public_url,
             })),
           };
         } catch (error: any) {
@@ -162,7 +168,7 @@ export class GrokImageProvider extends BaseMediaProvider implements IImageProvid
    * List available image models
    */
   async listModels(): Promise<string[]> {
-    return ['grok-imagine-image'];
+    return ['grok-imagine-image-quality', 'grok-imagine-image'];
   }
 
   /**

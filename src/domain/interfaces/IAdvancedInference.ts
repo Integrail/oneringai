@@ -17,6 +17,12 @@ export type PromptCachePolicy =
       mode: 'auto';
       ttl?: 'short' | 'extended';
       key?: string;
+      /**
+       * OpenAI GPT-5.6+ cache-breakpoint selection. `implicit` keeps the
+       * provider-selected breakpoint; `explicit` only uses content blocks
+       * marked with `promptCacheBreakpoint`.
+       */
+      breakpointMode?: 'implicit' | 'explicit';
       strict?: boolean;
     };
 
@@ -75,6 +81,8 @@ export interface AdvancedTextCapabilities {
     mode: PromptCachingMode;
     ttlModes: Array<'short' | 'extended'>;
     reportsCacheUsage: boolean;
+    /** Supports explicit per-content cache breakpoints. */
+    explicitBreakpoints?: boolean;
   };
   batch: {
     supported: boolean;

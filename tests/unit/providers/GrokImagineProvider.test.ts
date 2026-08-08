@@ -331,7 +331,7 @@ describe('GrokImagineProvider', () => {
     it('should return list of available models', async () => {
       const models = await provider.listModels();
 
-      expect(models).toEqual(['grok-imagine-video']);
+      expect(models).toEqual(['grok-imagine-video-1.5', 'grok-imagine-video']);
     });
   });
 

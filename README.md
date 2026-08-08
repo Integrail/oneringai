@@ -4,65 +4,89 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22+-green.svg)](https://nodejs.org/)
 
-## What's new in v0.11.0
+## What's new in v1.0.0
 
-This release adds a provider-neutral advanced inference layer across OpenAI, Anthropic, and Google:
-prompt caching, durable asynchronous text batches, provider-hosted web/code/file/MCP tools,
-executable capability discovery, explicit data-handling controls, and detailed cache/reasoning/tool
-telemetry with mixed-cache and batch cost estimation. It also adds Cal.com, Calendly, HeyReach,
-EmailBison, and Clay connector templates, bringing the registry to 50 vendors and 54 logos.
+Version 1.0.0 is the first major release of OneRingAI. It defines a stable
+connector-first API while bringing the first-party OpenAI, Anthropic, Google,
+and xAI integrations in line with their current text, image, video, embedding,
+speech, and realtime APIs.
 
-See the [v0.11.0 release notes](./CHANGELOG.md#0110--2026-07-24) for behavior details, safety
-constraints, upgrade guidance, and the complete fix list.
+| Area | 1.0.0 outcome |
+|------|---------------|
+| Model registry | Schema v2 with lifecycle, availability, aliases, snapshots, endpoints, replacements, preferred choices, official sources, and current pricing dimensions |
+| OpenAI | GPT-5.6, GPT Image 2, current transcription and Sora metadata, plus complete GA Realtime voice/transcription/translation support |
+| Anthropic | Claude 5 family, current context/output limits, adaptive thinking/effort, fast mode, and portable structured output |
+| Google | Gemini 3.6/3.5, status-safe Interactions API streams by default for 3.5+, current native image, Veo/Omni, TTS/STT, and Gemini Embedding 2 |
+| xAI | Grok 4.5/4.3/Build, current image/video, native REST/WebSocket TTS and STT, and Voice Agent Realtime/SIP support |
+| Runtime | Node.js 22+, OpenAI SDK 7.4, Anthropic SDK 0.116, and Google Gen AI SDK 2.16 |
+
+### Before upgrading
+
+- Upgrade every application, CI runner, container, and serverless runtime to
+  Node.js 22 or newer.
+- Treat registry token limits as `number | null`; use
+  `resolveMaxContextTokens()` when a numeric fallback is required.
+- Use lookup helpers for floating aliases. Direct registry indexing remains
+  canonical-only.
+- Use `isActive` for callability and `lifecycle` for migration state.
+- Gemini 3.5+ now uses Google Interactions by default. Temporarily set
+  `vendorOptions.api = 'generateContent'` only when legacy wire compatibility
+  is required.
+
+Read the [complete 1.0.0 release notes](./CHANGELOG.md#100--2026-08-08),
+[upgrade guide](./USER_GUIDE.md#upgrading-to-100), and
+[official-source model audit](./docs/MODEL_REGISTRY_AUDIT.md) before deploying.
 
 ## Table of Contents
 
-- [What's new in v0.11.0](#whats-new-in-v0110)
+- [What's new in v1.0.0](#whats-new-in-v100)
+- [Before upgrading](#before-upgrading)
 - [Features](#features)
 - [Quick Start](#quick-start) — Installation, basic usage, tools, vision, audio, images, video, search, scraping
 - [Supported Providers](#supported-providers)
 - [Key Features](#key-features)
   - [1. Agent with Plugins](#1-agent-with-plugins)
-  - [2. Dynamic Tool Management](#2-dynamic-tool-management-new)
-  - [3. Tool Execution Plugins](#3-tool-execution-plugins-new)
-  - [4. Session Persistence](#4-session-persistence)
+  - [2. Dynamic Tool Management](#2-dynamic-tool-management)
+  - [3. Tool Execution Plugins](#3-tool-execution-plugins)
+  - [4. Tool Permissions](#4-tool-permissions)
+  - [5. Session Persistence](#5-session-persistence)
   - [Storage Registry](#storage-registry)
-  - [5. Working Memory](#5-working-memory)
-  - [6. Research with Search Tools](#6-research-with-search-tools)
-  - [7. Context Management](#7-context-management)
-  - [8. InContextMemory](#8-incontextmemory)
-  - [9. Persistent Instructions](#9-persistent-instructions)
-  - [10. User Info](#10-user-info)
-  - [10b. Self-Learning Memory — plugin + tools](#10b-self-learning-memory--plugin--tools) — `MemoryPluginNextGen` + `MemoryWritePluginNextGen` with **12 `memory_*` LLM tools** (6 read incl. `memory_search_documents` + 6 write incl. `memory_set_agent_rule`); supersedes 9 & 10
-  - [11. Direct LLM Access](#11-direct-llm-access)
+  - [6. Working Memory](#6-working-memory)
+  - [7. Research with Search Tools](#7-research-with-search-tools)
+  - [8. Context Management](#8-context-management)
+  - [9. InContextMemory](#9-incontextmemory)
+  - [10. Persistent Instructions](#10-persistent-instructions)
+  - [11. User Info](#11-user-info)
+  - [Self-Learning Memory — plugin + tools](#self-learning-memory--plugin--tools) — `MemoryPluginNextGen` + `MemoryWritePluginNextGen` with **12 `memory_*` LLM tools** (6 read incl. `memory_search_documents` + 6 write incl. `memory_set_agent_rule`)
+  - [12. Direct LLM Access](#12-direct-llm-access)
   - [Advanced Inference](#advanced-inference-caching-batches-and-provider-hosted-tools) — Prompt caching, async batches, provider-hosted tools, telemetry, and data policy
-  - [12. Audio Capabilities](#12-audio-capabilities)
-  - [Embeddings](#embeddings-new) — Multi-vendor text embeddings with MRL dimension control
-  - [13. Model Registry](#13-model-registry)
-  - [14. Streaming](#14-streaming)
-  - [15. OAuth for External APIs](#15-oauth-for-external-apis)
-  - [16. Developer Tools](#16-developer-tools)
-  - [17. Custom Tool Generation](#17-custom-tool-generation-new) — Agents create, test, and persist their own tools
-  - [18. Document Reader](#18-document-reader) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
-  - [19. Desktop Automation Tools](#19-desktop-automation-tools-new) — Screenshot, mouse, keyboard, window control for computer use agents
-  - [20. Routine Execution](#20-routine-execution) — Multi-step workflows with task dependencies, validation, and memory bridging
-  - [21. External API Integration](#21-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
-  - [22. Microsoft Graph Connector Tools](#22-microsoft-graph-connector-tools-new) — Email, calendar, meetings, and Teams transcripts
-  - [23. Tool Catalog](#23-tool-catalog-new) — Dynamic tool loading/unloading for agents with 100+ tools
-  - [24. Async (Non-Blocking) Tools](#24-async-non-blocking-tools-new) — Background tool execution with auto-continuation
-  - [25. Long-Running Sessions (Suspend/Resume)](#25-long-running-sessions-suspendresume-new) — Suspend agent loops waiting for external input, resume days later
-  - [26. Agent Registry](#26-agent-registry-new) — Global tracking, deep inspection, parent/child hierarchy, event fan-in, external control
-  - [27. Agent Orchestrator](#27-agent-orchestrator-new) — Multi-agent teams with shared workspace, delegation, and async execution
-  - [28. Telegram Connector Tools](#28-telegram-connector-tools-new) — Bot API tools for messaging, updates, and webhooks
-  - [29. Twilio Connector Tools](#29-twilio-connector-tools-new) — SMS and WhatsApp messaging tools
-  - [30. Google Workspace Connector Tools](#30-google-workspace-connector-tools-new) — Gmail, Calendar, Meet, and Drive tools
-  - [31. Zoom Connector Tools](#31-zoom-connector-tools-new) — Meeting management and transcripts
-  - [32. Unified Calendar](#32-unified-calendar-new) — Cross-provider meeting slot finder (Google + Microsoft)
-  - [33. Multi-Account Connectors](#33-multi-account-connectors-new) — Multiple accounts per vendor with automatic routing
-  - [34. Integration Testing](#34-integration-testing-new) — Reusable test suites for connector tools
-  - [36. Instruction Templates](#36-instruction-templates-new) — `{{DATE}}`, `{{AGENT_ID}}`, custom `{{COMMAND:arg}}` with extensible registry
+  - [13. Audio Capabilities](#13-audio-capabilities)
+  - [Embeddings](#embeddings) — Multi-vendor text and multimodal embeddings with MRL dimension control
+  - [14. Model Registry](#14-model-registry)
+  - [15. Streaming](#15-streaming)
+  - [16. OAuth for External APIs](#16-oauth-for-external-apis)
+  - [17. Developer Tools](#17-developer-tools)
+  - [18. Custom Tool Generation](#18-custom-tool-generation) — Agents create, test, and persist their own tools
+  - [19. Desktop Automation Tools](#19-desktop-automation-tools) — Screenshot, mouse, keyboard, window control for computer use agents
+  - [20. Document Reader](#20-document-reader) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
+  - [21. Routine Execution](#21-routine-execution) — Multi-step workflows with task dependencies, validation, and memory bridging
+  - [22. External API Integration](#22-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
+  - [23. Microsoft Graph Connector Tools](#23-microsoft-graph-connector-tools) — Email, calendar, meetings, and Teams transcripts
+  - [24. Tool Catalog](#24-tool-catalog) — Dynamic tool loading/unloading for agents with 100+ tools
+  - [25. Async (Non-Blocking) Tools](#25-async-non-blocking-tools) — Background tool execution with auto-continuation
+  - [26. Long-Running Sessions (Suspend/Resume)](#26-long-running-sessions-suspendresume) — Suspend agent loops waiting for external input, resume days later
+  - [27. Agent Registry](#27-agent-registry) — Global tracking, deep inspection, parent/child hierarchy, event fan-in, external control
+  - [28. Agent Orchestrator](#28-agent-orchestrator) — Multi-agent teams with shared workspace, delegation, and async execution
+  - [29. Telegram Connector Tools](#29-telegram-connector-tools) — Bot API tools for messaging, updates, and webhooks
+  - [30. Twilio Connector Tools](#30-twilio-connector-tools) — SMS and WhatsApp messaging tools
+  - [31. Google Workspace Connector Tools](#31-google-workspace-connector-tools) — Gmail, Calendar, Meet, and Drive tools
+  - [32. Zoom Connector Tools](#32-zoom-connector-tools) — Meeting management and transcripts
+  - [33. Unified Calendar](#33-unified-calendar) — Cross-provider meeting slot finder (Google + Microsoft)
+  - [34. Multi-Account Connectors](#34-multi-account-connectors) — Multiple accounts per vendor with automatic routing
+  - [35. Integration Testing](#35-integration-testing) — Reusable test suites for connector tools
+  - [36. Instruction Templates](#36-instruction-templates) — `{{DATE}}`, `{{AGENT_ID}}`, custom `{{COMMAND:arg}}` with extensible registry
 - [MCP Integration](#mcp-model-context-protocol-integration)
 - [Documentation](#documentation)
 - [Examples](#examples)
@@ -82,7 +106,9 @@ constraints, upgrade guidance, and the complete fix list.
 |----------|-------------|
 | **[User Guide](./USER_GUIDE.md)** | Comprehensive guide covering every feature with examples — connectors, agents, context, plugins, audio, video, search, MCP, OAuth, and more |
 | **[API Reference](./API_REFERENCE.md)** | Auto-generated reference for all public exports — classes, interfaces, types, and functions with signatures |
-| [CHANGELOG](./CHANGELOG.md) | Version history and migration notes |
+| **[1.0.0 Upgrade Guide](./USER_GUIDE.md#upgrading-to-100)** | Breaking changes, compatibility guarantees, migration checklist, and before/after examples |
+| [Model Registry Audit](./docs/MODEL_REGISTRY_AUDIT.md) | Vendor-by-vendor gaps, implemented status, model snapshot, API boundaries, and official sources |
+| [CHANGELOG](./CHANGELOG.md#100--2026-08-08) | Full 1.0.0 release notes, breaking changes, validation, and version history |
 
 ---
 
@@ -93,13 +119,6 @@ constraints, upgrade guidance, and the complete fix list.
 **Part 1**. [Your AI Agent Forgets Everything. Here’s How We Fixed It.](https://medium.com/superstringtheory/your-ai-agent-forgets-everything-heres-how-we-fixed-it-276b39aedbb3): context management plugins
 
 
-## EVERWORKER DESKTOP APP
-We realize that library alone in these times is not enough to get you excited, so we built a FREE FOREVER desktop app on top of this library to showcase its power! Check the [Everworker Desktop repository](https://github.com/AntonioCiolworker/hosea) for installation instructions. Or watch the video first:
-
-[![Watch the demo](https://img.youtube.com/vi/_LzDiuOQD8Y/maxresdefault.jpg)](https://www.youtube.com/watch?v=_LzDiuOQD8Y)
-
-Better to see once and then dig in the code! :)
-
 ## YOUetal
 
 Showcasing another amazing "built with oneringai": ["no saas" agentic business team](https://youetal.ai)
@@ -108,18 +127,19 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 
 - ✨ **Unified API** - One interface for 12 AI providers (OpenAI, Anthropic, Google, Vertex, Groq, Together, Perplexity, Grok, DeepSeek, Mistral, Ollama, Custom)
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
-- 📊 **Model Registry** - Complete metadata for 60+ latest (2026) models with pricing and features
-- 🎤 **Audio Capabilities** - Text-to-Speech (TTS) and Speech-to-Text (STT) with OpenAI and Groq
+- 📊 **Model Registry v2** - Lifecycle, aliases, endpoints, official sources, and modality-aware pricing for 88 text/realtime models plus dedicated image, video, voice, STT, and embedding registries
+- 🎤 **Audio Capabilities** - Text-to-Speech and Speech-to-Text with OpenAI, Google, and xAI, including xAI WebSocket streaming
 - ☎️ **[OpenAI Realtime API](./USER_GUIDE.md#openai-realtime-api)** - GA voice agents, live transcription, and speech translation over WebSocket/WebRTC, plus SIP call control, tools, VAD, and Twilio bridging
-- 🖼️ **Image Generation** - gpt-image-1.5, gpt-image-1, Google Imagen 4 with editing and variations
-- 🎬 **Video Generation** - NEW: OpenAI Sora 2 and Google Veo 3 for AI video creation
-- 🔢 **Embeddings** - NEW: Multi-vendor embedding generation with MRL dimension control (OpenAI, Google, Ollama, Mistral)
+- 📞 **[xAI Voice Agent API](./USER_GUIDE.md#xai-realtime-voice-agent-api)** - JSON or binary audio, browser credentials, conversation resumption, reasoning controls, and SIP refer/hangup
+- 🖼️ **Image Generation** - GPT Image 2, Gemini 3.1 native image models, Imagen, and Grok Imagine generation/editing
+- 🎬 **Video Generation** - Callable OpenAI Sora 2 (with published retirement metadata), Google Veo/Omni, and Grok Imagine Video 1.5
+- 🔢 **Embeddings** - Text and multimodal embedding generation, including Gemini Embedding 2 for text, image, audio, video, and documents
 - 🔍 **Web Search** - Connector-based search with Serper, Brave, Tavily, and RapidAPI providers
 - 🔌 **NextGen Context** - Clean, plugin-based context management with `AgentContextNextGen`
 - 🎛️ **Dynamic Tool Management** - Enable/disable tools at runtime, namespaces, priority-based selection
-- 🔌 **Tool Execution Plugins** - NEW: Pluggable pipeline for logging, analytics, UI updates, custom behavior
+- 🔌 **Tool Execution Plugins** - Pluggable pipeline for logging, analytics, UI updates, custom behavior
 - 💾 **Session Persistence** - Save and resume conversations with full state restoration
-- ⏸️ **Long-Running Sessions** - NEW: Suspend agent loops via `SuspendSignal`, resume hours/days later with `Agent.hydrate()`
+- ⏸️ **Long-Running Sessions** - Suspend agent loops via `SuspendSignal`, resume hours/days later with `Agent.hydrate()`
 - 👤 **Multi-User Support** - Set `userId` once, flows automatically to all tool executions and session metadata
 - 🔒 **Auth Identities** - Restrict agents to specific connectors (and accounts), composable with access policies
 - 🤖 **Universal Agent** - ⚠️ *Deprecated* - Use `Agent` with plugins instead
@@ -129,39 +149,39 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 📌 **InContextMemory** - Live key-value storage directly in LLM context with optional UI display (`showInUI`)
 - 📝 **Persistent Instructions** - ⚠️ *Deprecated* in favour of `MemoryPluginNextGen` (self-learning memory). Still works unchanged.
 - 👤 **User Info Plugin** - ⚠️ *Deprecated* in favour of `MemoryPluginNextGen`. Still works unchanged.
-- 🧠 **Self-Learning Memory** - NEW: `MemoryPluginNextGen` + `MemoryWritePluginNextGen` + 12 `memory_*` tools — brain-like entity/fact store with three-principal permissions, semantic search, graph queries, LLM-synthesised profiles that evolve from observations, user-driven behavior rules, optional background ingestion via `SessionIngestorPluginNextGen`
+- 🧠 **Self-Learning Memory** - `MemoryPluginNextGen` + `MemoryWritePluginNextGen` + 12 `memory_*` tools — brain-like entity/fact store with three-principal permissions, semantic search, graph queries, LLM-synthesised profiles that evolve from observations, user-driven behavior rules, optional background ingestion via `SessionIngestorPluginNextGen`
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
-- 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
-- 🧰 **Custom Tool Generation** - NEW: Let agents create, test, and persist their own reusable tools at runtime — complete meta-tool system with VM sandbox
-- 🖥️ **Desktop Automation** - NEW: OS-level computer use — screenshot, mouse, keyboard, and window control for vision-driven agent loops
-- 📄 **Document Reader** - NEW: Universal file-to-text converter — PDF, DOCX, XLSX, PPTX, CSV, HTML, images auto-converted to markdown
-- 🔌 **MCP Integration** - NEW: Model Context Protocol client for seamless tool discovery from local and remote servers
+- 🔧 **Developer Tools** - Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
+- 🧰 **Custom Tool Generation** - Let agents create, test, and persist their own reusable tools at runtime — complete meta-tool system with VM sandbox
+- 🖥️ **Desktop Automation** - OS-level computer use — screenshot, mouse, keyboard, and window control for vision-driven agent loops
+- 📄 **Document Reader** - Universal file-to-text converter — PDF, DOCX, XLSX, PPTX, CSV, HTML, images auto-converted to markdown
+- 🔌 **MCP Integration** - Model Context Protocol client for seamless tool discovery from local and remote servers
 - 👁️ **Vision Support** - Analyze images with AI across all providers
 - 📋 **Clipboard Integration** - Paste screenshots directly (like Claude Code!)
-- 🔐 **Scoped Connector Registry** - NEW: Pluggable access control for multi-tenant connector isolation
+- 🔐 **Scoped Connector Registry** - Pluggable access control for multi-tenant connector isolation
 - 💾 **StorageRegistry** - Centralized storage configuration — swap all backends (sessions, media, custom tools, etc.) with one `configure()` call
 - 🔐 **OAuth 2.0** - Full OAuth support for external APIs with encrypted token storage
-- 📦 **Vendor Templates** - NEW: Pre-configured auth templates for 45+ services (GitHub, Slack, Stripe, etc.)
-- 📧 **Microsoft Graph Tools** - NEW: Email, calendar, meetings, and Teams transcripts via Microsoft Graph API
-- 🔁 **Routine Execution** - NEW: Multi-step workflows with task dependencies, LLM validation, retry logic, and memory bridging between tasks
-- 📊 **Execution Recording** - NEW: Persist full routine execution history with `createExecutionRecorder()` — replaces manual hook wiring
-- ⏰ **Scheduling & Triggers** - NEW: `SimpleScheduler` for interval/one-time schedules, `EventEmitterTrigger` for webhook/queue-driven execution
-- 📦 **Tool Catalog** - NEW: Dynamic tool loading/unloading — agents discover and load only the categories they need at runtime
-- **Async Tools** - NEW: Non-blocking tool execution — long-running tools run in background while the agent continues reasoning, with auto-continuation when results arrive
-- 📡 **Agent Registry** - NEW: Global tracking of all active agents — deep inspection, parent/child hierarchy, event fan-in, external control
-- 📱 **Telegram Tools** - NEW: 6 Telegram Bot API tools — send messages/photos, get updates, webhooks, chat info
-- 📞 **Twilio Tools** - NEW: 4 Twilio tools — SMS, WhatsApp messaging, message listing and details
-- 📧 **Google Workspace Tools** - NEW: 11 tools for Gmail, Calendar, Meet transcripts, and Drive (read, search, list files)
-- 🎥 **Zoom Tools** - NEW: 3 Zoom tools — create/update meetings, get cloud recording transcripts
-- 📅 **Unified Calendar** - NEW: Cross-provider meeting slot finder aggregating Google + Microsoft calendars
-- 👥 **Multi-Account Connectors** - NEW: Multiple accounts per vendor (e.g., work + personal) with automatic routing
-- 🧪 **Integration Testing** - NEW: Reusable test suite framework for connector tools with 10 built-in suites
-- 📝 **Instruction Templates** - NEW: `{{DATE}}`, `{{AGENT_ID}}`, `{{RANDOM:1:10}}` and custom `{{COMMAND:arg}}` in agent instructions — extensible registry with async support
+- 📦 **Vendor Templates** - Pre-configured auth templates for 50 services (GitHub, Slack, Stripe, etc.)
+- 📧 **Microsoft Graph Tools** - Email, calendar, meetings, and Teams transcripts via Microsoft Graph API
+- 🔁 **Routine Execution** - Multi-step workflows with task dependencies, LLM validation, retry logic, and memory bridging between tasks
+- 📊 **Execution Recording** - Persist full routine execution history with `createExecutionRecorder()` — replaces manual hook wiring
+- ⏰ **Scheduling & Triggers** - `SimpleScheduler` for interval/one-time schedules, `EventEmitterTrigger` for webhook/queue-driven execution
+- 📦 **Tool Catalog** - Dynamic tool loading/unloading — agents discover and load only the categories they need at runtime
+- **Async Tools** - Non-blocking tool execution — long-running tools run in background while the agent continues reasoning, with auto-continuation when results arrive
+- 📡 **Agent Registry** - Global tracking of all active agents — deep inspection, parent/child hierarchy, event fan-in, external control
+- 📱 **Telegram Tools** - 6 Telegram Bot API tools — send messages/photos, get updates, webhooks, chat info
+- 📞 **Twilio Tools** - 4 Twilio tools — SMS, WhatsApp messaging, message listing and details
+- 📧 **Google Workspace Tools** - 11 tools for Gmail, Calendar, Meet transcripts, and Drive (read, search, list files)
+- 🎥 **Zoom Tools** - 3 Zoom tools — create/update meetings, get cloud recording transcripts
+- 📅 **Unified Calendar** - Cross-provider meeting slot finder aggregating Google + Microsoft calendars
+- 👥 **Multi-Account Connectors** - Multiple accounts per vendor (e.g., work + personal) with automatic routing
+- 🧪 **Integration Testing** - Reusable test suite framework for connector tools with 10 built-in suites
+- 📝 **Instruction Templates** - `{{DATE}}`, `{{AGENT_ID}}`, `{{RANDOM:1:10}}` and custom `{{COMMAND:arg}}` in agent instructions — extensible registry with async support
 - 🔄 **Streaming** - Real-time responses with event streams
 - ⚡ **Advanced Inference** - Provider-aware prompt caching, asynchronous text batches, provider-hosted tools, detailed usage telemetry, and explicit data-handling policy
 - 📝 **TypeScript** - Full type safety and IntelliSense support
 
-> **v0.2.0 — Multi-User Support:** Set `userId` once on an agent and it automatically flows to all tool executions, OAuth token retrieval, session metadata, and connector scoping. Combine with `identities` and access policies for complete multi-tenant isolation. See [Multi-User Support](#multi-user-support-userid) and [Auth Identities](#auth-identities-identities) in the User Guide.
+> **Multi-User Support:** Set `userId` once on an agent and it automatically flows to all tool executions, OAuth token retrieval, session metadata, and connector scoping. Combine with `identities` and access policies for complete multi-tenant isolation. See [Multi-User Support](./USER_GUIDE.md#multi-user-support-userid) and [Auth Identities](./USER_GUIDE.md#auth-identities-identities) in the User Guide.
 
 ## Quick Start
 
@@ -186,7 +206,7 @@ Connector.create({
 // 2. Create an agent
 const agent = Agent.create({
   connector: 'openai',
-  model: 'gpt-4.1',
+  model: 'gpt-5.6-terra',
 });
 
 // 3. Run
@@ -222,7 +242,7 @@ const weatherTool: ToolFunction = {
 
 const agent = Agent.create({
   connector: 'openai',
-  model: 'gpt-4.1',
+  model: 'gpt-5.6-terra',
   tools: [weatherTool],
 });
 
@@ -236,7 +256,7 @@ import { createMessageWithImages } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
-  model: 'gpt-4o',
+  model: 'gpt-5.6-terra',
 });
 
 const response = await agent.run(
@@ -244,7 +264,7 @@ const response = await agent.run(
 );
 ```
 
-### Audio (NEW)
+### Audio
 
 ```typescript
 import { TextToSpeech, SpeechToText } from '@everworker/oneringai';
@@ -271,24 +291,30 @@ await customTts.toFile('Spoken in your bespoke voice.', './brand.mp3');
 // Speech-to-Text
 const stt = SpeechToText.create({
   connector: 'openai',
-  model: 'whisper-1',
+  model: 'gpt-transcribe',
 });
 
 const result = await stt.transcribeFile('./audio.mp3');
 console.log(result.text);
+
+// Headerless raw telephony PCM must identify its wire format.
+const phoneResult = await stt.transcribe(pcm16le8kBuffer, {
+  encoding: 'pcm',
+  sampleRate: 8000,
+});
 ```
 
-### Image Generation (NEW)
+### Image Generation
 
 ```typescript
 import { ImageGeneration } from '@everworker/oneringai';
 
-// OpenAI DALL-E
+// OpenAI GPT Image
 const imageGen = ImageGeneration.create({ connector: 'openai' });
 
 const result = await imageGen.generate({
   prompt: 'A futuristic city at sunset',
-  model: 'gpt-image-1.5',
+  model: 'gpt-image-2',
   size: '1024x1024',
   quality: 'high',
 });
@@ -297,16 +323,19 @@ const result = await imageGen.generate({
 const buffer = Buffer.from(result.data[0].b64_json!, 'base64');
 await fs.writeFile('./output.png', buffer);
 
-// Google Imagen
+// Google Gemini native image
 const googleGen = ImageGeneration.create({ connector: 'google' });
 
 const googleResult = await googleGen.generate({
   prompt: 'A colorful butterfly in a garden',
-  model: 'imagen-4.0-generate-001',
+  model: 'gemini-3.1-flash-image',
+  size: '2048x2048',
+  aspectRatio: '16:9',
+  n: 2,
 });
 ```
 
-### Video Generation (NEW)
+### Video Generation
 
 ```typescript
 import { VideoGeneration } from '@everworker/oneringai';
@@ -334,10 +363,15 @@ const googleVideo = VideoGeneration.create({ connector: 'google' });
 
 const veoJob = await googleVideo.generate({
   prompt: 'A butterfly flying through a garden',
-  model: 'veo-3.1-generate-preview',
+  model: 'veo-3.1-lite-generate-preview',
   duration: 8,
 });
 ```
+
+Sora 2/2 Pro are still callable but have published deprecation and retirement
+metadata. Production pickers should show `lifecycle` and `retirementDate`, not
+infer recommendation from `isActive` alone. Google Veo/Omni and xAI Grok
+Imagine Video 1.5 are covered in the [User Guide](./USER_GUIDE.md#video-generation).
 
 #### Sora: extend, remix, edit (OpenAI only)
 
@@ -347,7 +381,6 @@ by `generate()`, not a buffer or URL.
 ```typescript
 // Extend — generate an additional segment after the source clip.
 const extension = await videoGen.extend({
-  model: 'sora-2',
   video: job.jobId,           // id of a completed video
   prompt: 'The camera pulls back to reveal a snow-covered valley',
   extendDuration: 8,          // length of the *new* segment, snapped to 4/8/12
@@ -387,7 +420,7 @@ const scene = await videoGen.generate({
 const same = await videoGen.getCharacter(character.id);
 ```
 
-### Embeddings (NEW)
+### Embeddings
 
 ```typescript
 import { Embeddings } from '@everworker/oneringai';
@@ -409,7 +442,7 @@ const localResult = await local.embed('search query');
 // Uses qwen3-embedding (4096 dims, #1 on MTEB multilingual)
 ```
 
-### Document Reader (NEW)
+### Document Reader
 
 Read any document format — agents automatically get markdown text from PDFs, Word docs, spreadsheets, and more:
 
@@ -547,11 +580,11 @@ await agent.run('Scrape https://example.com and summarize');
 
 | Provider | Text | Vision | TTS | STT | Image | Video | Tools | Context |
 |----------|------|--------|-----|-----|-------|-------|-------|---------|
-| **OpenAI** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 128K |
+| **OpenAI** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 1.05M |
 | **Anthropic (Claude)** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 1M |
-| **Google (Gemini)** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | 1M |
+| **Google (Gemini)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 1M |
 | **Google Vertex AI** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 1M |
-| **Grok (xAI)** | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | 128K |
+| **Grok (xAI)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 1M |
 | **Groq** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 128K |
 | **Together AI** | ✅ | Some | ❌ | ❌ | ❌ | ❌ | ✅ | 128K |
 | **DeepSeek** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 64K |
@@ -607,7 +640,7 @@ await agent.context.save('session-001');
 - 📌 **InContextMemory** - Key-value pairs visible directly to LLM
 - 🔄 **Persistent Instructions** - Agent instructions that persist across sessions
 
-### 2. Dynamic Tool Management (NEW)
+### 2. Dynamic Tool Management
 
 Control tools at runtime. **AgentContextNextGen is the single source of truth** - `agent.tools` and `agent.context.tools` are the same ToolManager instance:
 
@@ -644,7 +677,7 @@ agent.addTool(newTool);        // Still works!
 agent.removeTool('old_tool');  // Still works!
 ```
 
-### 3. Tool Execution Plugins (NEW)
+### 3. Tool Execution Plugins
 
 Extend tool execution with custom behavior through a pluggable pipeline architecture. Add logging, analytics, UI updates, permission prompts, or any custom logic:
 
@@ -724,7 +757,7 @@ const plugin = agent.tools.executionPipeline.get('plugin-name');
 const plugins = agent.tools.executionPipeline.list();
 ```
 
-### 4. Tool Permissions (NEW)
+### 4. Tool Permissions
 
 Policy-based permission system with per-user rules, argument inspection, and pluggable storage. Permissions are enforced at the ToolManager pipeline level -- **all tool execution paths are gated**.
 
@@ -1183,7 +1216,7 @@ TODOs are stored alongside user info and rendered in a separate **"Current TODOs
 
 > ⚠️ **Deprecated** in favour of the Self-Learning Memory plugin below. `UserInfoPluginNextGen` + `PersistentInstructionsPluginNextGen` keep working unchanged for existing integrations — no breaking change — but new code should prefer `MemoryPluginNextGen`.
 
-### 10b. Self-Learning Memory — plugin + tools
+### Self-Learning Memory — plugin + tools
 
 A brain-like, queryable knowledge store built on the [memory layer](./docs/MEMORY_GUIDE.md). Two cooperating context plugins + **12 LLM-callable tools** turn the agent into a learning system: it bootstraps a `person` entity for the user (and optionally an `organization` entity for their group), injects the evolving user profile + any user-given behavior rules into the system message every turn, and exposes `memory_*` tools so the LLM can read or write the knowledge graph mid-conversation. Observations flow in via `memory_remember` (LLM-driven) or `SessionIngestorPluginNextGen` (passive); incremental profile regeneration synthesises them; the next turn sees the updated profile. No manual prompt engineering for user/agent preferences.
 
@@ -1416,6 +1449,15 @@ console.log(response.usage.cache_creation_input_tokens);
 `strict: true` rejects unsupported caching or TTL requests before inference. Without `strict`, an
 unsupported cache request degrades to a normal request; an unsupported TTL is removed while the
 remaining cache request may still be used.
+
+GPT-5.6+ also supports caller-marked content breakpoints. Mark eligible input
+text/image/file content with `promptCacheBreakpoint: true`; the default
+`breakpointMode: 'implicit'` keeps OpenAI's automatic latest-message breakpoint
+in addition to those markers. Set `breakpointMode: 'explicit'` only when the
+request should disable the automatic breakpoint and use marked blocks alone.
+OneRingAI emits the required `{ mode: 'explicit' }` content marker only after
+the selected model and cache policy pass normalization; older models and
+cache-disabled calls never receive an unsupported field.
 
 `{ mode: 'off' }` means **OneRingAI does not request or configure caching**. It cannot disable cache
 behavior a provider applies implicitly to otherwise ordinary requests. Likewise,
@@ -1652,7 +1694,7 @@ const models = tts.listAvailableModels();
 // === Speech-to-Text ===
 const stt = SpeechToText.create({
   connector: 'openai',
-  model: 'whisper-1',      // or 'gpt-4o-transcribe'
+  model: 'gpt-transcribe', // current file-transcription model
 });
 
 // Transcribe
@@ -1666,6 +1708,15 @@ console.log(detailed.words);  // [{ word, start, end }, ...]
 // Translation
 const english = await stt.translate(frenchAudio);
 ```
+
+File paths and self-describing buffers retain their container format. For
+headerless `Buffer` input, set `encoding` and `sampleRate`; the default is
+16-bit little-endian PCM at 16 kHz. AAC ADTS buffers—including CRC-protected
+variants—are distinguished from MP3 frame-sync bytes, and `SpeechToText.translate()` forwards both configured
+and per-call language hints. Google Gemini transcription returns
+normalized segment timestamps, while word-level timestamps remain available
+on models such as `whisper-1`. Raw μ-law and A-law sent to OpenAI are wrapped
+as standards-compliant non-PCM `WAVEFORMATEX` files with the required `cbSize`.
 
 **Streaming TTS** — for real-time voice applications:
 
@@ -1724,13 +1775,24 @@ for voice-agent, transcription, translation, WebRTC, SIP, tool, event, pricing,
 and production examples. A runnable server-side example is also available at
 [`examples/openai-realtime.ts`](./examples/openai-realtime.ts).
 
+The provider-specific `GrokRealtimeSession` facade and the shared telephony
+pipeline support xAI's OpenAI-compatible Voice Agent API with `Vendor.Grok`,
+`grok-voice-latest`, xAI
+ephemeral credentials, session resumption, SIP refer/hangup, PCMU/PCMA/Opus,
+PCM at 8/16/22.05/24/32/44.1/48 kHz, and JSON or binary audio transport. xAI
+turn detection accepts `server_vad` or disabled detection; `semantic_vad` is
+OpenAI-only and is rejected before the session connects. OpenAI's 24 kHz PCM
+rule is checked for constructor configuration and every later `session.update`;
+the xAI-specific facade retains its full rate range for both paths. See the
+[xAI section of the realtime User Guide](./USER_GUIDE.md#xai-realtime-voice-agent-api).
+
 **Available Models:**
-- **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-2.5-flash-preview-tts`, `gemini-2.5-pro-preview-tts`)
-- **STT**: OpenAI (`gpt-live-transcribe`, `gpt-realtime-whisper`, `gpt-4o-transcribe`, `whisper-1`), Groq (`whisper-large-v3` - 12x cheaper!)
+- **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-3.1-flash-tts-preview`, Gemini 2.5 TTS), xAI (`xai-tts`, REST and WebSocket)
+- **STT**: OpenAI (`gpt-transcribe`, `gpt-live-transcribe`, `gpt-realtime-whisper`, GPT-4o, Whisper), Google (`gemini-3.6-flash`), xAI (`xai-stt`, REST and WebSocket)
 
-### Embeddings (NEW)
+### Embeddings
 
-Generate text embeddings across multiple vendors with a unified API. Supports Matryoshka Representation Learning (MRL) for flexible output dimensions.
+Generate text embeddings across multiple vendors and mixed-modality embeddings with Gemini Embedding 2. Supports Matryoshka Representation Learning (MRL) for flexible output dimensions.
 
 ```typescript
 import { Embeddings, Connector, Vendor } from '@everworker/oneringai';
@@ -1756,6 +1818,22 @@ const batch = await embeddings.embed(
 console.log(batch.embeddings.length);     // 3
 console.log(batch.embeddings[0].length);  // 512
 
+// Gemini Embedding 2 maps text, images, audio, video, and documents into one space.
+Connector.create({
+  name: 'google',
+  vendor: Vendor.Google,
+  auth: { type: 'api_key', apiKey: process.env.GOOGLE_API_KEY! },
+});
+const multimodal = Embeddings.create({ connector: 'google' });
+const assetVector = await multimodal.embedMultimodal([
+  { type: 'text', text: 'Product launch asset' },
+  { type: 'image', data: './campaign.png', mimeType: 'image/png' },
+  { type: 'document', data: './brief.pdf', mimeType: 'application/pdf' },
+], { dimensions: 1024 });
+
+// External HTTP(S) media is fetched and inlined; gs:// and Gemini Files URIs
+// remain provider-hosted file references.
+
 // Local with Ollama (free, no API key)
 Connector.create({
   name: 'ollama-local',
@@ -1768,6 +1846,13 @@ const local = Embeddings.create({ connector: 'ollama-local' });
 const localResult = await local.embed('semantic search query');
 // Uses qwen3-embedding by default (4096 dims, #1 on MTEB multilingual)
 ```
+
+External media is streamed into a bounded buffer with a 30-second default
+download timeout, `Content-Length` preflight, a 100 MB aggregate inline budget,
+and Google's 50 MB PDF ceiling. Override only the timeout with
+`vendorOptions.mediaDownloadTimeoutMs`. When `mimeType` is omitted, OneRingAI
+inspects common image, audio, video (including MOV), and PDF signatures before
+falling back to the path extension. Explicit MIME types always win.
 
 **Model introspection and cost estimation:**
 
@@ -1802,7 +1887,8 @@ console.log(ollamaModels.map(m => `${m.name} (${m.capabilities.defaultDimensions
 |--------|-------|------|-----|--------|----------|
 | OpenAI | `text-embedding-3-small` | 1536 | yes | 8191 | $0.02 |
 | OpenAI | `text-embedding-3-large` | 3072 | yes | 8191 | $0.13 |
-| Google | `text-embedding-004` | 768 | yes | 2048 | Free |
+| Google | `gemini-embedding-2` | 3072 | yes | 8192 | $0.20 text; modality-specific rates |
+| Google | `gemini-embedding-001` | 3072 | yes | 2048 | $0.15 |
 | Mistral | `mistral-embed` | 1024 | no | 8192 | $0.10 |
 | Ollama | `qwen3-embedding` (8B) | 4096 | yes | 8192 | Free (local) |
 | Ollama | `qwen3-embedding:0.6b` | 1024 | yes | 8192 | Free (local) |
@@ -1810,33 +1896,40 @@ console.log(ollamaModels.map(m => `${m.name} (${m.capabilities.defaultDimensions
 
 ### 14. Model Registry
 
-Complete metadata for 60+ models with pricing, context windows, and feature flags:
+Schema-v2 metadata for 88 text/realtime models, with lifecycle, aliases,
+snapshots, endpoints, replacement models, pricing modes, context windows, and
+feature flags:
 
 ```typescript
-import { getModelInfo, calculateCost, LLM_MODELS, Vendor } from '@everworker/oneringai';
+import { getModelInfo, calculateCost, LLM_MODELS, MODEL_REGISTRY_SCHEMA_VERSION, Vendor } from '@everworker/oneringai';
 
 // Get model information
-const model = getModelInfo('gpt-5.2');
-console.log(model.features.input.tokens);  // 400000
-console.log(model.features.input.cpm);     // 1.75 (cost per million)
+const model = getModelInfo('gpt-5.6'); // alias resolves to gpt-5.6-sol
+console.log(MODEL_REGISTRY_SCHEMA_VERSION); // 2
+console.log(model?.features.input.tokens);  // 1050000
+console.log(model?.lifecycle);              // 'active'
 
 // Calculate costs
-const cost = calculateCost('gpt-5.2', 50_000, 2_000);
-console.log(`Cost: $${cost}`);  // $0.1155
+const cost = calculateCost('gpt-5.6-luna', 50_000, 2_000);
+console.log(`Cost: $${cost}`);  // $0.0124
 
 // With mixed cached and uncached input
-const cachedCost = calculateCost('gpt-5.2', 50_000, 2_000, {
+const cachedCost = calculateCost('gpt-5.6-luna', 50_000, 2_000, {
   cachedInputTokens: 30_000,
   processingMode: 'batch',
 });
-console.log(`Optimized: $${cachedCost}`);
+console.log(`Optimized: $${cachedCost}`); // $0.0035
 ```
 
-**Available Models:**
-- **OpenAI (44)**: GPT-5.5 (flagship), GPT-5.4 (+ pro / mini / nano), GPT-5.3, GPT-5.2, GPT-5.1, GPT-5, GPT-4.1, GPT-4o, o3, o4-mini, o1, Deep Research, Audio, GPT-Realtime-2.1 / 2.1 mini / 2 / Translate, Open-Source
-- **Anthropic (13)**: Claude Opus 4.8, Claude Sonnet 5, Claude Fable 5, Claude Opus 4.7, Claude 4.6 (Opus, Sonnet), Claude 4.5 (Opus, Sonnet, Haiku), Claude 4.1, Claude 4, Claude 3.7 Sonnet
-- **Google (10)**: Gemini 3.1, Gemini 3, Gemini 2.5
-- **Grok (5)**: Grok 4.20 (reasoning, non-reasoning, multi-agent), Grok 4.1 Fast
+**Available text/realtime models:**
+- **OpenAI (48)**: GPT-5.6 Sol/Terra/Luna, GPT-5.5 Pro and earlier GPT/o-series, Deep Research, audio, Realtime 2.1/2/Translate, and open-weight models
+- **Anthropic (15)**: Claude Opus 5, Mythos 5, Fable 5, Opus 4.8/4.7/4.6, Sonnet 5/4.6, and maintained legacy entries
+- **Google (14)**: Gemini 3.6 Flash, 3.5/3.1 families, live/image variants, and maintained Gemini 2.5 entries
+- **xAI (11)**: Grok 4.5, 4.3, Build 0.1, 4.20/4.1 families, and Grok Voice Think Fast 2.0/1.0
+
+See the [complete Model Registry guide](./USER_GUIDE.md#model-registry) and
+[2026-08-08 vendor audit](./docs/MODEL_REGISTRY_AUDIT.md) for migration details,
+media registries, API-path changes, and official source links.
 
 ### 15. Streaming
 
@@ -1915,9 +2008,9 @@ await agent.run('Run npm test and report any failures');
 - Timeout protection (default 2 min)
 - Output truncation for large outputs
 
-### 18. Custom Tool Generation (NEW)
+### 18. Custom Tool Generation
 
-Let agents **create their own tools** at runtime — draft, test, iterate, save, and reuse. The agent writes JavaScript code, validates it, tests it in the VM sandbox, and persists it for future use. All 6 meta-tools are auto-registered and visible in Everworker Desktop.
+Let agents **create their own tools** at runtime — draft, test, iterate, save, and reuse. The agent writes JavaScript code, validates it, tests it in the VM sandbox, and persists it for future use. All 6 meta-tools are auto-registered through the agent's normal tool manager.
 
 ```typescript
 import { createCustomToolMetaTools, hydrateCustomTool } from '@everworker/oneringai';
@@ -1950,7 +2043,7 @@ agent.tools.register(weatherTool, { source: 'custom', tags: ['weather', 'api'] }
 
 > See the [User Guide](./USER_GUIDE.md#custom-tool-generation) for the complete workflow, sandbox API reference, and examples.
 
-### 19. Desktop Automation Tools (NEW)
+### 19. Desktop Automation Tools
 
 OS-level desktop automation for building "computer use" agents — screenshot the screen, send to a vision model, receive tool calls (click, type, etc.), execute them, repeat:
 
@@ -2051,7 +2144,7 @@ await agent.run([
 
 See the [User Guide](./USER_GUIDE.md#document-reader) for complete API reference and configuration options.
 
-### 21. Routine Execution (NEW)
+### 21. Routine Execution
 
 Execute multi-step AI workflows where tasks run in dependency order with automatic validation:
 
@@ -2178,7 +2271,7 @@ const all = await storage.list(undefined, { tags: ['daily'] });
 
 ### 22. External API Integration
 
-Connect your AI agents to 45+ external services with enterprise-grade resilience:
+Connect your AI agents to 50 external services with enterprise-grade resilience:
 
 ```typescript
 import { Connector, ConnectorTools, Services, Agent } from '@everworker/oneringai';
@@ -2213,7 +2306,7 @@ await agent.run('Find all TypeScript files in src/ and show me the entry point')
 await agent.run('Show me PR #42 and summarize the review comments');
 ```
 
-**Supported Services (45+):**
+**Supported Services (50):**
 - **Communication**: Slack *(10 built-in tools)*, Telegram *(6 built-in tools)*, Twilio *(4 built-in tools)*, Discord (generic API only), Zoom *(3 built-in tools)*
 - **Development**: GitHub *(8 built-in tools)*, GitLab, Jira, Linear, Bitbucket
 - **Google Workspace**: Google APIs *(11 built-in tools)* — Gmail, Calendar, Meet transcripts, Drive
@@ -2241,7 +2334,7 @@ const metrics = connector.getMetrics();
 console.log(`Success rate: ${metrics.successCount / metrics.requestCount * 100}%`);
 ```
 
-#### Scoped Connector Registry (NEW)
+#### Scoped Connector Registry
 
 Limit connector visibility by user, group, or tenant in multi-user systems:
 
@@ -2286,9 +2379,9 @@ const allTools = ConnectorTools.discoverAll(undefined, { registry });
 - Zero changes to existing API — scoping is entirely opt-in
 - Works with `Agent.create()`, `ConnectorTools.for()`, and `ConnectorTools.discoverAll()`
 
-#### Vendor Templates (NEW)
+#### Vendor Templates
 
-Quickly set up connectors for 45+ services with pre-configured authentication templates:
+Quickly set up connectors for 50 services with pre-configured authentication templates:
 
 ```typescript
 import {
@@ -2384,7 +2477,7 @@ for (const tool of allTools) {
 }
 ```
 
-### 23. Microsoft Graph Connector Tools (NEW)
+### 23. Microsoft Graph Connector Tools
 
 11 dedicated tools for Microsoft Graph API — email, calendar, meetings, Teams transcripts, and OneDrive/SharePoint files. Auto-registered for connectors with `serviceType: 'microsoft'` or `baseURL` matching `graph.microsoft.com`.
 
@@ -2679,7 +2772,7 @@ AgentRegistry.destroyMatching({ model: 'gpt-4.1' });
 
 See the [User Guide](./USER_GUIDE.md#agent-registry) for the full API reference.
 
-### 28. Agent Orchestrator (NEW)
+### 28. Agent Orchestrator
 
 Create autonomous agent teams with conversational delegation and shared workspace:
 
@@ -2729,7 +2822,7 @@ const result = await orchestrator.run('Build an auth module with JWT support');
 
 See the [User Guide](./USER_GUIDE.md#agent-orchestrator) for detailed examples including delegation, parallel research, and custom workflows.
 
-### 29. Telegram Connector Tools (NEW)
+### 29. Telegram Connector Tools
 
 6 tools for Telegram Bot API, auto-registered via `ConnectorTools.for('telegram')`:
 
@@ -2745,7 +2838,7 @@ createConnectorFromTemplate('my-bot', 'telegram', 'bot-token', {
 // telegram_set_webhook, telegram_get_me, telegram_get_chat
 ```
 
-### 30. Twilio Connector Tools (NEW)
+### 30. Twilio Connector Tools
 
 4 tools for SMS and WhatsApp via Twilio, auto-registered via `ConnectorTools.for('twilio')`:
 
@@ -2760,7 +2853,7 @@ createConnectorFromTemplate('my-twilio', 'twilio', 'api-key', {
 // Tools: send_sms, send_whatsapp, list_messages, get_message
 ```
 
-### 31. Google Workspace Connector Tools (NEW)
+### 31. Google Workspace Connector Tools
 
 11 tools for Google APIs (Gmail, Calendar, Meet, Drive), auto-registered via `ConnectorTools.for('google-api')`:
 
@@ -2805,7 +2898,7 @@ const tools = ConnectorTools.for('google');
 | `list_files` | List Drive files/folders | low |
 | `search_files` | Full-text search across Drive | low |
 
-### 32. Zoom Connector Tools (NEW)
+### 32. Zoom Connector Tools
 
 3 tools for Zoom meeting management, auto-registered via `ConnectorTools.for('zoom')`:
 
@@ -2821,7 +2914,7 @@ createConnectorFromTemplate('my-zoom', 'zoom', 'oauth-user', {
 const tools = ConnectorTools.for('my-zoom');
 ```
 
-### 33. Unified Calendar (NEW)
+### 33. Unified Calendar
 
 Cross-provider meeting slot finder — aggregates busy intervals from Google + Microsoft calendars:
 
@@ -2846,7 +2939,7 @@ const result = await tool.execute({
 // Returns: slots where ALL attendees across ALL providers are free
 ```
 
-### 34. Multi-Account Connectors (NEW)
+### 34. Multi-Account Connectors
 
 Use multiple accounts per connector (e.g., work + personal Microsoft accounts):
 
@@ -2866,7 +2959,7 @@ const agent = Agent.create({
 // toolFilter restricts which tools are created per identity.
 ```
 
-### 35. Integration Testing (NEW)
+### 35. Integration Testing
 
 Reusable test suite framework for validating connector tools against live APIs:
 
@@ -2885,7 +2978,7 @@ const result = await IntegrationTestRunner.runSuite(googleWorkspaceSuite, tools,
 });
 ```
 
-### 36. Instruction Templates (NEW)
+### 36. Instruction Templates
 
 Use `{{COMMAND}}` placeholders in agent instructions that resolve automatically — static values at creation, dynamic values every LLM call. Fully extensible with custom handlers:
 
@@ -3059,7 +3152,8 @@ Check your `.env` file and ensure the key is correct for that vendor.
 Each vendor has different model names. Check the [User Guide](./USER_GUIDE.md) for supported models.
 
 ### Vision not working
-Use a vision-capable model: `gpt-4.1`, `claude-sonnet-4-6`, `gemini-2.5-flash`.
+Use a current vision-capable model: `gpt-5.6-terra`, `claude-fable-5`, or
+`gemini-3.6-flash`.
 
 ## Contributing
 
@@ -3071,4 +3165,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 0.11.0 | **Last Updated:** 2026-07-24 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 1.0.0 | **Last Updated:** 2026-08-08 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**

@@ -30,6 +30,15 @@ import { logger } from '../../observability/Logger.js';
  * the misconfigured model.
  */
 const ANTHROPIC_UNKNOWN_MODEL_MAX_TOKENS = 64_000;
+const ANTHROPIC_ADAPTIVE_THINKING_MODELS = [
+  /^claude-(?:opus-5|fable-5|mythos-5)(?:-|$)/,
+  /^claude-opus-4-[678](?:-|$)/,
+  /^claude-sonnet-(?:5|4-6)(?:-|$)/,
+] as const;
+
+function usesAdaptiveThinking(model: string): boolean {
+  return ANTHROPIC_ADAPTIVE_THINKING_MODELS.some((pattern) => pattern.test(model));
+}
 
 export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreateParams, Anthropic.Message> {
   readonly providerName = 'anthropic';
@@ -77,6 +86,29 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
       max_tokens,
       messages,
     };
+    const vendorOptions = options.vendorOptions ?? {};
+    const rawParams = params as unknown as Record<string, unknown>;
+    const serviceTier = vendorOptions.serviceTier ?? vendorOptions.service_tier;
+    if (serviceTier !== undefined) rawParams.service_tier = serviceTier;
+    if (vendorOptions.inference_geo !== undefined) {
+      rawParams.inference_geo = vendorOptions.inference_geo;
+    }
+    if (vendorOptions.container !== undefined) rawParams.container = vendorOptions.container;
+    // Anthropic's request metadata schema contains only `user_id`. Generic
+    // OneRingAI metadata may carry arbitrary host keys, so never forward the
+    // full record and let the remote API reject it.
+    if (options.metadata?.user_id !== undefined) {
+      params.metadata = { user_id: options.metadata.user_id };
+    }
+    if (vendorOptions.speed !== undefined) {
+      rawParams.speed = vendorOptions.speed;
+      rawParams.betas = [
+        ...new Set([
+          ...((rawParams.betas as string[] | undefined) ?? []),
+          'fast-mode-2026-02-01',
+        ]),
+      ];
+    }
 
     // Add system instruction if provided
     if (options.instructions) {
@@ -113,7 +145,12 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
       });
     if (mcpServers.length > 0) {
       (params as unknown as Record<string, unknown>).mcp_servers = mcpServers;
-      (params as unknown as Record<string, unknown>).betas = ['mcp-client-2025-11-20'];
+      rawParams.betas = [
+        ...new Set([
+          ...((rawParams.betas as string[] | undefined) ?? []),
+          'mcp-client-2025-11-20',
+        ]),
+      ];
     }
 
     // Some models (e.g. claude-opus-4-7) deprecate the `temperature` parameter entirely.
@@ -125,18 +162,41 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
     // Add thinking/reasoning support
     if (options.thinking?.enabled) {
       validateThinkingConfig(options.thinking);
-      const budgetTokens = options.thinking.budgetTokens || 10000;
-      (params as any).thinking = {
-        type: 'enabled',
-        budget_tokens: budgetTokens,
-      };
-      // Anthropic requires temperature=1 when thinking is enabled — but only on models that accept it
-      if (supportsTemperature) {
-        params.temperature = 1;
+      if (usesAdaptiveThinking(options.model)) {
+        (params as any).thinking = {
+          type: 'adaptive',
+          ...(vendorOptions.thinkingDisplay
+            ? { display: vendorOptions.thinkingDisplay }
+            : {}),
+        };
+      } else {
+        const budgetTokens = options.thinking.budgetTokens || 10000;
+        if (budgetTokens < 1024 || budgetTokens >= max_tokens) {
+          throw new Error(
+            `Anthropic thinking budgetTokens must be at least 1024 and less than max_output_tokens (${max_tokens})`,
+          );
+        }
+        (params as any).thinking = {
+          type: 'enabled',
+          budget_tokens: budgetTokens,
+        };
+        // Legacy fixed-budget thinking requires temperature=1 on models that accept it.
+        if (supportsTemperature) params.temperature = 1;
       }
     } else if (options.temperature !== undefined && supportsTemperature) {
       // Only set temperature if thinking is not enabled and the model accepts it
       params.temperature = options.temperature;
+    }
+
+    // `thinking.enabled` gates the provider-neutral effort field. Anthropic's
+    // native effort control is independent of thinking, so callers that want
+    // it without normalized thinking can still use vendorOptions.effort.
+    const requestedEffort = options.thinking?.enabled
+      ? (options.thinking.effort ?? vendorOptions.effort)
+      : vendorOptions.effort;
+    if (requestedEffort && requestedEffort !== 'none') {
+      const effort = requestedEffort === 'minimal' ? 'low' : requestedEffort;
+      params.output_config = { ...(params.output_config ?? {}), effort } as Anthropic.OutputConfig;
     }
 
     if (options.response_format?.type === 'json_schema') {
@@ -154,6 +214,7 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
         // input, preserving the caller's original schema for host validation.
         const anthropicSchema = transformJSONSchema(schema as Record<string, unknown>);
         params.output_config = {
+          ...(params.output_config ?? {}),
           format: { type: 'json_schema', schema: anthropicSchema },
         };
       }
@@ -211,6 +272,7 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
             }
           : undefined,
         serviceTier: response.usage.service_tier ?? undefined,
+        speed: (response.usage as Anthropic.Usage & { speed?: string | null }).speed ?? undefined,
       },
     });
 

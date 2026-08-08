@@ -23,6 +23,8 @@ export interface VideoModelCapabilities {
   maxFps: number;
   /** Whether the model supports audio generation */
   audio: boolean;
+  /** Supports generation from only a text prompt. Defaults to true for legacy entries. */
+  textToVideo?: boolean;
   /** Whether the model supports image-to-video */
   imageToVideo: boolean;
   /** Whether the model supports video extension */
@@ -48,6 +50,12 @@ export interface VideoModelCapabilities {
 export interface VideoModelPricing {
   /** Cost per second of generated video */
   perSecond: number;
+  /** Resolution-specific rates when the provider does not use a flat rate. */
+  perSecondByResolution?: Readonly<Record<string, number>>;
+  /** Discounted offline/batch rate when supported. */
+  batchPerSecondByResolution?: Readonly<Record<string, number>>;
+  /** Optional charge for an image-to-video reference image. */
+  inputImage?: number;
   /** Currency */
   currency: string;
 }
@@ -78,10 +86,13 @@ export const VIDEO_MODELS = {
     VEO_2: 'veo-2.0-generate-001',
     VEO_3_1_FAST: 'veo-3.1-fast-generate-preview',
     VEO_3_1: 'veo-3.1-generate-preview',
+    VEO_3_1_LITE: 'veo-3.1-lite-generate-preview',
+    GEMINI_OMNI_FLASH: 'gemini-omni-flash-preview',
   },
   [Vendor.Grok]: {
     // xAI Grok Imagine video generation
     GROK_IMAGINE_VIDEO: 'grok-imagine-video',
+    GROK_IMAGINE_VIDEO_1_5: 'grok-imagine-video-1.5',
   },
 } as const;
 
@@ -120,6 +131,10 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     provider: Vendor.OpenAI,
     description: 'Flagship video generation with synced audio. Extensions up to 120s total',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-24',
+    retirementDate: '2026-09-24',
+    endpoints: ['video_generation', 'video_edit', 'batch'],
     releaseDate: '2025-10-06',
     sources: OPENAI_SOURCES,
     capabilities: {
@@ -140,6 +155,8 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     },
     pricing: {
       perSecond: 0.10, // $0.05/sec batch API
+      perSecondByResolution: { '720p': 0.10, '720x1280': 0.10, '1280x720': 0.10 },
+      batchPerSecondByResolution: { '720p': 0.05, '720x1280': 0.05, '1280x720': 0.05 },
       currency: 'USD',
     },
   },
@@ -150,6 +167,10 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     provider: Vendor.OpenAI,
     description: 'Most advanced synced-audio video generation. Up to 1080p, extensions up to 120s',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-24',
+    retirementDate: '2026-09-24',
+    endpoints: ['video_generation', 'video_edit', 'batch'],
     releaseDate: '2025-10-06',
     sources: OPENAI_SOURCES,
     capabilities: {
@@ -170,6 +191,16 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     },
     pricing: {
       perSecond: 0.30, // 720p base; $0.50/sec at 1024x, $0.70/sec at 1080p
+      perSecondByResolution: {
+        '720p': 0.30, '720x1280': 0.30, '1280x720': 0.30,
+        '1024p': 0.50, '1024x1792': 0.50, '1792x1024': 0.50,
+        '1080p': 0.70, '1080x1920': 0.70, '1920x1080': 0.70,
+      },
+      batchPerSecondByResolution: {
+        '720p': 0.15, '720x1280': 0.15, '1280x720': 0.15,
+        '1024p': 0.25, '1024x1792': 0.25, '1792x1024': 0.25,
+        '1080p': 0.35, '1080x1920': 0.35, '1920x1080': 0.35,
+      },
       currency: 'USD',
     },
   },
@@ -182,7 +213,10 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     name: 'veo-2.0-generate-001',
     displayName: 'Veo 2.0',
     provider: Vendor.Google,
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-30',
+    replacementModel: 'veo-3.1-lite-generate-preview',
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [5, 6, 7, 8],
@@ -229,7 +263,8 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
       },
     },
     pricing: {
-      perSecond: 0.15, // $0.15 for 720p/1080p, $0.35 for 4K
+      perSecond: 0.10,
+      perSecondByResolution: { '720p': 0.10, '1080p': 0.12, '4k': 0.30 },
       currency: 'USD',
     },
   },
@@ -258,8 +293,69 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     },
     pricing: {
       perSecond: 0.40, // $0.40 for 720p/1080p, $0.60 for 4K
+      perSecondByResolution: { '720p': 0.40, '1080p': 0.40, '4k': 0.60 },
       currency: 'USD',
     },
+  },
+
+  'veo-3.1-lite-generate-preview': {
+    name: 'veo-3.1-lite-generate-preview',
+    displayName: 'Veo 3.1 Lite',
+    provider: Vendor.Google,
+    description: 'Cost-efficient Veo 3.1 preview for short 720p and 1080p clips with native audio',
+    isActive: true,
+    lifecycle: 'preview',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['video_generation'],
+    releaseDate: '2026-06-30',
+    sources: { ...GOOGLE_SOURCES, lastVerified: '2026-08-08' },
+    capabilities: {
+      durations: [4, 6, 8],
+      resolutions: ['720p', '1080p'],
+      aspectRatios: ['16:9', '9:16'],
+      maxFps: 24,
+      audio: true,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: true,
+      features: { upscaling: false, styleControl: false, negativePrompt: true, seed: true },
+    },
+    pricing: {
+      perSecond: 0.05,
+      perSecondByResolution: { '720p': 0.05, '1080p': 0.08 },
+      currency: 'USD',
+    },
+  },
+
+  'gemini-omni-flash-preview': {
+    name: 'gemini-omni-flash-preview',
+    displayName: 'Gemini Omni Flash',
+    provider: Vendor.Google,
+    description: 'Conversational 720p video generation and editing through the Interactions API',
+    isActive: true,
+    lifecycle: 'preview',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['interactions', 'video_generation', 'video_edit'],
+    releaseDate: '2026-06-30',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/omni',
+      apiReference: 'https://ai.google.dev/api/interactions-api',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      durations: [3, 4, 5, 6, 7, 8, 9, 10],
+      resolutions: ['720p'],
+      aspectRatios: ['16:9', '9:16'],
+      maxFps: 24,
+      audio: true,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: false,
+      features: { upscaling: false, styleControl: true, negativePrompt: false, seed: false },
+    },
+    pricing: { perSecond: 0.10, perSecondByResolution: { '720p': 0.10 }, currency: 'USD' },
   },
 
   // ============================================================================
@@ -290,6 +386,45 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     },
     pricing: {
       perSecond: 0.05,
+      perSecondByResolution: { '480p': 0.05, '720p': 0.07 },
+      currency: 'USD',
+    },
+  },
+
+  'grok-imagine-video-1.5': {
+    name: 'grok-imagine-video-1.5',
+    displayName: 'Grok Imagine Video 1.5',
+    provider: Vendor.Grok,
+    description: 'Higher-fidelity xAI video generation with 480p, 720p, and 1080p output',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['grok-imagine-video-1.5-preview'],
+    snapshots: ['grok-imagine-video-1.5-2026-05-30'],
+    endpoints: ['video_generation'],
+    releaseDate: '2026-06-01',
+    sources: {
+      documentation: 'https://docs.x.ai/developers/models/grok-imagine-video-1.5',
+      pricing: 'https://docs.x.ai/developers/models/grok-imagine-video-1.5',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      durations: [1, 5, 8, 10, 15],
+      resolutions: ['480p', '720p', '1080p'],
+      aspectRatios: ['16:9', '4:3', '1:1', '9:16', '3:4', '3:2', '2:3'],
+      maxFps: 24,
+      audio: true,
+      textToVideo: false,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: false,
+      features: { upscaling: true, styleControl: true, negativePrompt: false, seed: true },
+    },
+    pricing: {
+      perSecond: 0.08,
+      perSecondByResolution: { '480p': 0.08, '720p': 0.14, '1080p': 0.25 },
+      inputImage: 0.01,
       currency: 'USD',
     },
   },
@@ -312,6 +447,8 @@ export const getVideoModelsByVendor = helpers.getByVendor;
  * Get all currently active models
  */
 export const getActiveVideoModels = helpers.getActive;
+/** Get active video models with a published deprecation notice. */
+export const getDeprecatedVideoModels = helpers.getDeprecated;
 
 /**
  * Get models with a specific feature
@@ -332,11 +469,22 @@ export function getVideoModelsWithAudio(): IVideoModelDescription[] {
 /**
  * Calculate video generation cost
  */
-export function calculateVideoCost(modelName: string, durationSeconds: number): number | null {
-  const model = VIDEO_MODEL_REGISTRY[modelName];
+export function calculateVideoCost(
+  modelName: string,
+  durationSeconds: number,
+  options?: { resolution?: string; batch?: boolean; inputImages?: number }
+): number | null {
+  const model = getVideoModelInfo(modelName);
   if (!model || !model.pricing) {
     return null;
   }
-
-  return model.pricing.perSecond * durationSeconds;
+  const resolutionPricing = options?.batch
+    ? model.pricing.batchPerSecondByResolution
+    : model.pricing.perSecondByResolution;
+  const perSecond = options?.resolution && resolutionPricing
+    ? resolutionPricing[options.resolution]
+    : model.pricing.perSecond;
+  if (perSecond === undefined) return null;
+  return perSecond * durationSeconds
+    + (options?.inputImages ?? 0) * (model.pricing.inputImage ?? 0);
 }

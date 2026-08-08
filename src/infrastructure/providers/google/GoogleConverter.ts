@@ -9,7 +9,7 @@ import type {
   Part,
   FunctionDeclaration,
 } from '@google/genai';
-import { TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js';
+import { TextGenerateOptions, type ReasoningEffort } from '../../../domain/interfaces/ITextProvider.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { InputItem, MessageRole } from '../../../domain/entities/Message.js';
 import { getModelInfo } from '../../../domain/entities/Model.js';
@@ -85,9 +85,13 @@ export class GoogleConverter {
       request.tools = [{ functionDeclarations: tools }];
 
       // Add tool config to encourage tool use
+      const namedToolChoice = typeof options.tool_choice === 'object'
+        ? options.tool_choice.function.name
+        : undefined;
       request.toolConfig = {
         functionCallingConfig: {
-          mode: options.tool_choice === 'required' ? 'ANY' : 'AUTO',
+          mode: options.tool_choice === 'required' || namedToolChoice ? 'ANY' : 'AUTO',
+          ...(namedToolChoice && { allowedFunctionNames: [namedToolChoice] }),
         },
       };
     }
@@ -101,14 +105,26 @@ export class GoogleConverter {
     const supportsTemperature =
       getModelInfo(options.model)?.features.parameters?.temperature !== false;
     request.generationConfig = {
+      ...((options.vendorOptions?.generationConfig as Record<string, unknown> | undefined) ?? {}),
       ...(options.temperature !== undefined && supportsTemperature && {
         temperature: options.temperature,
       }),
       maxOutputTokens: options.max_output_tokens,
     };
+    const serviceTier = options.vendorOptions?.serviceTier ?? options.vendorOptions?.service_tier;
+    if (serviceTier !== undefined) request.generationConfig.serviceTier = serviceTier;
 
-    // Add thinking config for Gemini 3+ reasoning models
-    if (options.vendorOptions?.thinkingLevel) {
+    // Gemini 3 uses thinking levels; Gemini 2.x retains token budgets.
+    if (/^gemini-3(?:\.|-|$)/.test(options.model) && options.thinking?.enabled) {
+      validateThinkingConfig(options.thinking);
+      request.generationConfig.thinkingConfig = {
+        thinkingLevel: this.resolveThinkingLevel(
+          (options.vendorOptions?.thinkingLevel as ReasoningEffort | undefined)
+            ?? options.thinking.effort,
+          options.thinking.budgetTokens,
+        ),
+      };
+    } else if (options.vendorOptions?.thinkingLevel) {
       request.generationConfig.thinkingConfig = {
         thinkingLevel: options.vendorOptions.thinkingLevel,
       };
@@ -144,6 +160,23 @@ export class GoogleConverter {
     }
 
     return request;
+  }
+
+  private resolveThinkingLevel(
+    effort?: ReasoningEffort,
+    budgetTokens?: number,
+  ): 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH' {
+    if (effort === 'none' || effort === 'minimal') return 'MINIMAL';
+    if (effort === 'low') return 'LOW';
+    if (effort === 'high' || effort === 'xhigh' || effort === 'max') return 'HIGH';
+    if (effort === 'medium') return 'MEDIUM';
+    if (budgetTokens !== undefined) {
+      if (budgetTokens < 2048) return 'MINIMAL';
+      if (budgetTokens < 8192) return 'LOW';
+      if (budgetTokens < 24576) return 'MEDIUM';
+      return 'HIGH';
+    }
+    return 'MEDIUM';
   }
 
   /**

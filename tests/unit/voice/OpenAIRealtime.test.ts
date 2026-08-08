@@ -5,16 +5,20 @@ import { Connector } from '../../../src/core/Connector.js';
 import { Vendor } from '../../../src/core/Vendor.js';
 import { OpenAIRealtimeAPI } from '../../../src/capabilities/voice/openai/OpenAIRealtimeAPI.js';
 import { OpenAIRealtimeSession } from '../../../src/capabilities/voice/openai/OpenAIRealtimeSession.js';
+import { GrokRealtimeAPI } from '../../../src/capabilities/voice/grok/GrokRealtimeAPI.js';
+import { GrokRealtimeSession } from '../../../src/capabilities/voice/grok/GrokRealtimeSession.js';
 import { RealtimePipeline } from '../../../src/capabilities/voice/pipelines/RealtimePipeline.js';
 import { VoiceSession } from '../../../src/capabilities/voice/VoiceSession.js';
 
 class MockSocket extends EventEmitter {
   readyState = 1;
   sent: Array<Record<string, unknown>> = [];
+  binarySent: Buffer[] = [];
   close = vi.fn(() => { this.readyState = 3; });
 
-  send(data: string): void {
-    this.sent.push(JSON.parse(data));
+  send(data: string | Buffer): void {
+    if (Buffer.isBuffer(data)) this.binarySent.push(data);
+    else this.sent.push(JSON.parse(data));
   }
 }
 
@@ -39,6 +43,32 @@ function connectedFactory(socket: MockSocket) {
 
 describe('OpenAI Realtime GA support', () => {
   beforeEach(() => Connector.clear());
+
+  it('rejects non-24 kHz OpenAI PCM at compile time and at the runtime boundary', () => {
+    const connector = createConnector();
+    expect(() => new OpenAIRealtimeSession({
+      connector,
+      session: {
+        audio: {
+          input: {
+            format: {
+              type: 'audio/pcm',
+              // @ts-expect-error OpenAI Realtime PCM is fixed at 24 kHz.
+              rate: 16000,
+            },
+          },
+        },
+      },
+    })).toThrow('OpenAI Realtime input PCM rate must be 24000 Hz');
+  });
+
+  it('rejects non-24 kHz OpenAI PCM in later session updates', () => {
+    const client = new OpenAIRealtimeSession({ connector: createConnector() });
+
+    expect(() => client.updateSession({
+      audio: { output: { format: { type: 'audio/pcm', rate: 16000 } } },
+    } as any)).toThrow('OpenAI Realtime output PCM rate must be 24000 Hz');
+  });
 
   it('connects without the beta header and sends GA conversation events', async () => {
     const connector = createConnector();
@@ -375,5 +405,200 @@ describe('OpenAI Realtime GA support', () => {
 
     await pipeline.destroy();
     agent.destroy();
+  });
+});
+
+describe('xAI Realtime compatibility', () => {
+  beforeEach(() => Connector.clear());
+
+  it('rejects OpenAI-only semantic VAD before opening an xAI session', async () => {
+    const connector = Connector.create({
+      name: 'xai-semantic-vad-test',
+      vendor: Vendor.Grok,
+      auth: { type: 'api_key', apiKey: 'xai-test-key' },
+    });
+    const agent = Agent.create({ connector, model: 'grok-voice-latest' });
+    const voiceSession = new VoiceSession({
+      callId: 'xai-semantic-call', from: '+1000', to: '+2000', metadata: {},
+    });
+    const factory = vi.fn();
+    const pipeline = new RealtimePipeline({
+      agent,
+      session: voiceSession,
+      turnDetection: 'semantic_vad',
+      realtimeSessionFactory: factory,
+    });
+
+    await expect(pipeline.init(voiceSession.getInfo())).rejects.toThrow(
+      'semantic_vad is OpenAI-only',
+    );
+    expect(factory).not.toHaveBeenCalled();
+    agent.destroy();
+  });
+
+  it('uses xAI root session fields and language_hint in the telephony pipeline', async () => {
+    const connector = Connector.create({
+      name: 'xai-pipeline-test',
+      vendor: Vendor.Grok,
+      auth: { type: 'api_key', apiKey: 'xai-test-key' },
+    });
+    const socket = new MockSocket();
+    const agent = Agent.create({
+      connector,
+      model: 'grok-voice-latest',
+      instructions: 'Be concise.',
+    });
+    const voiceSession = new VoiceSession({
+      callId: 'xai-call-1', from: '+1000', to: '+2000', metadata: {},
+    });
+    const pipeline = new RealtimePipeline({
+      agent,
+      session: voiceSession,
+      realtime: {
+        voice: { id: 'custom_voice_1' },
+        turn_detection: { type: 'server_vad', threshold: 0.7 },
+        audio: {
+          input: {
+            noise_reduction: { type: 'far_field' },
+            transcription: { language: 'de', keyterms: ['OneRingAI'] },
+          },
+          output: { voice: 'eve' },
+        },
+      },
+      realtimeSessionFactory: (options) => new OpenAIRealtimeSession({
+        ...options,
+        webSocketFactory: connectedFactory(socket),
+      }),
+    });
+    pipeline.on('error', () => undefined);
+
+    await pipeline.init(voiceSession.getInfo());
+
+    const update = socket.sent.find((event) => event.type === 'session.update');
+    expect(update).toMatchObject({
+      session: {
+        voice: { id: 'custom_voice_1' },
+        turn_detection: { type: 'server_vad', threshold: 0.7 },
+        audio: {
+          input: {
+            format: { type: 'audio/pcmu' },
+            transcription: { language_hint: 'de', keyterms: ['OneRingAI'] },
+          },
+          output: { format: { type: 'audio/pcmu' } },
+        },
+      },
+    });
+    expect((update?.session as any).audio.input).not.toHaveProperty('turn_detection');
+    expect((update?.session as any).audio.input).not.toHaveProperty('noise_reduction');
+    expect((update?.session as any).audio.output).not.toHaveProperty('voice');
+    expect((update?.session as any).audio.input.transcription).not.toHaveProperty('language');
+    expect((update?.session as any).audio.input.transcription).not.toHaveProperty('model');
+
+    await pipeline.destroy();
+    agent.destroy();
+  });
+
+  it('uses the xAI endpoint and current voice query parameters', async () => {
+    const connector = Connector.create({
+      name: 'xai-realtime-test',
+      vendor: Vendor.Grok,
+      auth: { type: 'api_key', apiKey: 'xai-test-key' },
+    });
+    const socket = new MockSocket();
+    let requestedURL = '';
+    const client = new GrokRealtimeSession({
+      connector,
+      model: 'grok-voice-latest',
+      reasoningEffort: 'high',
+      conversationId: 'conversation-1',
+      webSocketFactory: async (url) => {
+        requestedURL = url;
+        return connectedFactory(socket)();
+      },
+    });
+    client.on('error', () => undefined);
+
+    await client.connect();
+
+    expect(requestedURL).toBe(
+      'wss://api.x.ai/v1/realtime?model=grok-voice-latest&conversation_id=conversation-1&reasoning.effort=high',
+    );
+  });
+
+  it('supports xAI raw binary input and output audio transport', async () => {
+    const connector = Connector.create({
+      name: 'xai-binary-test',
+      vendor: Vendor.Grok,
+      auth: { type: 'api_key', apiKey: 'xai-test-key' },
+    });
+    const socket = new MockSocket();
+    const output: Buffer[] = [];
+    const client = new GrokRealtimeSession({
+      connector,
+      model: 'grok-voice-latest',
+      session: {
+        audio: {
+          input: { transport: 'binary', format: { type: 'audio/pcm', rate: 16000 } },
+          output: { transport: 'binary', format: { type: 'audio/pcm', rate: 32000 } },
+        },
+      },
+      webSocketFactory: connectedFactory(socket),
+    });
+    client.on('error', () => undefined);
+    client.on('audio', (audio) => output.push(audio));
+
+    await client.connect();
+    client.appendAudio(Buffer.from([1, 2, 3]));
+    socket.emit('message', Buffer.from([4, 5, 6]), true);
+
+    expect(socket.binarySent).toEqual([Buffer.from([1, 2, 3])]);
+    expect(output).toEqual([Buffer.from([4, 5, 6])]);
+    expect(socket.sent[0]).toMatchObject({
+      session: {
+        audio: {
+          input: { format: { type: 'audio/pcm', rate: 16000 } },
+          output: { format: { type: 'audio/pcm', rate: 32000 } },
+        },
+      },
+    });
+
+    client.updateSession({
+      audio: {
+        input: { format: { type: 'audio/pcm', rate: 48000 } },
+        output: { format: { type: 'audio/pcm', rate: 44100 } },
+      },
+    });
+    expect(socket.sent[1]).toMatchObject({
+      type: 'session.update',
+      session: {
+        audio: {
+          input: { format: { type: 'audio/pcm', rate: 48000 } },
+          output: { format: { type: 'audio/pcm', rate: 44100 } },
+        },
+      },
+    });
+  });
+
+  it('creates browser credentials and controls xAI SIP calls', async () => {
+    const connector = Connector.create({
+      name: 'xai-realtime-api-test',
+      vendor: Vendor.Grok,
+      auth: { type: 'api_key', apiKey: 'xai-test-key' },
+    });
+    const fetchMock = vi.spyOn(connector, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ value: 'xai-secret', expires_at: 123 }), { status: 200 }))
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const api = new GrokRealtimeAPI(connector);
+
+    expect((await api.createClientSecret(120)).value).toBe('xai-secret');
+    await api.referCall('call/1', 'tel:+14155550123');
+    await api.hangupCall('call/1');
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.x.ai/v1/realtime/client_secrets');
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      expires_after: { seconds: 120 },
+    });
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('https://api.x.ai/v1/realtime/calls/call%2F1/refer');
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('https://api.x.ai/v1/realtime/calls/call%2F1/hangup');
   });
 });

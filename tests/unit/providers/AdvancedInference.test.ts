@@ -383,6 +383,49 @@ describe('advanced inference provider contracts', () => {
     ).toThrow(ProviderCapabilityNotSupportedError);
   });
 
+  it('emits OpenAI content cache breakpoints only for enabled GPT-5.6+ requests', () => {
+    const provider = new OpenAITextProvider({ apiKey: 'test' });
+    const input = [{
+      type: 'message',
+      role: 'user',
+      content: [{
+        type: 'input_text',
+        text: 'stable prefix',
+        promptCacheBreakpoint: true,
+      }],
+    }];
+    const normalize = (model: string, prompt_cache: Record<string, unknown>) =>
+      (provider as any).applyContextLimitGuardrail({
+        model,
+        input,
+        prompt_cache,
+        data_handling: { allowProviderCaching: true },
+        skipContextLimitCheck: true,
+      });
+
+    const unsupported = (provider as any).buildBatchBody(normalize('unknown-openai', {
+      mode: 'auto',
+    }));
+    const preBreakpoints = (provider as any).buildBatchBody(normalize('gpt-5.4', {
+      mode: 'auto',
+      breakpointMode: 'explicit',
+    }));
+    const enabled = (provider as any).buildBatchBody(normalize('gpt-5.6-luna', {
+      mode: 'auto',
+      breakpointMode: 'explicit',
+    }));
+    const implicitWithMarkedContent = (provider as any).buildBatchBody(normalize('gpt-5.6-luna', {
+      mode: 'auto',
+      breakpointMode: 'implicit',
+    }));
+
+    expect(unsupported.input[0].content[0]).not.toHaveProperty('prompt_cache_breakpoint');
+    expect(preBreakpoints.input[0].content[0]).not.toHaveProperty('prompt_cache_breakpoint');
+    expect(enabled.input[0].content[0].prompt_cache_breakpoint).toEqual({ mode: 'explicit' });
+    expect(implicitWithMarkedContent.input[0].content[0].prompt_cache_breakpoint)
+      .toEqual({ mode: 'explicit' });
+  });
+
   it('negotiates cache retention controls per concrete model', () => {
     const openai = new OpenAITextProvider({ apiKey: 'test' });
     const google = new GoogleTextProvider({ apiKey: 'test' });

@@ -63,6 +63,24 @@ describe('AnthropicConverter', () => {
       expect(request.system).toBe('You are a helpful assistant');
     });
 
+    it('forwards only Anthropic-supported user_id request metadata', () => {
+      const request = converter.convertRequest({
+        model: 'claude-sonnet-5',
+        input: 'Hello',
+        metadata: { user_id: 'user-hash-123', workflow: 'must-not-leak' },
+      });
+
+      expect(request.metadata).toEqual({ user_id: 'user-hash-123' });
+      expect(request.metadata).not.toHaveProperty('workflow');
+
+      const unsupportedOnly = converter.convertRequest({
+        model: 'claude-sonnet-5',
+        input: 'Hello',
+        metadata: { workflow: 'ignored' },
+      });
+      expect(unsupportedOnly.metadata).toBeUndefined();
+    });
+
     it('should convert tools to Anthropic format', () => {
       const tools = [{
         type: 'function' as const,

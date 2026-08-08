@@ -104,6 +104,15 @@ export const GEMINI_VOICES: IVoiceInfo[] = [
   { id: 'Sulafat', name: 'Sulafat', language: 'multi', gender: 'female' },
 ];
 
+/** Built-in xAI voices shared by TTS and realtime speech-to-speech. */
+export const XAI_VOICES: IVoiceInfo[] = [
+  { id: 'ara', name: 'Ara', language: 'multi', gender: 'female' },
+  { id: 'eve', name: 'Eve', language: 'multi', gender: 'female', isDefault: true },
+  { id: 'leo', name: 'Leo', language: 'multi', gender: 'male' },
+  { id: 'rex', name: 'Rex', language: 'multi', gender: 'male' },
+  { id: 'sal', name: 'Sal', language: 'multi', gender: 'neutral' },
+];
+
 /**
  * Google Gemini TTS supported languages (24)
  * Source: https://ai.google.dev/gemini-api/docs/speech-generation

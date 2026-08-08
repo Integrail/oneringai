@@ -8,6 +8,7 @@ export type { EmbeddingsCreateOptions } from './Embeddings.js';
 
 // Types from interfaces
 export type {
+  EmbeddingContentPart,
   EmbeddingOptions,
   EmbeddingResponse,
   IEmbeddingProvider,

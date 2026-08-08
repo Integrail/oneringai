@@ -15,7 +15,7 @@ export function validateThinkingConfig(
   }
 
   if (thinking.effort !== undefined) {
-    const validEfforts = ['low', 'medium', 'high'];
+    const validEfforts = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
     if (!validEfforts.includes(thinking.effort)) {
       throw new Error(
         `Invalid thinking effort: '${thinking.effort}'. Must be one of: ${validEfforts.join(', ')}`

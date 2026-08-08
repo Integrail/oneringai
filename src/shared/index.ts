@@ -19,9 +19,22 @@ export {
   getModelInfo,
   getModelsByVendor,
   getActiveModels,
+  getDeprecatedModels,
+  resolveModelName,
   calculateCost,
 } from '../domain/entities/Model.js';
-export type { ILLMDescription } from '../domain/entities/Model.js';
+export type {
+  ILLMDescription,
+  ProcessingMode,
+  TokenPricing,
+  LongContextTokenPricing,
+} from '../domain/entities/Model.js';
+export type {
+  ModelLifecycleStatus,
+  ModelAvailability,
+  ModelEndpoint,
+} from '../domain/types/SharedTypes.js';
+export { MODEL_REGISTRY_SCHEMA_VERSION } from '../domain/types/SharedTypes.js';
 
 // ============ Services ============
 export {

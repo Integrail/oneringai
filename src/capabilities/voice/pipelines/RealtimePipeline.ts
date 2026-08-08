@@ -121,11 +121,20 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
   // ─── IVoicePipeline Implementation ────────────────────────────────
 
   async init(sessionInfo: VoiceSessionInfo): Promise<void> {
-    if (this.agent.connector.vendor !== Vendor.OpenAI) {
-      throw new Error('RealtimePipeline requires an OpenAI connector');
+    const vendor = this.agent.connector.vendor;
+    if (vendor !== Vendor.OpenAI && vendor !== Vendor.Grok) {
+      throw new Error('RealtimePipeline requires an OpenAI or Grok connector');
     }
-    if (this.config.speed !== undefined && (this.config.speed < 0.25 || this.config.speed > 1.5)) {
-      throw new RangeError('Realtime voice speed must be between 0.25 and 1.5');
+    const minimumSpeed = vendor === Vendor.Grok ? 0.7 : 0.25;
+    if (this.config.speed !== undefined && (this.config.speed < minimumSpeed || this.config.speed > 1.5)) {
+      throw new RangeError(`Realtime voice speed must be between ${minimumSpeed} and 1.5`);
+    }
+    const configuredTurnDetection = this.config.realtime?.turn_detection
+      ?? this.config.realtime?.audio?.input?.turn_detection;
+    if (vendor === Vendor.Grok
+      && (this.config.turnDetection === 'semantic_vad'
+        || configuredTurnDetection?.type === 'semantic_vad')) {
+      throw new RangeError('xAI Realtime supports server_vad or disabled turn detection; semantic_vad is OpenAI-only');
     }
     this.sessionInfo = sessionInfo;
     this.setState('connected');
@@ -135,10 +144,10 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
     logger.info({
       model,
       sessionId: sessionInfo.sessionId,
-      voice: this.config.voice ?? 'marin',
+      voice: this.config.voice ?? (vendor === Vendor.Grok ? 'eve' : 'marin'),
       turnDetection: this.config.turnDetection ?? 'server_vad',
       toolCount: this.tools.length,
-    }, '[RealtimePipeline] Connecting to OpenAI Realtime API');
+    }, '[RealtimePipeline] Connecting to Realtime API');
 
     const factory = this.config.realtimeSessionFactory ?? ((options) => new OpenAIRealtimeSession(options));
     this.realtime = factory({
@@ -304,8 +313,12 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
     const configured = this.config.realtime ?? {};
     const configuredInput = configured.audio?.input ?? {};
     const configuredOutput = configured.audio?.output ?? {};
+    const isGrok = this.agent.connector.vendor === Vendor.Grok;
+    const configuredTurnDetection = isGrok
+      ? configured.turn_detection ?? configuredInput.turn_detection
+      : configuredInput.turn_detection;
 
-    let turnDetection: OpenAIRealtimeTurnDetection = configuredInput.turn_detection ?? null;
+    let turnDetection: OpenAIRealtimeTurnDetection = configuredTurnDetection ?? null;
     if (this.config.turnDetection === 'semantic_vad') {
       turnDetection = {
         type: 'semantic_vad',
@@ -316,7 +329,7 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
     } else if (this.config.turnDetection === 'none') {
       turnDetection = null;
     } else if (this.config.turnDetection === 'server_vad'
-      || configuredInput.turn_detection === undefined) {
+      || configuredTurnDetection === undefined) {
       turnDetection = {
         type: 'server_vad',
         threshold: this.config.vadThreshold ?? 0.5,
@@ -337,6 +350,10 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
       : this.config.noiseReduction
         ? { type: this.config.noiseReduction }
         : configuredInput.noise_reduction ?? { type: 'near_field' as const };
+    const voice = this.config.voice
+      ?? configured.voice
+      ?? configuredOutput.voice
+      ?? (isGrok ? 'eve' : 'marin');
     const session: OpenAIRealtimeSessionConfig = {
       ...configured,
       type: 'realtime',
@@ -356,11 +373,25 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
         output: {
           ...configuredOutput,
           format: { type: 'audio/pcmu' },
-          voice: this.config.voice ?? configuredOutput.voice ?? 'marin',
+          voice,
           ...(this.config.speed === undefined ? {} : { speed: this.config.speed }),
         },
       },
     };
+
+    // xAI's speech-to-speech API puts voice and VAD at the session root.
+    // Strip the OpenAI-only nested fields rather than sending two conflicting shapes.
+    if (isGrok) {
+      const {
+        turn_detection: _nestedTurnDetection,
+        noise_reduction: _noiseReduction,
+        ...grokInput
+      } = session.audio?.input ?? {};
+      const { voice: _nestedVoice, ...grokOutput } = session.audio?.output ?? {};
+      session.voice = voice;
+      session.turn_detection = turnDetection;
+      session.audio = { input: grokInput, output: grokOutput };
+    }
 
     // Enable input transcription for hooks/logging
     if (this.config.inputTranscription === false
@@ -368,22 +399,39 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
       session.audio!.input!.transcription = null;
     } else {
       const configuredTranscription = configuredInput.transcription ?? {};
-      session.audio!.input!.transcription = {
-        ...configuredTranscription,
-        model: this.config.transcriptionModel
-          ?? configuredTranscription.model
-          ?? 'gpt-4o-transcribe',
-        ...(this.config.transcriptionLanguage
-          ? { language: this.config.transcriptionLanguage }
-          : {}),
-      };
+      if (isGrok) {
+        const {
+          language,
+          language_hint: configuredLanguageHint,
+          model: _model,
+          prompt: _prompt,
+          ...xaiTranscription
+        } = configuredTranscription;
+        const languageHint = this.config.transcriptionLanguage
+          ?? configuredLanguageHint
+          ?? language;
+        session.audio!.input!.transcription = {
+          ...xaiTranscription,
+          ...(languageHint ? { language_hint: languageHint } : {}),
+        };
+      } else {
+        session.audio!.input!.transcription = {
+          ...configuredTranscription,
+          model: this.config.transcriptionModel
+            ?? configuredTranscription.model
+            ?? 'gpt-4o-transcribe',
+          ...(this.config.transcriptionLanguage
+            ? { language: this.config.transcriptionLanguage }
+            : {}),
+        };
+      }
     }
 
     this.realtime?.updateSession(session);
 
     logger.info({
       toolCount: tools.length,
-      voice: session.audio?.output?.voice,
+      voice: session.voice ?? session.audio?.output?.voice,
       turnDetection: turnDetection?.type ?? 'none',
       inputTranscription: this.config.inputTranscription !== false,
     }, '[RealtimePipeline] Session updated');
@@ -443,6 +491,7 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
 
       // ── Caller transcript (streaming deltas + final) ────────
       case 'conversation.item.input_audio_transcription.delta':
+      case 'conversation.item.input_audio_transcription.updated':
         // Streaming partial transcript — ignore (we use the .completed event)
         break;
 

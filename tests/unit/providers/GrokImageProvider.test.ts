@@ -133,7 +133,7 @@ describe('GrokImageProvider', () => {
           prompt: 'A sunset over mountains',
           aspect_ratio: '16:9',
           n: 1,
-          response_format: 'b64_json',
+          response_format: 'url',
         })
       );
     });
@@ -233,7 +233,7 @@ describe('GrokImageProvider', () => {
           model: 'grok-imagine-image',
           prompt: 'Make it blue',
           size: '1024x1024',
-          response_format: 'b64_json',
+          response_format: 'url',
         })
       );
     });
@@ -273,7 +273,7 @@ describe('GrokImageProvider', () => {
     it('should return list of available models', async () => {
       const models = await provider.listModels();
 
-      expect(models).toEqual(['grok-imagine-image']);
+      expect(models).toEqual(['grok-imagine-image-quality', 'grok-imagine-image']);
     });
   });
 

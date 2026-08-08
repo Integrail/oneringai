@@ -118,9 +118,9 @@ describe('VideoModel Registry', () => {
     it('should find models with seed support', () => {
       const models = getVideoModelsWithFeature('seed');
       expect(models.length).toBeGreaterThan(0);
-      // All models should support seed
       expect(models.some((m) => m.name === 'sora-2')).toBe(true);
-      expect(models.some((m) => m.name === 'veo-2.0-generate-001')).toBe(true);
+      expect(models.some((m) => m.name === 'veo-3.1-generate-preview')).toBe(true);
+      expect(models.some((m) => m.name === 'veo-2.0-generate-001')).toBe(false);
       expect(models.some((m) => m.name === 'grok-imagine-video')).toBe(true);
     });
   });

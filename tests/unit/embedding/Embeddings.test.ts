@@ -104,6 +104,20 @@ describe('Embeddings', () => {
       );
     });
 
+    it('should use Gemini Embedding 2 by default for Google', () => {
+      Connector.create({
+        name: 'google-emb',
+        vendor: Vendor.Google,
+        auth: { type: 'api_key', apiKey: 'test' },
+      });
+
+      const emb = Embeddings.create({ connector: 'google-emb' });
+      emb.embed('test');
+      expect(mockProvider.embed).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-embedding-2' })
+      );
+    });
+
     it('should use custom model when specified', () => {
       Connector.create({
         name: 'openai-custom',
@@ -171,6 +185,8 @@ describe('Embeddings', () => {
         model: 'text-embedding-3-small',
         input: 'test input',
         dimensions: undefined,
+        encodingFormat: undefined,
+        vendorOptions: undefined,
       });
     });
 
@@ -180,6 +196,8 @@ describe('Embeddings', () => {
         model: 'text-embedding-3-small',
         input: ['a', 'b', 'c'],
         dimensions: undefined,
+        encodingFormat: undefined,
+        vendorOptions: undefined,
       });
     });
 
@@ -195,6 +213,39 @@ describe('Embeddings', () => {
       expect(mockProvider.embed).toHaveBeenCalledWith(
         expect.objectContaining({ dimensions: 256 })
       );
+    });
+
+    it('should pass encoding and vendor options through', async () => {
+      await emb.embed('test', {
+        encodingFormat: 'base64',
+        vendorOptions: { taskType: 'RETRIEVAL_QUERY' },
+      });
+      expect(mockProvider.embed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          encodingFormat: 'base64',
+          vendorOptions: { taskType: 'RETRIEVAL_QUERY' },
+        })
+      );
+    });
+
+    it('should expose multimodal embedding content', async () => {
+      const content = [
+        { type: 'text' as const, text: 'Describe this asset' },
+        { type: 'image' as const, data: './asset.png', mimeType: 'image/png' },
+      ];
+
+      await emb.embedMultimodal(content, {
+        model: 'gemini-embedding-2',
+        dimensions: 512,
+      });
+
+      expect(mockProvider.embed).toHaveBeenCalledWith({
+        model: 'gemini-embedding-2',
+        input: '',
+        content,
+        dimensions: 512,
+        vendorOptions: undefined,
+      });
     });
 
     it('should propagate provider errors', async () => {

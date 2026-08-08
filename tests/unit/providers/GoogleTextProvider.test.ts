@@ -16,16 +16,18 @@ import {
 import { StreamEventType } from '@/domain/entities/StreamEvent.js';
 
 // Create mock functions with vi.hoisted for proper hoisting
-const { mockGenerateContent, mockGenerateContentStream, mockGoogleGenAI } = vi.hoisted(() => {
+const { mockGenerateContent, mockGenerateContentStream, mockInteractionsCreate, mockGoogleGenAI } = vi.hoisted(() => {
   const mockGenerateContent = vi.fn();
   const mockGenerateContentStream = vi.fn();
+  const mockInteractionsCreate = vi.fn();
   const mockGoogleGenAI = vi.fn(() => ({
     models: {
       generateContent: mockGenerateContent,
       generateContentStream: mockGenerateContentStream,
     },
+    interactions: { create: mockInteractionsCreate },
   }));
-  return { mockGenerateContent, mockGenerateContentStream, mockGoogleGenAI };
+  return { mockGenerateContent, mockGenerateContentStream, mockInteractionsCreate, mockGoogleGenAI };
 });
 
 // Mock Google GenAI SDK
@@ -232,6 +234,117 @@ describe('GoogleTextProvider', () => {
     });
   });
 
+  describe('Interactions API', () => {
+    it('uses Interactions by default for Gemini 3.5+ and converts steps', async () => {
+      mockInteractionsCreate.mockResolvedValue({
+        id: 'int_123',
+        model: 'gemini-3.6-flash',
+        status: 'completed',
+        steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Hello from Interactions' }] }],
+        usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 },
+      });
+
+      const response = await provider.generate({
+        model: 'gemini-3.6-flash',
+        input: 'hello',
+        thinking: { enabled: true, effort: 'high' },
+      });
+
+      expect(mockInteractionsCreate).toHaveBeenCalledWith(expect.objectContaining({
+        model: 'gemini-3.6-flash',
+        input: 'hello',
+        store: true,
+        generation_config: { thinking_level: 'high' },
+      }));
+      expect(response.output_text).toBe('Hello from Interactions');
+      expect(response.usage.total_tokens).toBe(7);
+    });
+
+    it('allows Interactions storage to be explicitly disabled', async () => {
+      mockInteractionsCreate.mockResolvedValue({
+        id: 'int_no_store',
+        model: 'gemini-3.6-flash',
+        status: 'completed',
+        steps: [{ type: 'model_output', content: [{ type: 'text', text: 'No store' }] }],
+      });
+
+      await provider.generate({
+        model: 'gemini-3.6-flash',
+        input: 'hello',
+        vendorOptions: { store: false },
+      });
+
+      expect(mockInteractionsCreate).toHaveBeenCalledWith(expect.objectContaining({ store: false }));
+    });
+
+    it('forces a named function with Interactions allowed_tools', async () => {
+      mockInteractionsCreate.mockResolvedValue({
+        id: 'int_named_tool',
+        model: 'gemini-3.6-flash',
+        status: 'completed',
+        steps: [{ type: 'function_call', id: 'call_1', name: 'lookup', arguments: { q: 'x' } }],
+      });
+
+      await provider.generate({
+        model: 'gemini-3.6-flash',
+        input: 'look this up',
+        tools: [{
+          type: 'function',
+          function: { name: 'lookup', description: 'Lookup', parameters: { type: 'object' } },
+        }],
+        tool_choice: { type: 'function', function: { name: 'lookup' } },
+      });
+
+      expect(mockInteractionsCreate.mock.calls[0][0].generation_config.tool_choice).toEqual({
+        allowed_tools: { mode: 'any', tools: ['lookup'] },
+      });
+    });
+
+    it('preserves the order of text and tool calls in stateless Interactions history', async () => {
+      mockInteractionsCreate.mockResolvedValue({
+        id: 'int_ordered',
+        model: 'gemini-3.6-flash',
+        status: 'completed',
+        steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Done' }] }],
+      });
+
+      await provider.generate({
+        model: 'gemini-3.6-flash',
+        input: [{
+          type: 'message',
+          role: MessageRole.ASSISTANT,
+          content: [
+            { type: ContentType.OUTPUT_TEXT, text: 'Before tool' },
+            { type: ContentType.TOOL_USE, id: 'call_1', name: 'lookup', arguments: '{"q":"x"}' },
+            { type: ContentType.OUTPUT_TEXT, text: 'After tool' },
+          ],
+        }],
+      });
+
+      expect(mockInteractionsCreate.mock.calls[0][0].input).toEqual([
+        { type: 'model_output', content: [{ type: 'text', text: 'Before tool' }] },
+        { type: 'function_call', id: 'call_1', name: 'lookup', arguments: { q: 'x' } },
+        { type: 'model_output', content: [{ type: 'text', text: 'After tool' }] },
+      ]);
+    });
+
+    it('allows generateContent opt-out for current models', async () => {
+      mockGenerateContent.mockResolvedValue({
+        candidates: [{ content: { parts: [{ text: 'legacy path' }] }, finishReason: 'STOP' }],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+      });
+
+      await provider.generate({
+        model: 'gemini-3.6-flash',
+        input: 'hello',
+        vendorOptions: { api: 'generateContent' },
+      });
+
+      expect(mockGenerateContent).toHaveBeenCalled();
+      expect(mockInteractionsCreate).not.toHaveBeenCalled();
+    });
+  });
+
   describe('streamGenerate()', () => {
     it('should spread generationConfig in stream config (CRITICAL FIX)', async () => {
       const mockStream = {
@@ -290,6 +403,113 @@ describe('GoogleTextProvider', () => {
 
       // Should have RESPONSE_COMPLETE
       expect(events.some((e) => e.type === StreamEventType.RESPONSE_COMPLETE)).toBe(true);
+    });
+
+    it.each([
+      ['cancelled', 'failed'],
+      ['budget_exceeded', 'incomplete'],
+    ] as const)('maps Interactions status_update %s to %s', async (providerStatus, expected) => {
+      mockInteractionsCreate.mockResolvedValue({
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            event_type: 'interaction.created',
+            interaction: { id: 'int_status', model: 'gemini-3.6-flash', status: 'in_progress' },
+          };
+          yield {
+            event_type: 'interaction.status_update',
+            interaction_id: 'int_status',
+            status: providerStatus,
+            metadata: { total_usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 } },
+          };
+        },
+      });
+
+      const events = [];
+      for await (const event of provider.streamGenerate({
+        model: 'gemini-3.6-flash',
+        input: 'Hello',
+      })) events.push(event);
+
+      expect(events.at(-1)).toMatchObject({
+        type: StreamEventType.RESPONSE_COMPLETE,
+        status: expected,
+        stop_reason: providerStatus,
+        usage: { total_tokens: 3 },
+      });
+    });
+
+    it('maps terminal Interactions cancellation and incomplete statuses', async () => {
+      mockInteractionsCreate.mockResolvedValue({
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            event_type: 'interaction.completed',
+            interaction: {
+              id: 'int_cancelled',
+              model: 'gemini-3.6-flash',
+              status: 'cancelled',
+              usage: { input_tokens: 1, output_tokens: 0, total_tokens: 1 },
+            },
+          };
+        },
+      });
+
+      const events = [];
+      for await (const event of provider.streamGenerate({
+        model: 'gemini-3.6-flash',
+        input: 'Hello',
+      })) events.push(event);
+
+      expect(events.at(-1)).toMatchObject({ status: 'failed', stop_reason: 'cancelled' });
+    });
+
+    it('emits an error event and a failed completion for Interactions SSE errors', async () => {
+      mockInteractionsCreate.mockResolvedValue({
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            event_type: 'error',
+            error: { code: 'quota_exceeded', message: 'Quota exhausted' },
+          };
+        },
+      });
+
+      const events = [];
+      for await (const event of provider.streamGenerate({
+        model: 'gemini-3.6-flash',
+        input: 'Hello',
+      })) events.push(event);
+
+      expect(events).toContainEqual(expect.objectContaining({
+        type: StreamEventType.ERROR,
+        error: expect.objectContaining({ code: 'quota_exceeded', message: 'Quota exhausted' }),
+        recoverable: false,
+      }));
+      expect(events.at(-1)).toMatchObject({
+        type: StreamEventType.RESPONSE_COMPLETE,
+        status: 'failed',
+        stop_reason: 'quota_exceeded',
+      });
+    });
+
+    it('does not report a stream without a terminal Interactions event as completed', async () => {
+      mockInteractionsCreate.mockResolvedValue({
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            event_type: 'interaction.created',
+            interaction: { id: 'int_truncated', model: 'gemini-3.6-flash', status: 'in_progress' },
+          };
+        },
+      });
+
+      const events = [];
+      for await (const event of provider.streamGenerate({
+        model: 'gemini-3.6-flash',
+        input: 'Hello',
+      })) events.push(event);
+
+      expect(events.at(-1)).toMatchObject({
+        type: StreamEventType.RESPONSE_COMPLETE,
+        status: 'incomplete',
+      });
     });
   });
 

@@ -23,8 +23,22 @@ export type OpenAIRealtimeVoice =
   | 'cedar'
   | (string & {});
 
+/** PCM rates accepted by connector-shared Realtime sessions (xAI supports the full set). */
+export type RealtimePCMSampleRate = 8000 | 16000 | 22050 | 24000 | 32000 | 44100 | 48000;
+
+/** OpenAI Realtime PCM is fixed at 24 kHz. */
+export type OpenAIRealtimePCMSampleRate = 24000;
+
 export type OpenAIRealtimeAudioFormat =
-  | { type: 'audio/pcm'; rate: 24000 }
+  | { type: 'audio/pcm'; rate: OpenAIRealtimePCMSampleRate }
+  | { type: 'audio/opus'; rate?: 24000 }
+  | { type: 'audio/pcmu' }
+  | { type: 'audio/pcma' };
+
+/** xAI Voice Agent audio formats, including its full documented PCM rate set. */
+export type GrokRealtimeAudioFormat =
+  | { type: 'audio/pcm'; rate: RealtimePCMSampleRate }
+  | { type: 'audio/opus'; rate?: 24000 }
   | { type: 'audio/pcmu' }
   | { type: 'audio/pcma' };
 
@@ -91,7 +105,13 @@ export interface OpenAIRealtimeSessionConfig {
   output_modalities?: Array<'audio' | 'text'>;
   max_output_tokens?: number | 'inf';
   parallel_tool_calls?: boolean;
-  reasoning?: { effort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' };
+  reasoning?: { effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' };
+  /** xAI-compatible top-level voice selector. */
+  voice?: OpenAIRealtimeVoice | { id: string };
+  /** xAI-compatible top-level turn detection selector. */
+  turn_detection?: OpenAIRealtimeTurnDetection;
+  /** xAI conversation resumption (30-minute inactivity window). */
+  resumption?: { enabled: boolean };
   include?: Array<'item.input_audio_transcription.logprobs'>;
   prompt?: { id: string; version?: string; variables?: Record<string, string> } | null;
   tool_choice?: 'none' | 'auto' | 'required' | Record<string, unknown>;
@@ -101,20 +121,58 @@ export interface OpenAIRealtimeSessionConfig {
   audio?: {
     input?: {
       format?: OpenAIRealtimeAudioFormat;
+      transport?: 'json' | 'binary';
       noise_reduction?: { type: 'near_field' | 'far_field' } | null;
       transcription?: {
         model?: string;
         language?: string;
+        /** xAI speech-to-speech transcription language hint. */
+        language_hint?: string;
+        /** xAI speech-to-speech transcription vocabulary hints. */
+        keyterms?: string[];
         prompt?: string;
       } | null;
       turn_detection?: OpenAIRealtimeTurnDetection;
     };
     output?: {
       format?: OpenAIRealtimeAudioFormat;
+      transport?: 'json' | 'binary';
       voice?: OpenAIRealtimeVoice | { id: string };
       speed?: number;
     };
   };
+}
+
+type RealtimeAudioInput = NonNullable<NonNullable<OpenAIRealtimeSessionConfig['audio']>['input']>;
+type RealtimeAudioOutput = NonNullable<NonNullable<OpenAIRealtimeSessionConfig['audio']>['output']>;
+
+/** xAI-specific session type used by GrokRealtimeSession. */
+export interface GrokRealtimeSessionConfig extends Omit<OpenAIRealtimeSessionConfig, 'audio'> {
+  audio?: {
+    input?: Omit<RealtimeAudioInput, 'format'> & { format?: GrokRealtimeAudioFormat };
+    output?: Omit<RealtimeAudioOutput, 'format'> & { format?: GrokRealtimeAudioFormat };
+  };
+}
+
+/**
+ * Protect JavaScript callers and type escapes at OpenAI REST/WebSocket
+ * boundaries. The public OpenAI type already narrows PCM to this rate.
+ * @internal
+ */
+export function assertOpenAIRealtimePCMRates(session: unknown): void {
+  if (!session || typeof session !== 'object') return;
+  const audio = (session as { audio?: unknown }).audio;
+  if (!audio || typeof audio !== 'object') return;
+  for (const direction of ['input', 'output'] as const) {
+    const channel = (audio as Record<string, unknown>)[direction];
+    if (!channel || typeof channel !== 'object') continue;
+    const format = (channel as { format?: unknown }).format;
+    if (!format || typeof format !== 'object') continue;
+    const value = format as { type?: unknown; rate?: unknown };
+    if (value.type === 'audio/pcm' && value.rate !== 24000) {
+      throw new RangeError(`OpenAI Realtime ${direction} PCM rate must be 24000 Hz`);
+    }
+  }
 }
 
 export interface OpenAIRealtimeTranscriptionSessionConfig {

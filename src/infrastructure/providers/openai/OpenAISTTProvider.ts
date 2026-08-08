@@ -14,6 +14,7 @@ import {
   ProviderError,
 } from '../../../domain/errors/AIErrors.js';
 import * as fs from 'fs';
+import { detectAudioContainer, wrapRawAudioAsWav } from '../../../utils/audioUtils.js';
 
 export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTextProvider {
   readonly name: string = 'openai-stt';
@@ -56,10 +57,11 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
           });
 
           // Prepare audio file
-          const audioFile = await this.prepareAudioFile(options.audio);
+          const audioFile = await this.prepareAudioFile(options);
 
           // Build request parameters
           const requestParams: Partial<OpenAI.Audio.TranscriptionCreateParams> = {
+            ...options.vendorOptions,
             model: options.model,
             file: audioFile,
             language: options.language,
@@ -77,11 +79,6 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
           // Add timestamp granularity if needed
           if (options.includeTimestamps && options.timestampGranularity) {
             requestParams.timestamp_granularities = [options.timestampGranularity];
-          }
-
-          // Add diarization options if using diarize model
-          if (options.model.includes('diarize') && options.vendorOptions?.max_speakers) {
-            (requestParams as any).max_speakers = options.vendorOptions.max_speakers;
           }
 
           const response: any = await this.client.audio.transcriptions.create(
@@ -115,7 +112,7 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
             model: options.model,
           });
 
-          const audioFile = await this.prepareAudioFile(options.audio);
+          const audioFile = await this.prepareAudioFile(options);
 
           const requestParams: Partial<OpenAI.Audio.TranslationCreateParams> = {
             model: options.model,
@@ -159,50 +156,25 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
    * Handles both Buffer and file path inputs.
    * Raw PCM buffers get a WAV header so OpenAI can decode them.
    */
-  private async prepareAudioFile(audio: Buffer | string): Promise<any> {
+  private async prepareAudioFile(options: STTOptions): Promise<any> {
+    const { audio } = options;
     if (Buffer.isBuffer(audio)) {
-      // Wrap raw PCM in a WAV container so OpenAI can decode it.
-      // Assumes PCM s16le, mono. We detect sample rate from buffer size heuristics
-      // but default to 16000 Hz (safe for Whisper). Voice pipelines send 8000 Hz
-      // which also works fine — WAV header tells the decoder.
-      const wavBuffer = this.wrapPcmAsWav(audio, 1, 16000, 16);
+      const detected = options.encoding ? undefined : detectAudioContainer(audio);
+      const bytes = detected
+        ? audio
+        : wrapRawAudioAsWav(audio, options.sampleRate ?? 16000, options.encoding ?? 'pcm');
+      const extension = detected?.extension ?? 'wav';
+      const mimeType = detected?.mimeType ?? 'audio/wav';
       // Pass the Buffer directly to File — wrapping in `new Uint8Array(buf)`
       // would force the typed-array overload and copy the WAV before File even
       // snapshots it. Direct pass keeps a single Blob-internal copy.
-      return new File([wavBuffer as BlobPart], 'audio.wav', { type: 'audio/wav' });
+      return new File([bytes as BlobPart], `audio.${extension}`, { type: mimeType });
     } else if (typeof audio === 'string') {
       // File path - create ReadStream
       return fs.createReadStream(audio);
     } else {
       throw new Error('Invalid audio input: must be Buffer or file path');
     }
-  }
-
-  /**
-   * Wrap raw PCM data in a minimal WAV (RIFF) container.
-   * This adds the 44-byte header that audio decoders need.
-   */
-  private wrapPcmAsWav(pcm: Buffer, channels: number, sampleRate: number, bitsPerSample: number): Buffer {
-    const byteRate = sampleRate * channels * (bitsPerSample / 8);
-    const blockAlign = channels * (bitsPerSample / 8);
-    const dataSize = pcm.length;
-    const header = Buffer.alloc(44);
-
-    header.write('RIFF', 0);                          // ChunkID
-    header.writeUInt32LE(36 + dataSize, 4);            // ChunkSize
-    header.write('WAVE', 8);                           // Format
-    header.write('fmt ', 12);                          // Subchunk1ID
-    header.writeUInt32LE(16, 16);                      // Subchunk1Size (PCM)
-    header.writeUInt16LE(1, 20);                       // AudioFormat (1 = PCM)
-    header.writeUInt16LE(channels, 22);                // NumChannels
-    header.writeUInt32LE(sampleRate, 24);               // SampleRate
-    header.writeUInt32LE(byteRate, 28);                 // ByteRate
-    header.writeUInt16LE(blockAlign, 32);               // BlockAlign
-    header.writeUInt16LE(bitsPerSample, 34);            // BitsPerSample
-    header.write('data', 36);                          // Subchunk2ID
-    header.writeUInt32LE(dataSize, 40);                 // Subchunk2Size
-
-    return Buffer.concat([header, pcm]);
   }
 
   /**

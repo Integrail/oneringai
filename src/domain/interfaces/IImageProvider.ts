@@ -13,6 +13,8 @@ export interface ImageGenerateOptions {
   style?: 'vivid' | 'natural';
   n?: number; // Number of images to generate
   response_format?: 'url' | 'b64_json';
+  /** Provider-specific options for features without a normalized equivalent. */
+  vendorOptions?: Record<string, unknown>;
 }
 
 export interface ImageEditOptions {
@@ -23,6 +25,8 @@ export interface ImageEditOptions {
   size?: string;
   n?: number;
   response_format?: 'url' | 'b64_json';
+  /** Provider-specific options for features without a normalized equivalent. */
+  vendorOptions?: Record<string, unknown>;
 }
 
 export interface ImageVariationOptions {
@@ -39,6 +43,10 @@ export interface ImageResponse {
     url?: string;
     b64_json?: string;
     revised_prompt?: string;
+    /** Persistent provider file ID, when output storage was requested. */
+    file_id?: string;
+    /** Persistent public URL, when requested from the provider. */
+    public_url?: string;
   }>;
 }
 

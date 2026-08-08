@@ -16,6 +16,24 @@ import type {
 } from './IAdvancedInference.js';
 import type { IConnectorRegistry } from './IConnectorRegistry.js';
 
+/** Cross-vendor reasoning-depth controls. Individual models may support a subset. */
+export type ReasoningEffort =
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max';
+
+export interface ThinkingConfig {
+  enabled: boolean;
+  /** Fixed reasoning-token budget for models that still expose budget-based thinking. */
+  budgetTokens?: number;
+  /** Model-selected reasoning depth for OpenAI, Anthropic, and Gemini models. */
+  effort?: ReasoningEffort;
+}
+
 export interface TextGenerateOptions {
   model: string;
   input: string | InputItem[];
@@ -44,13 +62,7 @@ export interface TextGenerateOptions {
   /** @internal Identity context for resolving named connector credentials. */
   credential_context?: { userId?: string; connectorRegistry?: IConnectorRegistry };
   /** Vendor-agnostic thinking/reasoning configuration */
-  thinking?: {
-    enabled: boolean;
-    /** Budget in tokens for thinking (Anthropic & Google) */
-    budgetTokens?: number;
-    /** Reasoning effort level (OpenAI) */
-    effort?: 'low' | 'medium' | 'high';
-  };
+  thinking?: ThinkingConfig;
   /** Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) */
   vendorOptions?: Record<string, any>;
 

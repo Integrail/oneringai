@@ -5,6 +5,7 @@ import type {
   OpenAIRealtimeTranscriptionSessionConfig,
   OpenAIRealtimeTranslationClientSessionConfig,
 } from './RealtimeTypes.js';
+import { assertOpenAIRealtimePCMRates } from './RealtimeTypes.js';
 
 export interface CreateRealtimeClientSecretOptions {
   session: OpenAIRealtimeSessionConfig | OpenAIRealtimeTranscriptionSessionConfig;
@@ -26,6 +27,7 @@ export class OpenAIRealtimeAPI {
   }
 
   async createClientSecret(options: CreateRealtimeClientSecretOptions): Promise<OpenAIRealtimeClientSecret> {
+    assertOpenAIRealtimePCMRates(options.session);
     if (options.expiresAfterSeconds !== undefined
       && (options.expiresAfterSeconds < 10 || options.expiresAfterSeconds > 7200)) {
       throw new RangeError('expiresAfterSeconds must be between 10 and 7200');
@@ -47,6 +49,7 @@ export class OpenAIRealtimeAPI {
   }
 
   async acceptCall(callId: string, session: OpenAIRealtimeSessionConfig): Promise<void> {
+    assertOpenAIRealtimePCMRates(session);
     await this.request(`/realtime/calls/${encodeURIComponent(callId)}/accept`, {
       ...session,
       type: 'realtime',

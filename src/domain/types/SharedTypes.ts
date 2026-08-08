@@ -5,6 +5,42 @@
 
 import type { Vendor as VendorType } from '../../core/Vendor.js';
 
+/** Current public model-registry contract. Version 2 adds lifecycle, aliases, endpoints, sources, and modality-aware pricing. */
+export const MODEL_REGISTRY_SCHEMA_VERSION = 2 as const;
+
+/** Lifecycle state published by the model vendor. */
+export type ModelLifecycleStatus =
+  | 'preview'
+  | 'active'
+  | 'legacy'
+  | 'deprecated'
+  | 'retired';
+
+/** Commercial/access scope for models that are not universally available. */
+export type ModelAvailability =
+  | 'public'
+  | 'limited'
+  | 'invite_only'
+  | 'enterprise'
+  | 'region_limited';
+
+/** Normalized API surfaces used by the first-party provider adapters. */
+export type ModelEndpoint =
+  | 'responses'
+  | 'chat_completions'
+  | 'messages'
+  | 'generate_content'
+  | 'interactions'
+  | 'realtime'
+  | 'batch'
+  | 'image_generation'
+  | 'image_edit'
+  | 'video_generation'
+  | 'video_edit'
+  | 'audio_speech'
+  | 'audio_transcription'
+  | 'embeddings';
+
 // =============================================================================
 // Semantic Types - Normalized across vendors
 // =============================================================================
@@ -23,7 +59,7 @@ export type QualityLevel = 'draft' | 'standard' | 'high' | 'ultra';
 /**
  * Audio output formats
  */
-export type AudioFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm' | 'ogg';
+export type AudioFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm' | 'ogg' | 'mulaw' | 'alaw';
 
 /**
  * Output format preference for media
@@ -57,7 +93,7 @@ export interface ISourceLinks {
  */
 export interface VendorOptionSchema {
   /** Data type of the option */
-  type: 'string' | 'number' | 'boolean' | 'enum' | 'array';
+  type: 'string' | 'number' | 'boolean' | 'enum' | 'array' | 'object';
   /** Description of the option */
   description: string;
   /** Whether the option is required */
@@ -98,11 +134,35 @@ export interface IBaseModelDescription {
   /** Whether the model is currently available */
   isActive: boolean;
 
+  /** Whether this is a vendor-recommended/default choice for its modality. */
+  preferred?: boolean;
+
+  /** Vendor-published lifecycle. `isActive` remains for backward compatibility. */
+  lifecycle?: ModelLifecycleStatus;
+
+  /** Access scope when the model is not generally available to every account. */
+  availability?: ModelAvailability;
+
+  /** Alternate model IDs accepted by the provider. */
+  aliases?: readonly string[];
+
+  /** Pinned versions behind this family entry. */
+  snapshots?: readonly string[];
+
+  /** Normalized API endpoints on which the model is supported. */
+  endpoints?: readonly ModelEndpoint[];
+
   /** Release date (YYYY-MM-DD) */
   releaseDate?: string;
 
   /** Deprecation date if scheduled (YYYY-MM-DD) */
   deprecationDate?: string;
+
+  /** Final shutdown date, after which requests fail or are redirected. */
+  retirementDate?: string;
+
+  /** Recommended migration target. */
+  replacementModel?: string;
 
   /** Documentation/pricing links for maintenance */
   sources: ISourceLinks;

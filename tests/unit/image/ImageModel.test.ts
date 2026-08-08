@@ -129,7 +129,7 @@ describe('ImageModel Registry', () => {
     it('should find models with style control', () => {
       const models = getImageModelsWithFeature('styleControl');
       expect(models.length).toBeGreaterThan(0);
-      expect(models.some((m) => m.name === 'gemini-3-pro-image-preview')).toBe(true);
+      expect(models.some((m) => m.name === 'gemini-3-pro-image')).toBe(true);
     });
 
     it('should find models with prompt revision', () => {
@@ -164,6 +164,24 @@ describe('ImageModel Registry', () => {
       const cost = calculateImageCost('unknown', 1);
       expect(cost).toBeNull();
     });
+
+    it('calculates GPT Image 2 token usage', () => {
+      const cost = calculateImageCost('gpt-image-2', 1, {
+        textInputTokens: 100_000,
+        cachedImageInputTokens: 200_000,
+        imageOutputTokens: 300_000,
+      });
+      expect(cost).toBeCloseTo(0.5 + 0.4 + 9);
+    });
+
+    it('adds partial text-token usage without dropping per-image output cost', () => {
+      const cost = calculateImageCost('gemini-3.1-flash-image', 2, {
+        resolution: '2048px',
+        textInputTokens: 1_000,
+      });
+
+      expect(cost).toBeCloseTo(0.2025);
+    });
   });
 
   describe('Model constants', () => {
@@ -177,8 +195,8 @@ describe('ImageModel Registry', () => {
       expect(IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE).toBe('imagen-4.0-generate-001');
       expect(IMAGE_MODELS[Vendor.Google].IMAGEN_4_ULTRA).toBe('imagen-4.0-ultra-generate-001');
       expect(IMAGE_MODELS[Vendor.Google].IMAGEN_4_FAST).toBe('imagen-4.0-fast-generate-001');
-      expect(IMAGE_MODELS[Vendor.Google].GEMINI_3_1_FLASH_IMAGE).toBe('gemini-3.1-flash-image-preview');
-      expect(IMAGE_MODELS[Vendor.Google].GEMINI_3_PRO_IMAGE).toBe('gemini-3-pro-image-preview');
+      expect(IMAGE_MODELS[Vendor.Google].GEMINI_3_1_FLASH_IMAGE).toBe('gemini-3.1-flash-image');
+      expect(IMAGE_MODELS[Vendor.Google].GEMINI_3_PRO_IMAGE).toBe('gemini-3-pro-image');
       expect(IMAGE_MODELS[Vendor.Google].GEMINI_2_5_FLASH_IMAGE).toBe('gemini-2.5-flash-image');
     });
 

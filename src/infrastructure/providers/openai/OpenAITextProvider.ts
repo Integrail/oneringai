@@ -29,7 +29,8 @@ import {
   ProviderCapabilityNotSupportedError,
 } from '../../../domain/errors/AIErrors.js';
 
-const OPENAI_EXTENDED_PROMPT_CACHE_MODELS = /^gpt-5\.(?:4|5)(?:-|$)/;
+const OPENAI_EXTENDED_PROMPT_CACHE_MODELS = /^gpt-5\.(?:4|5|6)(?:-|$)/;
+const OPENAI_EXPLICIT_PROMPT_CACHE_MODELS = /^gpt-5\.(?:6|[7-9]|\d{2,})(?:-|$)/;
 const OPENAI_RESPONSES_TOOL_MODELS = /^(?:gpt-(?:4\.1|4o|5(?:\.|-|$))|o[134](?:-|$))/;
 
 function getOpenAINativeTools(model: string): AdvancedTextCapabilities['nativeTools'] {
@@ -90,11 +91,13 @@ export class OpenAITextProvider extends BaseTextProvider {
         // Convert to Responses API format
         const { input, instructions } = this.converter.convertInput(
           options.input,
-          options.instructions
+          options.instructions,
+          this.allowsPromptCacheBreakpoints(options),
         );
 
         // Build request parameters
         const params: Record<string, unknown> = {
+          ...this.getVendorRequestOptions(options),
           model: options.model,
           input,
           ...(instructions && { instructions }),
@@ -125,12 +128,7 @@ export class OpenAITextProvider extends BaseTextProvider {
             ...this.converter.convertNativeTools(options.native_tools),
           ];
         }
-        if (options.prompt_cache?.mode === 'auto') {
-          if (options.prompt_cache.key) params.prompt_cache_key = options.prompt_cache.key;
-          if (options.prompt_cache.ttl === 'extended') {
-            params.prompt_cache_retention = '24h';
-          }
-        }
+        this.applyPromptCacheConfig(params, options);
 
         // Add reasoning config from unified thinking option
         this.applyReasoningConfig(params, options);
@@ -169,11 +167,13 @@ export class OpenAITextProvider extends BaseTextProvider {
       // Convert to Responses API format
       const { input, instructions } = this.converter.convertInput(
         options.input,
-        options.instructions
+        options.instructions,
+        this.allowsPromptCacheBreakpoints(options),
       );
 
       // Build request parameters
       const params: Record<string, unknown> = {
+        ...this.getVendorRequestOptions(options),
         model: options.model,
         input,
         ...(instructions && { instructions }),
@@ -205,10 +205,7 @@ export class OpenAITextProvider extends BaseTextProvider {
           ...this.converter.convertNativeTools(options.native_tools),
         ];
       }
-      if (options.prompt_cache?.mode === 'auto') {
-        if (options.prompt_cache.key) params.prompt_cache_key = options.prompt_cache.key;
-        if (options.prompt_cache.ttl === 'extended') params.prompt_cache_retention = '24h';
-      }
+      this.applyPromptCacheConfig(params, options);
 
       // Add reasoning config from unified thinking option
       this.applyReasoningConfig(params, options);
@@ -287,6 +284,7 @@ export class OpenAITextProvider extends BaseTextProvider {
             : ['short']
           : [],
         reportsCacheUsage: supportsPromptCaching,
+        explicitBreakpoints: OPENAI_EXPLICIT_PROMPT_CACHE_MODELS.test(model),
       },
       batch: {
         supported: supportsBatch,
@@ -444,8 +442,10 @@ export class OpenAITextProvider extends BaseTextProvider {
     const { input, instructions } = this.converter.convertInput(
       options.input,
       options.instructions,
+      this.allowsPromptCacheBreakpoints(options),
     );
     const body: Record<string, unknown> = {
+      ...this.getVendorRequestOptions(options),
       model: options.model,
       input,
       ...(instructions ? { instructions } : {}),
@@ -479,10 +479,7 @@ export class OpenAITextProvider extends BaseTextProvider {
       ];
       delete body.nativeTools;
     }
-    if (options.prompt_cache?.mode === 'auto') {
-      if (options.prompt_cache.key) body.prompt_cache_key = options.prompt_cache.key;
-      if (options.prompt_cache.ttl === 'extended') body.prompt_cache_retention = '24h';
-    }
+    this.applyPromptCacheConfig(body, options);
     this.applyReasoningConfig(body, options);
     return body;
   }
@@ -552,6 +549,41 @@ export class OpenAITextProvider extends BaseTextProvider {
         effort: options.thinking.effort || 'medium',
       };
     }
+  }
+
+  /** Preserve raw Responses API evolution through vendorOptions without allowing
+   * callers to replace normalized model/input/stream fields. */
+  private getVendorRequestOptions(options: TextGenerateOptions): Record<string, unknown> {
+    const { serviceTier, ...raw } = options.vendorOptions ?? {};
+    if (serviceTier !== undefined && raw.service_tier === undefined) {
+      raw.service_tier = serviceTier;
+    }
+    return raw;
+  }
+
+  private applyPromptCacheConfig(
+    params: Record<string, unknown>,
+    options: TextGenerateOptions,
+  ): void {
+    if (options.prompt_cache?.mode !== 'auto') return;
+    if (options.prompt_cache.key) params.prompt_cache_key = options.prompt_cache.key;
+    if (
+      OPENAI_EXPLICIT_PROMPT_CACHE_MODELS.test(options.model) &&
+      (options.prompt_cache.breakpointMode || options.prompt_cache.ttl === 'short')
+    ) {
+      params.prompt_cache_options = {
+        mode: options.prompt_cache.breakpointMode ?? 'implicit',
+        ttl: '30m',
+      };
+    }
+    if (options.prompt_cache.ttl === 'extended') {
+      params.prompt_cache_retention = '24h';
+    }
+  }
+
+  private allowsPromptCacheBreakpoints(options: TextGenerateOptions): boolean {
+    return options.prompt_cache?.mode === 'auto'
+      && OPENAI_EXPLICIT_PROMPT_CACHE_MODELS.test(options.model);
   }
 
   /**

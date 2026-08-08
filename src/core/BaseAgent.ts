@@ -25,7 +25,7 @@ import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.
 import { AgentContextNextGen } from './context-nextgen/AgentContextNextGen.js';
 import type { AgentContextNextGenConfig, AuthIdentity, SerializedContextState } from './context-nextgen/types.js';
 import { createProvider } from './createProvider.js';
-import type { ITextProvider, TextGenerateOptions } from '../domain/interfaces/ITextProvider.js';
+import type { ITextProvider, TextGenerateOptions, ThinkingConfig } from '../domain/interfaces/ITextProvider.js';
 import type {
   AdvancedTextCapabilities,
   DataHandlingPolicy,
@@ -287,6 +287,9 @@ export interface DirectCallOptions {
   /** Maximum output tokens */
   maxOutputTokens?: number;
 
+  /** Continue a provider-stored response/interaction without resending its history. */
+  previousResponseId?: string;
+
   /**
    * Vendor-agnostic structured (JSON) output. When set, the response is
    * constrained to JSON — via the vendor's native mechanism where supported,
@@ -296,13 +299,7 @@ export interface DirectCallOptions {
   responseFormat?: ResponseFormat;
 
   /** Vendor-agnostic thinking/reasoning configuration */
-  thinking?: {
-    enabled: boolean;
-    /** Budget in tokens for thinking (Anthropic & Google) */
-    budgetTokens?: number;
-    /** Reasoning effort level (OpenAI) */
-    effort?: 'low' | 'medium' | 'high';
-  };
+  thinking?: ThinkingConfig;
 
   /** Vendor-specific options */
   vendorOptions?: Record<string, unknown>;
@@ -1052,6 +1049,7 @@ export abstract class BaseAgent<
       tools: options.includeTools ? this.getEnabledToolDefinitions() : undefined,
       temperature: options.temperature,
       max_output_tokens: options.maxOutputTokens,
+      previous_response_id: options.previousResponseId,
       thinking: options.thinking,
       vendorOptions: options.vendorOptions,
       prompt_cache: options.promptCache,
@@ -1135,6 +1133,7 @@ export abstract class BaseAgent<
       tools: options.includeTools ? this.getEnabledToolDefinitions() : undefined,
       temperature: options.temperature,
       max_output_tokens: options.maxOutputTokens,
+      previous_response_id: options.previousResponseId,
       thinking: options.thinking,
       vendorOptions: options.vendorOptions,
       prompt_cache: options.promptCache,

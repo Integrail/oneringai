@@ -1,7 +1,13 @@
 import { Vendor } from '../../core/Vendor.js';
 import type { Vendor as VendorType } from '../../core/Vendor.js';
 import type { IVoiceInfo } from './SharedVoices.js';
-import { OPENAI_REALTIME_VOICES } from './SharedVoices.js';
+import { OPENAI_REALTIME_VOICES, XAI_VOICES } from './SharedVoices.js';
+import type {
+  ModelAvailability,
+  ModelEndpoint,
+  ModelLifecycleStatus,
+  ISourceLinks,
+} from '../types/SharedTypes.js';
 
 /**
  * Complete description of an LLM model including capabilities, pricing, and features
@@ -19,6 +25,30 @@ export interface ILLMDescription {
   /** Whether the model is currently available for use */
   isActive: boolean;
 
+  /** Vendor-published lifecycle. `isActive` is retained for compatibility. */
+  lifecycle?: ModelLifecycleStatus;
+
+  /** Access scope for limited or gated models. */
+  availability?: ModelAvailability;
+
+  /** Alternate model IDs accepted by the provider. */
+  aliases?: readonly string[];
+
+  /** Pinned versions represented by this registry entry. */
+  snapshots?: readonly string[];
+
+  /** Supported first-party API endpoints. */
+  endpoints?: readonly ModelEndpoint[];
+
+  /** Date the vendor announced deprecation (YYYY-MM-DD). */
+  deprecationDate?: string;
+
+  /** Final shutdown date (YYYY-MM-DD). */
+  retirementDate?: string;
+
+  /** Recommended migration target. */
+  replacementModel?: string;
+
   /** Whether this model is a preferred/recommended choice for its vendor */
   preferred?: boolean;
 
@@ -27,6 +57,9 @@ export interface ILLMDescription {
 
   /** Knowledge cutoff date */
   knowledgeCutoff?: string;
+
+  /** Official references used to verify this entry. Optional for legacy v1 records. */
+  sources?: ISourceLinks;
 
   /** Built-in voices for realtime/audio models (undefined = no built-in voices) */
   voices?: IVoiceInfo[];
@@ -74,11 +107,15 @@ export interface ILLMDescription {
 
     /** Modality-specific prices. Token prices are USD per million tokens. */
     pricing?: {
-      text?: { input: number; cachedInput?: number; output: number };
-      audio?: { input: number; cachedInput?: number; output: number };
-      image?: { input: number; cachedInput?: number; output?: number };
+      text?: TokenPricing;
+      audio?: TokenPricing;
+      image?: TokenPricing;
       /** Used by duration-priced realtime translation models. */
       audioDurationPerMinute?: number;
+      /** Used by realtime agents that bill text conversation events. */
+      textInputPerMessage?: number;
+      /** Provider processing-tier multipliers relative to standard pricing. */
+      processingMultipliers?: Partial<Record<ProcessingMode, number>>;
     };
 
     /** Parameter support - indicates which sampling parameters are supported */
@@ -87,16 +124,21 @@ export interface ILLMDescription {
       temperature?: boolean;
       /** Supports top_p parameter */
       topP?: boolean;
+      /** Supports top_k parameter */
+      topK?: boolean;
       /** Supports frequency_penalty parameter */
       frequencyPenalty?: boolean;
       /** Supports presence_penalty parameter */
       presencePenalty?: boolean;
     };
 
+    /** Accepted parameters that the vendor has announced as deprecated. */
+    deprecatedParameters?: readonly ('temperature' | 'topP' | 'topK' | 'frequencyPenalty' | 'presencePenalty')[];
+
     /** Input specifications */
     input: {
       /** Maximum input context window (in tokens) */
-      tokens: number;
+      tokens: number | null;
 
       /** Supports text input */
       text: boolean;
@@ -120,7 +162,7 @@ export interface ILLMDescription {
     /** Output specifications */
     output: {
       /** Maximum output tokens */
-      tokens: number;
+      tokens: number | null;
 
       /** Supports text output */
       text: boolean;
@@ -137,14 +179,48 @@ export interface ILLMDescription {
   };
 }
 
+export type ProcessingMode =
+  | 'interactive'
+  | 'standard'
+  | 'batch'
+  | 'flex'
+  | 'fast'
+  | 'priority';
+
+export interface LongContextTokenPricing {
+  /** Apply this tier when total request input is at least this many tokens. */
+  thresholdTokens: number;
+  input: number;
+  cachedInput?: number;
+  cacheWrite?: number;
+  output: number;
+}
+
+export interface TokenPricing {
+  input: number;
+  cachedInput?: number;
+  /** Explicit cache population/write price per million tokens. */
+  cacheWrite?: number;
+  /** Output price. Omitted for input-only modalities such as images on realtime models. */
+  output?: number;
+  /** Optional all-token price tier for long-context requests. */
+  longContext?: LongContextTokenPricing;
+}
+
 /**
  * Model name constants organized by vendor
- * Updated: March 2026 - Contains only verified, currently available models
+ * Updated: August 2026 - Includes current, preview, and migration-relevant models
  */
 export const LLM_MODELS = {
   [Vendor.OpenAI]: {
+    // GPT-5.6 Series (Current Flagship)
+    GPT_5_6: 'gpt-5.6',
+    GPT_5_6_SOL: 'gpt-5.6-sol',
+    GPT_5_6_TERRA: 'gpt-5.6-terra',
+    GPT_5_6_LUNA: 'gpt-5.6-luna',
     // GPT-5.5 Series (Current Flagship)
     GPT_5_5: 'gpt-5.5',
+    GPT_5_5_PRO: 'gpt-5.5-pro',
     // GPT-5.4 Series
     GPT_5_4: 'gpt-5.4',
     GPT_5_4_PRO: 'gpt-5.4-pro',
@@ -201,7 +277,9 @@ export const LLM_MODELS = {
     GPT_OSS_20B: 'gpt-oss-20b',
   },
   [Vendor.Anthropic]: {
-    // Claude 5 / Opus 4.8 Series (Current flagship)
+    // Claude 5 Series
+    CLAUDE_OPUS_5: 'claude-opus-5',
+    CLAUDE_MYTHOS_5: 'claude-mythos-5',
     CLAUDE_OPUS_4_8: 'claude-opus-4-8',
     CLAUDE_SONNET_5: 'claude-sonnet-5',
     CLAUDE_FABLE_5: 'claude-fable-5',
@@ -221,6 +299,11 @@ export const LLM_MODELS = {
     CLAUDE_SONNET_3_7: 'claude-3-7-sonnet-20250219',
   },
   [Vendor.Google]: {
+    // Current Gemini 3.x production models
+    GEMINI_3_6_FLASH: 'gemini-3.6-flash',
+    GEMINI_3_5_FLASH: 'gemini-3.5-flash',
+    GEMINI_3_5_FLASH_LITE: 'gemini-3.5-flash-lite',
+    GEMINI_3_1_FLASH_LITE: 'gemini-3.1-flash-lite',
     // Gemini 3.1 Series (Preview)
     GEMINI_3_1_PRO_PREVIEW: 'gemini-3.1-pro-preview',
     GEMINI_3_1_FLASH_LITE_PREVIEW: 'gemini-3.1-flash-lite-preview',
@@ -236,7 +319,15 @@ export const LLM_MODELS = {
     GEMINI_2_5_FLASH_IMAGE: 'gemini-2.5-flash-image',
   },
   [Vendor.Grok]: {
-    // Grok 4.20 Series (Flagship, 2M context)
+    // Current production models
+    GROK_4_5: 'grok-4.5',
+    GROK_4_3: 'grok-4.3',
+    GROK_BUILD_0_1: 'grok-build-0.1',
+    GROK_VOICE_LATEST: 'grok-voice-latest',
+    GROK_VOICE_THINK_FAST_2: 'grok-voice-think-fast-2.0',
+    GROK_VOICE_THINK_FAST_1: 'grok-voice-think-fast-1.0',
+    GROK_VOICE_FAST_1: 'grok-voice-fast-1.0',
+    // Grok 4.20 Series
     GROK_4_20_0309_REASONING: 'grok-4.20-0309-reasoning',
     GROK_4_20_0309_NON_REASONING: 'grok-4.20-0309-non-reasoning',
     GROK_4_20_MULTI_AGENT_0309: 'grok-4.20-multi-agent-0309',
@@ -248,14 +339,135 @@ export const LLM_MODELS = {
 
 /**
  * Complete model registry with all model metadata
- * Updated: March 2026 - Verified from official vendor documentation
+ * Registry schema v2. Last full first-party documentation audit: 2026-08-08.
  */
 export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   // ============================================================================
   // OpenAI Models (Verified from developers.openai.com - March 2026)
   // ============================================================================
 
-  // GPT-5.5 Series (Current Flagship - April 2026)
+  // GPT-5.6 Series (current frontier family - July 2026)
+  'gpt-5.6-sol': {
+    name: 'gpt-5.6-sol',
+    provider: Vendor.OpenAI,
+    description: 'Highest-capability GPT-5.6 model for demanding professional work, coding, and long-horizon agents',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['gpt-5.6'],
+    snapshots: ['gpt-5.6-sol-2026-07-09'],
+    endpoints: ['responses', 'chat_completions', 'batch'],
+    releaseDate: '2026-07-09',
+    knowledgeCutoff: '2026-02-16',
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-sol', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1050000, text: true, image: true, cpm: 5, cpmCached: 0.5 },
+      output: { tokens: 128000, text: true, cpm: 30 },
+      pricing: {
+        text: {
+          input: 5, cachedInput: 0.5, cacheWrite: 6.25, output: 30,
+          longContext: { thresholdTokens: 272000, input: 10, cachedInput: 1, cacheWrite: 12.5, output: 45 },
+        },
+        processingMultipliers: { batch: 0.5, fast: 2 },
+      },
+    },
+  },
+
+  'gpt-5.6-terra': {
+    name: 'gpt-5.6-terra',
+    provider: Vendor.OpenAI,
+    description: 'Balanced GPT-5.6 model for production agents, coding, and high-volume professional workloads',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    snapshots: ['gpt-5.6-terra-2026-07-09'],
+    endpoints: ['responses', 'chat_completions', 'batch'],
+    releaseDate: '2026-07-09',
+    knowledgeCutoff: '2026-02-16',
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-terra', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1050000, text: true, image: true, cpm: 2, cpmCached: 0.2 },
+      output: { tokens: 128000, text: true, cpm: 12 },
+      pricing: {
+        text: {
+          input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 12,
+          longContext: { thresholdTokens: 272000, input: 4, cachedInput: 0.4, cacheWrite: 5, output: 18 },
+        },
+        processingMultipliers: { batch: 0.5, fast: 2 },
+      },
+    },
+  },
+
+  'gpt-5.6-luna': {
+    name: 'gpt-5.6-luna',
+    provider: Vendor.OpenAI,
+    description: 'Fast, economical GPT-5.6 model for latency-sensitive and high-throughput workloads',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    snapshots: ['gpt-5.6-luna-2026-07-09'],
+    endpoints: ['responses', 'chat_completions', 'batch'],
+    releaseDate: '2026-07-09',
+    knowledgeCutoff: '2026-02-16',
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-luna', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1050000, text: true, image: true, cpm: 0.2, cpmCached: 0.02 },
+      output: { tokens: 128000, text: true, cpm: 1.2 },
+      pricing: {
+        text: {
+          input: 0.2, cachedInput: 0.02, cacheWrite: 0.25, output: 1.2,
+          longContext: { thresholdTokens: 272000, input: 0.4, cachedInput: 0.04, cacheWrite: 0.5, output: 1.8 },
+        },
+        processingMultipliers: { batch: 0.5, fast: 2 },
+      },
+    },
+  },
+
+  'gpt-5.5-pro': {
+    name: 'gpt-5.5-pro',
+    provider: Vendor.OpenAI,
+    description: 'Higher-compute GPT-5.5 variant for difficult reasoning tasks',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['responses', 'batch'],
+    releaseDate: '2026-04-25',
+    knowledgeCutoff: '2025-12-01',
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.5-pro', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      pricing: {
+        text: {
+          input: 30,
+          cachedInput: 3,
+          output: 180,
+          longContext: { thresholdTokens: 272000, input: 60, cachedInput: 6, output: 270 },
+        },
+        processingMultipliers: { standard: 1, batch: 0.5 },
+      },
+      input: { tokens: 1050000, text: true, image: true, cpm: 30, cpmCached: 3 },
+      output: { tokens: 128000, text: true, cpm: 180 },
+    },
+  },
+
+  // GPT-5.5 Series (legacy flagship - April 2026)
   'gpt-5.5': {
     name: 'gpt-5.5',
     provider: Vendor.OpenAI,
@@ -1944,7 +2156,58 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   // Source: https://platform.claude.com/docs/en/about-claude/models/overview
   // ============================================================================
 
-  // Claude 5 / Opus 4.8 Series (Current flagship)
+  'claude-opus-5': {
+    name: 'claude-opus-5',
+    provider: Vendor.Anthropic,
+    description: 'Frontier Claude model for complex agentic coding and enterprise work; adaptive thinking is enabled by default',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['messages', 'batch'],
+    releaseDate: '2026-07-01',
+    knowledgeCutoff: '2026-05-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1000000, text: true, image: true, cpm: 5, cpmCached: 0.5 },
+      output: { tokens: 128000, text: true, cpm: 25 },
+      pricing: {
+        text: { input: 5, cachedInput: 0.5, cacheWrite: 6.25, output: 25 },
+        processingMultipliers: { batch: 0.5, fast: 2 },
+      },
+    },
+  },
+
+  'claude-mythos-5': {
+    name: 'claude-mythos-5',
+    provider: Vendor.Anthropic,
+    description: 'Limited-release counterpart to Claude Fable 5 without its safety classifiers; always-on adaptive thinking',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'invite_only',
+    endpoints: ['messages', 'batch'],
+    releaseDate: '2026-06-09',
+    knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1000000, text: true, image: true, cpm: 10, cpmCached: 1 },
+      output: { tokens: 128000, text: true, cpm: 50 },
+      pricing: {
+        text: { input: 10, cachedInput: 1, cacheWrite: 12.5, output: 50 },
+        processingMultipliers: { batch: 0.5 },
+      },
+    },
+  },
+
+  // Claude 5 / Opus 4.8 Series
   // Adaptive-thinking only (no `budget_tokens`); sampling params (temperature/
   // top_p/top_k) removed → parameters.temperature: false. 1M context, 128K output.
   'claude-opus-4-8': {
@@ -1952,11 +2215,14 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     provider: Vendor.Anthropic,
     description: 'Most capable Opus-tier model — highly autonomous, state-of-the-art long-horizon agentic work, knowledge work, and memory. 1M context, 128K output, adaptive thinking (low/medium/high/xhigh/max effort), high-resolution vision. Does not accept `temperature`.',
     isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['messages', 'batch'],
     preferred: true,
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-01-01',
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -1966,7 +2232,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       vision: true,
       audio: false,
       video: false,
-      extendedThinking: false,
+      extendedThinking: true,
       batchAPI: true,
       promptCaching: true,
       parameters: {
@@ -1992,11 +2258,14 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     provider: Vendor.Anthropic,
     description: 'Best combination of speed and intelligence; near-Opus quality on coding and agentic work. 1M context, 128K output, adaptive thinking on by default (low/medium/high/xhigh/max effort), high-resolution vision. New tokenizer. Does not accept `temperature`.',
     isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['messages', 'batch'],
     preferred: true,
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-01-01',
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -2006,7 +2275,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       vision: true,
       audio: false,
       video: false,
-      extendedThinking: false,
+      extendedThinking: true,
       batchAPI: true,
       promptCaching: true,
       parameters: {
@@ -2032,10 +2301,14 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     provider: Vendor.Anthropic,
     description: 'Anthropic\'s most capable widely released model, for the most demanding reasoning and long-horizon agentic work. 1M context, 128K output, thinking always on (raw chain of thought never returned). Does not accept `temperature`. Requires 30-day data retention.',
     isActive: true,
-    releaseDate: '2026-06-01',
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['messages', 'batch'],
+    releaseDate: '2026-06-09',
     knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -2045,7 +2318,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       vision: true,
       audio: false,
       video: false,
-      extendedThinking: false,
+      extendedThinking: true,
       batchAPI: true,
       promptCaching: true,
       parameters: {
@@ -2293,7 +2566,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'claude-opus-4-1-20250805',
     provider: Vendor.Anthropic,
     description: 'Legacy Opus 4.1 focused on agentic tasks, real-world coding, and reasoning',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-08-05',
+    replacementModel: 'claude-opus-5',
     releaseDate: '2025-08-05',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -2329,7 +2605,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'claude-opus-4-20250514',
     provider: Vendor.Anthropic,
     description: 'Legacy Opus 4. Agentic tasks and reasoning',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-15',
+    replacementModel: 'claude-opus-5',
     releaseDate: '2025-05-14',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -2365,7 +2644,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'claude-sonnet-4-20250514',
     provider: Vendor.Anthropic,
     description: 'Legacy Sonnet 4. Supports 1M context beta',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-15',
+    replacementModel: 'claude-sonnet-5',
     releaseDate: '2025-05-14',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -2401,7 +2683,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'claude-3-7-sonnet-20250219',
     provider: Vendor.Anthropic,
     description: 'Deprecated. Claude 3.7 Sonnet with extended thinking',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-02-19',
+    replacementModel: 'claude-sonnet-5',
     releaseDate: '2025-02-19',
     knowledgeCutoff: '2024-10-01',
     features: {
@@ -2435,8 +2720,117 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
 
 
   // ============================================================================
-  // Google Models (Verified from ai.google.dev - March 2026)
+  // Google Models (Verified from ai.google.dev - July 2026)
   // ============================================================================
+
+  'gemini-3.6-flash': {
+    name: 'gemini-3.6-flash',
+    provider: Vendor.Google,
+    description: 'Current production Gemini Flash model for agentic, coding, spatial, and multimodal work',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['gemini-flash-latest'],
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-07-21',
+    knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1048576, text: true, image: true, audio: true, video: true, cpm: 1.5, cpmCached: 0.15 },
+      output: { tokens: 65536, text: true, cpm: 7.5 },
+      pricing: {
+        text: { input: 1.5, cachedInput: 0.15, output: 7.5 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
+      },
+    },
+  },
+
+  'gemini-3.5-flash': {
+    name: 'gemini-3.5-flash',
+    provider: Vendor.Google,
+    description: 'High-capability Gemini Flash model for multimodal and agentic production workloads',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-05-01',
+    knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1048576, text: true, image: true, audio: true, video: true, cpm: 1.5, cpmCached: 0.15 },
+      output: { tokens: 65536, text: true, cpm: 9 },
+      pricing: {
+        text: { input: 1.5, cachedInput: 0.15, output: 9 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
+      },
+    },
+  },
+
+  'gemini-3.5-flash-lite': {
+    name: 'gemini-3.5-flash-lite',
+    provider: Vendor.Google,
+    description: 'Current low-latency production model for high-throughput subagents and extraction',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['gemini-flash-lite-latest'],
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-07-21',
+    knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1048576, text: true, image: true, audio: true, video: true, cpm: 0.3, cpmCached: 0.03 },
+      output: { tokens: 65536, text: true, cpm: 2.5 },
+      pricing: {
+        text: { input: 0.3, cachedInput: 0.03, output: 2.5 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
+      },
+    },
+  },
+
+  'gemini-3.1-flash-lite': {
+    name: 'gemini-3.1-flash-lite',
+    provider: Vendor.Google,
+    description: 'Stable cost-efficient Gemini 3.1 model for high-volume multimodal workloads',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-05-25',
+    knowledgeCutoff: '2025-12-01',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1048576, text: true, image: true, audio: true, video: true, cpm: 0.25, cpmCached: 0.025 },
+      output: { tokens: 65536, text: true, cpm: 1.5 },
+      pricing: {
+        text: { input: 0.25, cachedInput: 0.025, output: 1.5 },
+        audio: { input: 0.5, cachedInput: 0.05, output: 1.5 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
+      },
+    },
+  },
 
   // Gemini 3.1 Series (Preview)
   'gemini-3.1-pro-preview': {
@@ -2481,7 +2875,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gemini-3.1-flash-lite-preview',
     provider: Vendor.Google,
     description: 'High performance, budget-friendly for high-volume agentic tasks and data extraction',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-05-25',
+    replacementModel: 'gemini-3.5-flash-lite',
     releaseDate: '2026-03-01',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -2517,7 +2914,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gemini-3.1-flash-image-preview',
     provider: Vendor.Google,
     description: 'High-efficiency image generation with up to 4K output, search grounding support',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-25',
+    replacementModel: 'gemini-3.1-flash-image',
     releaseDate: '2026-02-01',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -2628,7 +3028,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gemini-3-pro-image-preview',
     provider: Vendor.Google,
     description: 'Nano Banana Pro — state-of-the-art native image generation and editing with reasoning',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-25',
+    replacementModel: 'gemini-3-pro-image',
     releaseDate: '2025-11-18',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -2809,11 +3212,160 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   // xAI Grok Models (Verified from docs.x.ai - April 2026)
   // ============================================================================
 
-  // Grok 4.20 Series (Flagship, 2M context)
+  'grok-4.5': {
+    name: 'grok-4.5',
+    provider: Vendor.Grok,
+    description: 'Current flagship xAI reasoning model for agents, coding, and multimodal tasks',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['responses', 'chat_completions'],
+    releaseDate: '2026-06-01',
+    knowledgeCutoff: '2026-02-01',
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.5', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, frequencyPenalty: true, presencePenalty: true },
+      input: { tokens: 500000, text: true, image: true, cpm: 2, cpmCached: 0.3 },
+      output: { tokens: 65536, text: true, cpm: 6 },
+      pricing: {
+        text: {
+          input: 2, cachedInput: 0.3, output: 6,
+          longContext: { thresholdTokens: 200000, input: 4, cachedInput: 0.6, output: 12 },
+        },
+      },
+    },
+  },
+
+  'grok-4.3': {
+    name: 'grok-4.3',
+    provider: Vendor.Grok,
+    description: 'Production xAI model with a 1M-token context window and native agent tools',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['responses', 'chat_completions'],
+    releaseDate: '2026-05-15',
+    knowledgeCutoff: '2026-02-01',
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.3', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, frequencyPenalty: true, presencePenalty: true },
+      input: { tokens: 1000000, text: true, image: true, cpm: 1.25, cpmCached: 0.2 },
+      output: { tokens: 65536, text: true, cpm: 2.5 },
+      pricing: {
+        text: {
+          input: 1.25, cachedInput: 0.2, output: 2.5,
+          longContext: { thresholdTokens: 200000, input: 2.5, cachedInput: 0.4, output: 5 },
+        },
+      },
+    },
+  },
+
+  'grok-build-0.1': {
+    name: 'grok-build-0.1',
+    provider: Vendor.Grok,
+    description: 'Specialized xAI software-building model for repository-scale coding agents',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['responses'],
+    releaseDate: '2026-05-01',
+    knowledgeCutoff: '2026-02-01',
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-build-0.1', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: false, promptCaching: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 256000, text: true, image: true, cpm: 1, cpmCached: 0.2 },
+      output: { tokens: 65536, text: true, cpm: 2 },
+      pricing: {
+        text: {
+          input: 1, cachedInput: 0.2, output: 2,
+          longContext: { thresholdTokens: 200000, input: 2, cachedInput: 0.4, output: 4 },
+        },
+      },
+    },
+  },
+
+  'grok-voice-think-fast-2.0': {
+    name: 'grok-voice-think-fast-2.0',
+    provider: Vendor.Grok,
+    description: 'Current xAI speech-to-speech reasoning model for low-latency voice agents',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['grok-voice-latest'],
+    endpoints: ['realtime'],
+    releaseDate: '2026-07-29',
+    sources: { documentation: 'https://docs.x.ai/developers/models/voice-agent-api', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    voices: XAI_VOICES,
+    features: {
+      reasoning: true, streaming: true, structuredOutput: false, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: true, vision: false,
+      audio: true, video: false, batchAPI: false, promptCaching: false,
+      parameters: { temperature: false, topP: false, topK: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: null, text: true, audio: true, cpm: 0 },
+      output: { tokens: null, text: true, audio: true, cpm: 0 },
+      pricing: { audioDurationPerMinute: 0.05, textInputPerMessage: 0.004 },
+    },
+  },
+
+  'grok-voice-think-fast-1.0': {
+    name: 'grok-voice-think-fast-1.0',
+    provider: Vendor.Grok,
+    description: 'Previous xAI reasoning voice model; pin only when model stability is required',
+    isActive: true,
+    lifecycle: 'legacy',
+    availability: 'public',
+    endpoints: ['realtime'],
+    replacementModel: 'grok-voice-think-fast-2.0',
+    voices: XAI_VOICES,
+    features: {
+      reasoning: true, streaming: true, structuredOutput: false, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: true, vision: false,
+      audio: true, video: false, batchAPI: false, promptCaching: false,
+      parameters: { temperature: false, topP: false, topK: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: null, text: true, audio: true, cpm: 0 },
+      output: { tokens: null, text: true, audio: true, cpm: 0 },
+      pricing: { audioDurationPerMinute: 0.05, textInputPerMessage: 0.004 },
+    },
+  },
+
+  'grok-voice-fast-1.0': {
+    name: 'grok-voice-fast-1.0',
+    provider: Vendor.Grok,
+    description: 'Deprecated first-generation xAI voice-agent model',
+    isActive: true,
+    lifecycle: 'deprecated',
+    availability: 'public',
+    endpoints: ['realtime'],
+    replacementModel: 'grok-voice-think-fast-2.0',
+    voices: XAI_VOICES,
+    features: {
+      reasoning: false, streaming: true, structuredOutput: false, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: true, vision: false,
+      audio: true, video: false, batchAPI: false, promptCaching: false,
+      parameters: { temperature: false, topP: false, topK: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: null, text: true, audio: true, cpm: 0 },
+      output: { tokens: null, text: true, audio: true, cpm: 0 },
+      pricing: { audioDurationPerMinute: 0.05, textInputPerMessage: 0.004 },
+    },
+  },
+
+  // Grok 4.20 Series
   'grok-4.20-0309-reasoning': {
     name: 'grok-4.20-0309-reasoning',
     provider: Vendor.Grok,
-    description: 'Flagship Grok 4.20 with reasoning, 2M context, vision support',
+    description: 'Grok 4.20 reasoning model with a 1M-token context window and vision support',
     isActive: true,
     preferred: true,
     releaseDate: '2026-03-09',
@@ -2832,15 +3384,22 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 2000000,
+        tokens: 1000000,
         text: true,
         image: true,
-        cpm: 2.00,
+        cpm: 1.25,
+        cpmCached: 0.20,
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 6.00,
+        cpm: 2.50,
+      },
+      pricing: {
+        text: {
+          input: 1.25, cachedInput: 0.20, output: 2.50,
+          longContext: { thresholdTokens: 200000, input: 2.50, cachedInput: 0.40, output: 5.00 },
+        },
       },
     },
   },
@@ -2848,7 +3407,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   'grok-4.20-0309-non-reasoning': {
     name: 'grok-4.20-0309-non-reasoning',
     provider: Vendor.Grok,
-    description: 'Flagship Grok 4.20 without reasoning, 2M context, vision support',
+    description: 'Grok 4.20 non-reasoning model with a 1M-token context window and vision support',
     isActive: true,
     releaseDate: '2026-03-09',
     knowledgeCutoff: '2024-11-01',
@@ -2866,15 +3425,22 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 2000000,
+        tokens: 1000000,
         text: true,
         image: true,
-        cpm: 2.00,
+        cpm: 1.25,
+        cpmCached: 0.20,
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 6.00,
+        cpm: 2.50,
+      },
+      pricing: {
+        text: {
+          input: 1.25, cachedInput: 0.20, output: 2.50,
+          longContext: { thresholdTokens: 200000, input: 2.50, cachedInput: 0.40, output: 5.00 },
+        },
       },
     },
   },
@@ -2882,7 +3448,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   'grok-4.20-multi-agent-0309': {
     name: 'grok-4.20-multi-agent-0309',
     provider: Vendor.Grok,
-    description: 'Grok 4.20 optimized for multi-agent workflows, 2M context, vision + reasoning',
+    description: 'Grok 4.20 optimized for multi-agent workflows with a 1M-token context window',
     isActive: true,
     releaseDate: '2026-03-09',
     knowledgeCutoff: '2024-11-01',
@@ -2900,15 +3466,22 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       batchAPI: true,
       promptCaching: true,
       input: {
-        tokens: 2000000,
+        tokens: 1000000,
         text: true,
         image: true,
-        cpm: 2.00,
+        cpm: 1.25,
+        cpmCached: 0.20,
       },
       output: {
         tokens: 65536,
         text: true,
-        cpm: 6.00,
+        cpm: 2.50,
+      },
+      pricing: {
+        text: {
+          input: 1.25, cachedInput: 0.20, output: 2.50,
+          longContext: { thresholdTokens: 200000, input: 2.50, cachedInput: 0.40, output: 5.00 },
+        },
       },
     },
   },
@@ -2918,7 +3491,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'grok-4-1-fast-reasoning',
     provider: Vendor.Grok,
     description: 'Fast Grok 4.1 with reasoning, 2M context, vision support',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-05-15',
+    replacementModel: 'grok-4.3',
     releaseDate: '2025-11-01',
     knowledgeCutoff: '2024-11-01',
     features: {
@@ -2952,7 +3528,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'grok-4-1-fast-non-reasoning',
     provider: Vendor.Grok,
     description: 'Fast Grok 4.1 without reasoning, 2M context, vision support',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-05-15',
+    replacementModel: 'grok-4.3',
     releaseDate: '2025-11-01',
     knowledgeCutoff: '2024-11-01',
     features: {
@@ -2989,7 +3568,13 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
  * @returns Model description or undefined if not found
  */
 export function getModelInfo(modelName: string): ILLMDescription | undefined {
-  return MODEL_REGISTRY[modelName];
+  return MODEL_REGISTRY[modelName]
+    ?? Object.values(MODEL_REGISTRY).find((model) => model.aliases?.includes(modelName));
+}
+
+/** Resolve a direct model ID or floating alias to the registry's canonical ID. */
+export function resolveModelName(modelName: string): string | undefined {
+  return getModelInfo(modelName)?.name;
 }
 
 /**
@@ -3007,6 +3592,13 @@ export function getModelsByVendor(vendor: VendorType): ILLMDescription[] {
  */
 export function getActiveModels(): ILLMDescription[] {
   return Object.values(MODEL_REGISTRY).filter((model) => model.isActive);
+}
+
+/** Get callable models carrying an explicit vendor deprecation notice. */
+export function getDeprecatedModels(): ILLMDescription[] {
+  return Object.values(MODEL_REGISTRY).filter(
+    (model) => model.isActive && model.lifecycle === 'deprecated'
+  );
 }
 
 /**
@@ -3030,11 +3622,15 @@ export function calculateCost(
       shortTtlInputTokens?: number;
       extendedTtlInputTokens?: number;
     };
-    processingMode?: 'interactive' | 'batch';
+    processingMode?: ProcessingMode;
+    /** Override automatic long-context selection for estimates and quotes. */
+    contextTier?: 'auto' | 'standard' | 'long';
     /** Price using the selected modality when the registry provides it. */
     modality?: 'text' | 'audio' | 'image';
     /** Duration for models billed per minute instead of per token. */
     audioMinutes?: number;
+    /** Number of billable text-input events for event-priced realtime agents. */
+    inputMessages?: number;
   }
 ): number | null {
   const modelInfo = getModelInfo(model);
@@ -3042,9 +3638,12 @@ export function calculateCost(
     return null;
   }
 
-  if (modelInfo.features.pricing?.audioDurationPerMinute !== undefined) {
-    if (options?.audioMinutes === undefined) return null;
-    return Math.max(options.audioMinutes, 0) * modelInfo.features.pricing.audioDurationPerMinute;
+  const audioDurationPrice = modelInfo.features.pricing?.audioDurationPerMinute;
+  const messagePrice = modelInfo.features.pricing?.textInputPerMessage;
+  if (audioDurationPrice !== undefined || messagePrice !== undefined) {
+    if (options?.audioMinutes === undefined && options?.inputMessages === undefined) return null;
+    return Math.max(options?.audioMinutes ?? 0, 0) * (audioDurationPrice ?? 0)
+      + Math.max(options?.inputMessages ?? 0, 0) * (messagePrice ?? 0);
   }
 
   const normalizedInputTokens = Math.max(inputTokens, 0);
@@ -3067,15 +3666,29 @@ export function calculateCost(
   if (options?.modality === 'image' && outputTokens > 0 && modalityPricing?.output === undefined) {
     return null;
   }
-  const inputCPM = modalityPricing?.input ?? modelInfo.features.input.cpm;
-  const cachedInputCPM = modalityPricing?.cachedInput
+  const useLongContext = Boolean(
+    modalityPricing?.longContext &&
+      (options?.contextTier === 'long' ||
+        (options?.contextTier !== 'standard' &&
+          normalizedInputTokens >= modalityPricing.longContext.thresholdTokens))
+  );
+  const selectedPricing = useLongContext
+    ? modalityPricing?.longContext
+    : modalityPricing;
+  const inputCPM = selectedPricing?.input ?? modelInfo.features.input.cpm;
+  const cachedInputCPM = selectedPricing?.cachedInput
     ?? modelInfo.features.input.cpmCached
     ?? inputCPM;
-  const outputCPM = modalityPricing?.output ?? modelInfo.features.output.cpm;
+  const outputCPM = selectedPricing?.output ?? modelInfo.features.output.cpm;
 
   let cacheCreationCost =
-    (cacheCreationInputTokens / 1_000_000) * inputCPM;
-  if (modelInfo.provider === Vendor.Anthropic && cacheCreationInputTokens > 0) {
+    (cacheCreationInputTokens / 1_000_000) *
+    (selectedPricing?.cacheWrite ?? inputCPM);
+  if (
+    modelInfo.provider === Vendor.Anthropic &&
+    cacheCreationInputTokens > 0 &&
+    selectedPricing?.cacheWrite === undefined
+  ) {
     const shortTokens = Math.min(
       Math.max(options?.cacheCreationDetails?.shortTtlInputTokens ?? 0, 0),
       cacheCreationInputTokens,
@@ -3099,8 +3712,14 @@ export function calculateCost(
     (cachedInputTokens / 1_000_000) * cachedInputCPM +
     cacheCreationCost;
   const outputCost = (outputTokens / 1_000_000) * outputCPM;
-  let processingDiscount = 1;
-  if (options?.processingMode === 'batch') {
+  let processingMultiplier = 1;
+  const requestedMode = options?.processingMode;
+  const explicitMultiplier = requestedMode
+    ? modelInfo.features.pricing?.processingMultipliers?.[requestedMode]
+    : undefined;
+  if (explicitMultiplier !== undefined) {
+    processingMultiplier = explicitMultiplier;
+  } else if (requestedMode === 'batch') {
     if (!modelInfo.features.batchAPI) return null;
     // These normalized batch adapters have a documented 50% token-price
     // contract. Do not project that discount onto unrelated vendors merely
@@ -3113,8 +3732,15 @@ export function calculateCost(
     if (!discountedBatchProviders.has(modelInfo.provider)) {
       return null;
     }
-    processingDiscount = 0.5;
+    processingMultiplier = 0.5;
+  } else if (
+    requestedMode &&
+    requestedMode !== 'interactive' &&
+    requestedMode !== 'standard'
+  ) {
+    // Do not invent Flex/Fast/Priority prices for models without registry data.
+    return null;
   }
 
-  return (inputCost + outputCost) * processingDiscount;
+  return (inputCost + outputCost) * processingMultiplier;
 }

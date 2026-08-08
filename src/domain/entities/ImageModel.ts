@@ -22,12 +22,14 @@ export type ImageSize =
   | '1792x1024'
   | '1024x1792'
   | '1536x1536'
+  | '2048x2048'
+  | '4096x4096'
   | 'auto';
 
 /**
  * Supported aspect ratios
  */
-export type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9' | '3:2' | '2:3' | '1:4' | '4:1' | '1:8' | '8:1' | '2:1' | '1:2';
+export type AspectRatio = '1:1' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9' | '3:2' | '2:3' | '1:4' | '4:1' | '1:8' | '8:1' | '2:1' | '1:2';
 
 /**
  * Image model capabilities
@@ -85,6 +87,18 @@ export interface ImageModelPricing {
   perImageHD?: number;
   /** Cost per image (flat rate) */
   perImage?: number;
+  /** Input-image charge for providers that bill source images separately. */
+  inputPerImage?: number;
+  /** Resolution-specific output prices, keyed by vendor resolution label. */
+  perImageByResolution?: Readonly<Record<string, number>>;
+  /** Token rates used by multimodal generation endpoints (USD per 1M tokens). */
+  tokenPricing?: {
+    textInput?: number;
+    cachedTextInput?: number;
+    imageInput?: number;
+    cachedImageInput?: number;
+    imageOutput?: number;
+  };
   currency: 'USD';
 }
 
@@ -102,6 +116,8 @@ export interface IImageModelDescription extends IBaseModelDescription {
 
 export const IMAGE_MODELS = {
   [Vendor.OpenAI]: {
+    /** GPT Image 2: current state-of-the-art generation and editing model */
+    GPT_IMAGE_2: 'gpt-image-2',
     /** GPT-Image-1.5: State-of-the-art image generation */
     GPT_IMAGE_1_5: 'gpt-image-1.5',
     /** ChatGPT-Image-Latest: Image model used in ChatGPT (floating alias) */
@@ -123,13 +139,17 @@ export const IMAGE_MODELS = {
     /** Imagen 4.0 Fast: Optimized for speed */
     IMAGEN_4_FAST: 'imagen-4.0-fast-generate-001',
     /** Nano Banana 2: Gemini 3.1 Flash native image gen with 4K support */
-    GEMINI_3_1_FLASH_IMAGE: 'gemini-3.1-flash-image-preview',
+    GEMINI_3_1_FLASH_IMAGE: 'gemini-3.1-flash-image',
+    /** Nano Banana 2 Lite: low-latency 1K generation and editing */
+    GEMINI_3_1_FLASH_LITE_IMAGE: 'gemini-3.1-flash-lite-image',
     /** Nano Banana Pro: Gemini 3 Pro professional design engine with reasoning */
-    GEMINI_3_PRO_IMAGE: 'gemini-3-pro-image-preview',
+    GEMINI_3_PRO_IMAGE: 'gemini-3-pro-image',
     /** Nano Banana: Gemini 2.5 Flash native image gen/editing */
     GEMINI_2_5_FLASH_IMAGE: 'gemini-2.5-flash-image',
   },
   [Vendor.Grok]: {
+    /** Higher-fidelity Grok Imagine model with 1K and 2K output. */
+    GROK_IMAGINE_IMAGE_QUALITY: 'grok-imagine-image-quality',
     /** Grok Imagine Image: xAI image generation with editing support */
     GROK_IMAGINE_IMAGE: 'grok-imagine-image',
     /** Grok 2 Image: xAI image generation (text-only input) */
@@ -148,12 +168,63 @@ export const IMAGE_MODELS = {
 export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
   // ======================== OpenAI ========================
 
+  'gpt-image-2': {
+    name: 'gpt-image-2',
+    displayName: 'GPT Image 2',
+    provider: Vendor.OpenAI,
+    description: 'Current state-of-the-art OpenAI model for fast, high-quality image generation and editing',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    snapshots: ['gpt-image-2-2026-04-21'],
+    endpoints: ['image_generation', 'image_edit'],
+    releaseDate: '2026-04-21',
+    sources: {
+      documentation: 'https://developers.openai.com/api/docs/models/gpt-image-2',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
+      maxImagesPerRequest: 10,
+      outputFormats: ['png', 'webp', 'jpeg'],
+      features: {
+        generation: true, editing: true, variations: false, styleControl: false,
+        qualityControl: true, transparency: true, promptRevision: false,
+      },
+      limits: { maxPromptLength: 32000, maxRequestsPerMinute: 250 },
+      vendorOptions: {
+        quality: { type: 'enum', description: 'Rendering quality tier', enum: ['auto', 'low', 'medium', 'high'], default: 'auto' },
+        background: { type: 'enum', description: 'Background handling', enum: ['auto', 'transparent', 'opaque'], default: 'auto' },
+        output_format: { type: 'enum', description: 'Encoded output image format', enum: ['png', 'jpeg', 'webp'], default: 'png' },
+        output_compression: { type: 'number', description: 'JPEG/WebP compression quality', min: 0, max: 100, default: 100 },
+        moderation: { type: 'enum', description: 'Moderation strictness', enum: ['auto', 'low'], default: 'auto' },
+        input_fidelity: { type: 'enum', description: 'Fidelity applied to editing input images', enum: ['low', 'high'], default: 'low' },
+      },
+    },
+    pricing: {
+      tokenPricing: {
+        textInput: 5,
+        cachedTextInput: 1.25,
+        imageInput: 8,
+        cachedImageInput: 2,
+        imageOutput: 30,
+      },
+      currency: 'USD',
+    },
+  },
+
   'gpt-image-1.5': {
     name: 'gpt-image-1.5',
     displayName: 'GPT Image 1.5',
     provider: Vendor.OpenAI,
     description: 'State-of-the-art image generation with better instruction following and prompt adherence',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-09',
+    retirementDate: '2026-12-01',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2025-12-16',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1.5',
@@ -231,6 +302,10 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     provider: Vendor.OpenAI,
     description: 'Image model used in ChatGPT. Floating alias pointing to current ChatGPT image snapshot',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-09',
+    retirementDate: '2026-12-01',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2025-12-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/chatgpt-image-latest',
@@ -308,6 +383,10 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     provider: Vendor.OpenAI,
     description: 'Previous generation OpenAI image model. More expensive than GPT Image 1.5',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-09',
+    retirementDate: '2026-12-01',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2025-04-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1',
@@ -385,6 +464,10 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     provider: Vendor.OpenAI,
     description: 'Cost-efficient version of GPT Image 1. Cheapest OpenAI image model',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-09',
+    retirementDate: '2026-12-01',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2025-06-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1-mini',
@@ -462,6 +545,8 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     provider: Vendor.OpenAI,
     description: 'Deprecated. High quality image generation with prompt revision. Migrate to gpt-image-1.5',
     isActive: false,
+    lifecycle: 'retired',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2023-11-06',
     deprecationDate: '2026-05-12',
     sources: {
@@ -515,6 +600,8 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     provider: Vendor.OpenAI,
     description: 'Deprecated. Fast image generation with editing and variation support. Migrate to gpt-image-1-mini',
     isActive: false,
+    lifecycle: 'retired',
+    replacementModel: 'gpt-image-2',
     releaseDate: '2022-11-03',
     deprecationDate: '2026-05-12',
     sources: {
@@ -552,6 +639,10 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 - standard quality image generation',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-16',
+    retirementDate: '2026-08-17',
+    replacementModel: 'gemini-3.1-flash-image',
     releaseDate: '2025-06-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
@@ -664,6 +755,10 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 Ultra - highest quality image generation',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-16',
+    retirementDate: '2026-08-17',
+    replacementModel: 'gemini-3-pro-image',
     releaseDate: '2025-06-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
@@ -776,6 +871,10 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 Fast - optimized for speed',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-16',
+    retirementDate: '2026-08-17',
+    replacementModel: 'gemini-3.1-flash-lite-image',
     releaseDate: '2025-06-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
@@ -884,12 +983,111 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
 
   // ======================== Google Nano Banana (Gemini Native Image) ========================
 
+  'gemini-3.1-flash-image': {
+    name: 'gemini-3.1-flash-image',
+    displayName: 'Nano Banana 2',
+    provider: Vendor.Google,
+    description: 'Current all-around Gemini image generation and editing model with up to 4K output',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['image_generation', 'image_edit', 'generate_content', 'batch'],
+    releaseDate: '2026-06-25',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      sizes: ['512x512', '1024x1024', '2048x2048', '4096x4096', 'auto'],
+      aspectRatios: ['1:1', '3:4', '4:3', '9:16', '16:9', '3:2', '2:3', '1:4', '4:1', '1:8', '8:1'],
+      maxImagesPerRequest: 4,
+      outputFormats: ['png', 'jpeg'],
+      features: { generation: true, editing: true, variations: false, styleControl: false, qualityControl: true, transparency: false, promptRevision: false },
+      limits: { maxPromptLength: 131072 },
+      vendorOptions: {
+        imageSize: { type: 'enum', description: 'Requested output image resolution', enum: ['512px', '1024px', '2048px', '4096px'], default: '1024px' },
+      },
+    },
+    pricing: {
+      perImageStandard: 0.067,
+      perImageHD: 0.151,
+      perImageByResolution: { '512px': 0.045, '1024px': 0.067, '2048px': 0.101, '4096px': 0.151 },
+      tokenPricing: { textInput: 0.50, imageInput: 0.50, imageOutput: 60 },
+      currency: 'USD',
+    },
+  },
+
+  'gemini-3.1-flash-lite-image': {
+    name: 'gemini-3.1-flash-lite-image',
+    displayName: 'Nano Banana 2 Lite',
+    provider: Vendor.Google,
+    description: 'Ultra-low-latency 1K image generation and editing for high-volume interactive use',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['image_generation', 'image_edit', 'generate_content', 'batch'],
+    releaseDate: '2026-06-25',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-image',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      sizes: ['1024x1024', 'auto'],
+      aspectRatios: ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
+      maxImagesPerRequest: 4,
+      outputFormats: ['png', 'jpeg'],
+      features: { generation: true, editing: true, variations: false, styleControl: false, qualityControl: false, transparency: false, promptRevision: false },
+      limits: { maxPromptLength: 65536 },
+      vendorOptions: { imageSize: { type: 'enum', description: 'Requested output image resolution', enum: ['1024px'], default: '1024px' } },
+    },
+    pricing: {
+      perImage: 0.0336,
+      perImageByResolution: { '1024px': 0.0336 },
+      tokenPricing: { textInput: 0.25, imageInput: 0.25, imageOutput: 30 },
+      currency: 'USD',
+    },
+  },
+
+  'gemini-3-pro-image': {
+    name: 'gemini-3-pro-image',
+    displayName: 'Nano Banana Pro',
+    provider: Vendor.Google,
+    description: 'Professional Gemini design engine for complex instructions, grounded assets, and 4K output',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['image_generation', 'image_edit', 'generate_content', 'batch'],
+    releaseDate: '2026-06-25',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      sizes: ['1024x1024', '2048x2048', '4096x4096', 'auto'],
+      aspectRatios: ['1:1', '3:4', '4:3', '9:16', '16:9'],
+      maxImagesPerRequest: 4,
+      outputFormats: ['png', 'jpeg'],
+      features: { generation: true, editing: true, variations: false, styleControl: true, qualityControl: true, transparency: false, promptRevision: false },
+      limits: { maxPromptLength: 65536 },
+      vendorOptions: { imageSize: { type: 'enum', description: 'Requested output image resolution', enum: ['1024px', '2048px', '4096px'], default: '1024px' } },
+    },
+    pricing: { perImageStandard: 0.134, perImageHD: 0.24, currency: 'USD' },
+  },
+
   'gemini-3.1-flash-image-preview': {
     name: 'gemini-3.1-flash-image-preview',
     displayName: 'Nano Banana 2 (Gemini 3.1 Flash Image)',
     provider: Vendor.Google,
     description: 'High-efficiency native image generation and editing with 4K support and thinking capabilities',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-25',
+    replacementModel: 'gemini-3.1-flash-image',
     releaseDate: '2026-02-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image-preview',
@@ -935,7 +1133,10 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     displayName: 'Nano Banana Pro (Gemini 3 Pro Image)',
     provider: Vendor.Google,
     description: 'Professional design engine with reasoning for studio-quality 4K visuals, complex layouts, and precise text rendering',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-06-25',
+    replacementModel: 'gemini-3-pro-image',
     releaseDate: '2025-11-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image-preview',
@@ -1012,6 +1213,45 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
 
   // ======================== xAI Grok ========================
 
+  'grok-imagine-image-quality': {
+    name: 'grok-imagine-image-quality',
+    displayName: 'Grok Imagine Image Quality',
+    provider: Vendor.Grok,
+    description: 'Higher-fidelity xAI image generation and multi-image editing with 1K and 2K output',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['grok-imagine-image-quality-latest', 'grok-imagine-image-pro'],
+    snapshots: ['grok-imagine-image-quality-20260403'],
+    endpoints: ['image_generation', 'image_edit'],
+    releaseDate: '2026-04-03',
+    sources: {
+      documentation: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
+      pricing: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      sizes: ['1024x1024', '2048x2048', 'auto'],
+      aspectRatios: ['1:1', '3:2', '2:3', '3:4', '4:3', '9:16', '16:9'],
+      maxImagesPerRequest: 4,
+      outputFormats: ['jpeg', 'png'],
+      features: { generation: true, editing: true, variations: false, styleControl: true, qualityControl: true, transparency: false, promptRevision: false },
+      limits: { maxPromptLength: 32000, maxRequestsPerMinute: 300 },
+      vendorOptions: {
+        resolution: { type: 'enum', description: 'Requested output image resolution', enum: ['1K', '2K'], default: '1K' },
+        storage_options: { type: 'object', description: 'Optional xAI Files persistence and public URL settings' },
+      },
+    },
+    pricing: {
+      inputPerImage: 0.01,
+      perImageStandard: 0.05,
+      perImageHD: 0.07,
+      perImageByResolution: { '1K': 0.05, '2K': 0.07 },
+      currency: 'USD',
+    },
+  },
+
   'grok-imagine-image': {
     name: 'grok-imagine-image',
     displayName: 'Grok Imagine Image',
@@ -1070,7 +1310,9 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     displayName: 'Grok 2 Image',
     provider: Vendor.Grok,
     description: 'xAI Grok 2 image generation (text-only input, no editing)',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    replacementModel: 'grok-imagine-image-quality',
     releaseDate: '2024-12-12',
     sources: {
       documentation: 'https://docs.x.ai/docs/guides/image-generation',
@@ -1128,6 +1370,8 @@ const helpers = createRegistryHelpers(IMAGE_MODEL_REGISTRY);
 export const getImageModelInfo = helpers.getInfo;
 export const getImageModelsByVendor = helpers.getByVendor;
 export const getActiveImageModels = helpers.getActive;
+/** Get active image models with a published deprecation notice. */
+export const getDeprecatedImageModels = helpers.getDeprecated;
 
 /**
  * Get image models that support a specific feature
@@ -1146,18 +1390,60 @@ export function getImageModelsWithFeature(
 export function calculateImageCost(
   modelName: string,
   imageCount: number,
-  quality: 'standard' | 'hd' = 'standard'
+  qualityOrOptions: 'standard' | 'hd' | {
+    quality?: 'standard' | 'hd';
+    resolution?: string;
+    inputImages?: number;
+    textInputTokens?: number;
+    cachedTextInputTokens?: number;
+    imageInputTokens?: number;
+    cachedImageInputTokens?: number;
+    imageOutputTokens?: number;
+  } = 'standard'
 ): number | null {
   const model = getImageModelInfo(modelName);
   if (!model?.pricing) return null;
 
+  const options = typeof qualityOrOptions === 'string'
+    ? { quality: qualityOrOptions }
+    : qualityOrOptions;
+  const tokenPricing = model.pricing.tokenPricing;
+  const hasImageInputTokenUsage = tokenPricing !== undefined
+    && (options.imageInputTokens !== undefined || options.cachedImageInputTokens !== undefined);
+  const inputCost = hasImageInputTokenUsage
+    ? 0
+    : (options.inputImages ?? 0) * (model.pricing.inputPerImage ?? 0);
+  const tokenCost = tokenPricing
+    ? (
+      ((options.textInputTokens ?? 0) / 1_000_000) * (tokenPricing.textInput ?? 0)
+      + ((options.cachedTextInputTokens ?? 0) / 1_000_000) * (tokenPricing.cachedTextInput ?? 0)
+      + ((options.imageInputTokens ?? 0) / 1_000_000) * (tokenPricing.imageInput ?? 0)
+      + ((options.cachedImageInputTokens ?? 0) / 1_000_000) * (tokenPricing.cachedImageInput ?? 0)
+      + ((options.imageOutputTokens ?? 0) / 1_000_000) * (tokenPricing.imageOutput ?? 0)
+    )
+    : 0;
+
+  // Output-image tokens replace per-image pricing only when the caller
+  // actually supplied them. Text-only or input-only token accounting remains
+  // additive to the registry's per-image output estimate.
+  if (tokenPricing && options.imageOutputTokens !== undefined) {
+    return inputCost + tokenCost;
+  }
+
+  if (options.resolution && model.pricing.perImageByResolution) {
+    const resolutionPrice = model.pricing.perImageByResolution[options.resolution];
+    return resolutionPrice === undefined
+      ? null
+      : inputCost + tokenCost + imageCount * resolutionPrice;
+  }
+
   if (model.pricing.perImage) {
-    return imageCount * model.pricing.perImage;
+    return inputCost + tokenCost + imageCount * model.pricing.perImage;
   }
 
   const pricePerImage =
-    quality === 'hd' ? model.pricing.perImageHD : model.pricing.perImageStandard;
+    options.quality === 'hd' ? model.pricing.perImageHD : model.pricing.perImageStandard;
 
   if (!pricePerImage) return null;
-  return imageCount * pricePerImage;
+  return inputCost + tokenCost + imageCount * pricePerImage;
 }

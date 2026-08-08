@@ -23,6 +23,9 @@ export interface EmbeddingModelCapabilities {
   /** Maximum output dimensions */
   maxDimensions: number;
 
+  /** Input modalities embedded into the shared vector space. */
+  inputModalities?: readonly ('text' | 'image' | 'audio' | 'video' | 'document')[];
+
   /** Feature support flags */
   features: {
     /** Matryoshka Representation Learning — flexible output dimensions */
@@ -53,7 +56,30 @@ export interface EmbeddingModelCapabilities {
 export interface EmbeddingModelPricing {
   /** Cost per million tokens */
   perMTokens: number;
+  perMImageTokens?: number;
+  perMAudioTokens?: number;
+  perMVideoTokens?: number;
+  perImage?: number;
+  perAudioSecond?: number;
+  perVideoFrame?: number;
+  /** Cost multiplier for asynchronous batch processing (for example, 0.5). */
+  batchMultiplier?: number;
   currency: 'USD';
+}
+
+export interface EmbeddingCostOptions {
+  /** Treat the legacy `tokens` argument as this modality. Defaults to text. */
+  modality?: 'text' | 'image' | 'audio' | 'video';
+  /** Additional modality-specific token buckets for mixed inputs. */
+  imageTokens?: number;
+  audioTokens?: number;
+  videoTokens?: number;
+  /** Unit counts accepted when token usage is unavailable. */
+  images?: number;
+  audioSeconds?: number;
+  videoFrames?: number;
+  /** Apply the model's published batch discount. */
+  batch?: boolean;
 }
 
 /**
@@ -78,6 +104,10 @@ export const EMBEDDING_MODELS = {
     TEXT_EMBEDDING_ADA_002: 'text-embedding-ada-002',
   },
   [Vendor.Google]: {
+    /** Gemini Embedding 2: current multimodal embedding model */
+    GEMINI_EMBEDDING_2: 'gemini-embedding-2',
+    /** Current text-only Gemini embedding model */
+    GEMINI_EMBEDDING_001: 'gemini-embedding-001',
     /** text-embedding-004: Gemini embedding model */
     TEXT_EMBEDDING_004: 'text-embedding-004',
   },
@@ -211,12 +241,78 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
 
   // ======================== Google ========================
 
+  'gemini-embedding-2': {
+    name: 'gemini-embedding-2',
+    displayName: 'Gemini Embedding 2',
+    provider: Vendor.Google,
+    description: 'Current multimodal embedding model mapping text, images, audio, video, and PDFs into one vector space',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['embeddings', 'batch'],
+    releaseDate: '2026-04-28',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-embedding-2',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      maxTokens: 8192,
+      defaultDimensions: 3072,
+      maxDimensions: 3072,
+      inputModalities: ['text', 'image', 'audio', 'video', 'document'],
+      features: { matryoshka: true, instructionAware: true, batchInput: true, multilingual: true },
+      limits: { maxBatchSize: 100 },
+    },
+    pricing: {
+      perMTokens: 0.20,
+      perMImageTokens: 0.45,
+      perMAudioTokens: 6.50,
+      perMVideoTokens: 12,
+      perImage: 0.00012,
+      perAudioSecond: 0.00016,
+      perVideoFrame: 0.00079,
+      batchMultiplier: 0.5,
+      currency: 'USD',
+    },
+  },
+
+  'gemini-embedding-001': {
+    name: 'gemini-embedding-001',
+    displayName: 'Gemini Embedding',
+    provider: Vendor.Google,
+    description: 'Stable text-only Gemini embedding model with flexible dimensions',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['embeddings', 'batch'],
+    releaseDate: '2025-06-01',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/embeddings',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      maxTokens: 2048,
+      defaultDimensions: 3072,
+      maxDimensions: 3072,
+      inputModalities: ['text'],
+      features: { matryoshka: true, instructionAware: true, batchInput: true, multilingual: true },
+      limits: { maxBatchSize: 100 },
+    },
+    pricing: { perMTokens: 0.15, batchMultiplier: 0.5, currency: 'USD' },
+  },
+
   'text-embedding-004': {
     name: 'text-embedding-004',
     displayName: 'Text Embedding 004',
     provider: Vendor.Google,
     description: 'Gemini embedding model with dimension reduction support',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2026-01-14',
+    replacementModel: 'gemini-embedding-2',
     releaseDate: '2024-05-14',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/embeddings',
@@ -452,6 +548,8 @@ export const getEmbeddingModelsByVendor = helpers.getByVendor;
 
 /** Get all currently active embedding models */
 export const getActiveEmbeddingModels = helpers.getActive;
+/** Get active embedding models with a published deprecation notice. */
+export const getDeprecatedEmbeddingModels = helpers.getDeprecated;
 
 /**
  * Get embedding models that support a specific feature
@@ -474,9 +572,44 @@ export function getEmbeddingModelsWithFeature(
  * @param tokens - Number of input tokens
  * @returns Cost in USD, or null if model not found or has no pricing
  */
-export function calculateEmbeddingCost(modelName: string, tokens: number): number | null {
-  const model = EMBEDDING_MODEL_REGISTRY[modelName];
+export function calculateEmbeddingCost(
+  modelName: string,
+  tokens: number,
+  options: EmbeddingCostOptions = {}
+): number | null {
+  const model = getEmbeddingModelInfo(modelName);
   if (!model?.pricing) return null;
+  const pricing = model.pricing;
+  const rateByModality = {
+    text: pricing.perMTokens,
+    image: pricing.perMImageTokens,
+    audio: pricing.perMAudioTokens,
+    video: pricing.perMVideoTokens,
+  } as const;
+  const primaryRate = rateByModality[options.modality ?? 'text'];
+  if (primaryRate === undefined) return null;
 
-  return (tokens / 1_000_000) * model.pricing.perMTokens;
+  let cost = (tokens / 1_000_000) * primaryRate;
+  if (options.imageTokens !== undefined) {
+    if (pricing.perMImageTokens === undefined) return null;
+    cost += (options.imageTokens / 1_000_000) * pricing.perMImageTokens;
+  } else if (options.images !== undefined) {
+    if (pricing.perImage === undefined) return null;
+    cost += options.images * pricing.perImage;
+  }
+  if (options.audioTokens !== undefined) {
+    if (pricing.perMAudioTokens === undefined) return null;
+    cost += (options.audioTokens / 1_000_000) * pricing.perMAudioTokens;
+  } else if (options.audioSeconds !== undefined) {
+    if (pricing.perAudioSecond === undefined) return null;
+    cost += options.audioSeconds * pricing.perAudioSecond;
+  }
+  if (options.videoTokens !== undefined) {
+    if (pricing.perMVideoTokens === undefined) return null;
+    cost += (options.videoTokens / 1_000_000) * pricing.perMVideoTokens;
+  } else if (options.videoFrames !== undefined) {
+    if (pricing.perVideoFrame === undefined) return null;
+    cost += options.videoFrames * pricing.perVideoFrame;
+  }
+  return cost * (options.batch ? (pricing.batchMultiplier ?? 1) : 1);
 }

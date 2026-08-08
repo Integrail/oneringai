@@ -28,6 +28,7 @@ import { Connector } from '../../core/Connector.js';
 import { createEmbeddingProvider } from '../../core/createEmbeddingProvider.js';
 import type {
   IEmbeddingProvider,
+  EmbeddingContentPart,
   EmbeddingOptions,
   EmbeddingResponse,
 } from '../../domain/interfaces/IEmbeddingProvider.js';
@@ -87,15 +88,43 @@ export class Embeddings {
    */
   async embed(
     input: string | string[],
-    options?: { model?: string; dimensions?: number }
+    options?: {
+      model?: string;
+      dimensions?: number;
+      encodingFormat?: 'float' | 'base64';
+      vendorOptions?: Record<string, unknown>;
+    }
   ): Promise<EmbeddingResponse> {
     const fullOptions: EmbeddingOptions = {
       model: options?.model || this.defaultModel,
       input,
       dimensions: options?.dimensions ?? this.defaultDimensions,
+      encodingFormat: options?.encodingFormat,
+      vendorOptions: options?.vendorOptions,
     };
 
     return this.provider.embed(fullOptions);
+  }
+
+  /**
+   * Embed mixed text, image, audio, video, or document content.
+   * Currently supported by Google's Gemini Embedding 2 model.
+   */
+  async embedMultimodal(
+    content: EmbeddingContentPart[],
+    options?: {
+      model?: string;
+      dimensions?: number;
+      vendorOptions?: Record<string, unknown>;
+    }
+  ): Promise<EmbeddingResponse> {
+    return this.provider.embed({
+      model: options?.model || this.defaultModel,
+      input: '',
+      content,
+      dimensions: options?.dimensions ?? this.defaultDimensions,
+      vendorOptions: options?.vendorOptions,
+    });
   }
 
   /**
@@ -146,7 +175,7 @@ export class Embeddings {
       case Vendor.OpenAI:
         return EMBEDDING_MODELS[Vendor.OpenAI].TEXT_EMBEDDING_3_SMALL;
       case Vendor.Google:
-        return EMBEDDING_MODELS[Vendor.Google].TEXT_EMBEDDING_004;
+        return EMBEDDING_MODELS[Vendor.Google].GEMINI_EMBEDDING_2;
       case Vendor.Mistral:
         return EMBEDDING_MODELS[Vendor.Mistral].MISTRAL_EMBED;
       case Vendor.Ollama:

@@ -29,6 +29,7 @@ import {
 } from '../../../domain/errors/AIErrors.js';
 
 const NATIVE_STRUCTURED_OUTPUT_MODELS = [
+  /^claude-(?:opus-5|mythos-5)(?:-|$)/,
   /^claude-opus-4-8(?:-|$)/,
   /^claude-sonnet-5(?:-|$)/,
   /^claude-fable-5(?:-|$)/,
@@ -41,6 +42,7 @@ const NATIVE_STRUCTURED_OUTPUT_MODELS = [
 ] as const;
 const MAX_SERVER_TOOL_CONTINUATIONS = 8;
 const ANTHROPIC_SERVER_TOOL_MODELS = [
+  /^claude-(?:opus-5|mythos-5)(?:-|$)/,
   /^claude-opus-4-8(?:-|$)/,
   /^claude-sonnet-5(?:-|$)/,
   /^claude-fable-5(?:-|$)/,
@@ -118,10 +120,11 @@ export class AnthropicTextProvider extends BaseTextProvider {
           (tool) => tool.capability === 'remote_mcp',
         );
         let request = anthropicRequest as any;
+        const usesBeta = usesRemoteMcp || Array.isArray(request.betas);
         let anthropicResponse: Anthropic.Message | undefined;
         const aggregate = this.emptyAnthropicUsage();
         for (let continuation = 0; continuation <= MAX_SERVER_TOOL_CONTINUATIONS; continuation++) {
-          const stream = usesRemoteMcp
+          const stream = usesBeta
             ? this.client.beta.messages.stream(request)
             : this.client.messages.stream(request);
           streamRef = stream;
@@ -190,12 +193,13 @@ export class AnthropicTextProvider extends BaseTextProvider {
         (tool) => tool.capability === 'remote_mcp',
       );
       let request = anthropicRequest as any;
+      const usesBeta = usesRemoteMcp || Array.isArray(request.betas);
       let chunkCount = 0;
       const aggregateUsage: TokenUsage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
       for (let continuation = 0; continuation <= MAX_SERVER_TOOL_CONTINUATIONS; continuation++) {
         // Standard and beta Messages expose equivalent streaming operations,
         // but the SDK models them as incompatible overload unions.
-        const messagesApi: any = usesRemoteMcp
+        const messagesApi: any = usesBeta
           ? this.client.beta.messages
           : this.client.messages;
         const hasStreamHelper =
@@ -501,6 +505,7 @@ export class AnthropicTextProvider extends BaseTextProvider {
     return {
       input_tokens: 0,
       output_tokens: 0,
+      output_tokens_details: null,
       cache_creation_input_tokens: 0,
       cache_read_input_tokens: 0,
       cache_creation: {
@@ -532,6 +537,9 @@ export class AnthropicTextProvider extends BaseTextProvider {
     }
     target.service_tier = next.service_tier ?? target.service_tier;
     target.inference_geo = next.inference_geo ?? target.inference_geo;
+    const targetSpeed = target as Anthropic.Usage & { speed?: string | null };
+    const nextSpeed = next as Anthropic.Usage & { speed?: string | null };
+    targetSpeed.speed = nextSpeed.speed ?? targetSpeed.speed;
     const targetWithDetails = target as Anthropic.Usage & {
       output_tokens_details?: { thinking_tokens: number };
     };
@@ -579,5 +587,6 @@ export class AnthropicTextProvider extends BaseTextProvider {
     }
     target.processing_mode = next.processing_mode ?? target.processing_mode;
     target.service_tier = next.service_tier ?? target.service_tier;
+    target.speed = next.speed ?? target.speed;
   }
 }

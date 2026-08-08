@@ -26,7 +26,8 @@ export function createRegistryHelpers<T extends IBaseModelDescription>(
      * Get model information by name
      */
     getInfo: (modelName: string): T | undefined => {
-      return registry[modelName];
+      return registry[modelName]
+        ?? Object.values(registry).find((model) => model.aliases?.includes(modelName));
     },
 
     /**
@@ -45,6 +46,13 @@ export function createRegistryHelpers<T extends IBaseModelDescription>(
       return Object.values(registry).filter((model) => model.isActive);
     },
 
+    /** Get models that are still callable but have a vendor deprecation notice. */
+    getDeprecated: (): T[] => {
+      return Object.values(registry).filter(
+        (model) => model.isActive && model.lifecycle === 'deprecated'
+      );
+    },
+
     /**
      * Get all models (including inactive/deprecated)
      */
@@ -56,7 +64,8 @@ export function createRegistryHelpers<T extends IBaseModelDescription>(
      * Check if model exists in registry
      */
     has: (modelName: string): boolean => {
-      return modelName in registry;
+      return modelName in registry
+        || Object.values(registry).some((model) => model.aliases?.includes(modelName));
     },
   };
 }

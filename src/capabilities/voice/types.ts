@@ -242,7 +242,7 @@ export interface RealtimePipelineConfig {
   /**
    * Turn detection mode:
    * - 'server_vad': silence-based server VAD (default)
-   * - 'semantic_vad': model-based end-of-turn detection
+   * - 'semantic_vad': model-based end-of-turn detection (OpenAI only)
    * - 'none': local EnergyVAD commits each turn manually
    */
   turnDetection?: 'server_vad' | 'semantic_vad' | 'none';

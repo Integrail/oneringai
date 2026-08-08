@@ -27,8 +27,10 @@ export interface TokenUsage {
   };
   /** Provider-hosted tool usage that may be billed separately. */
   native_tool_calls?: Record<string, number | undefined>;
-  processing_mode?: 'interactive' | 'batch';
+  processing_mode?: import('./Model.js').ProcessingMode;
   service_tier?: string;
+  /** Provider-reported inference speed, currently Anthropic `standard`/`fast`. */
+  speed?: string;
 }
 
 export interface NativeToolEvent {

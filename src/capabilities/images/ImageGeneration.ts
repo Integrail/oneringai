@@ -17,9 +17,9 @@
  *
  * const result = await imageGen.generate({
  *   prompt: 'A futuristic city at sunset',
- *   model: 'dall-e-3',
+ *   model: 'gpt-image-2',
  *   size: '1024x1024',
- *   quality: 'hd',
+ *   quality: 'high',
  * });
  *
  * // Get base64 data
@@ -57,15 +57,22 @@ export interface SimpleGenerateOptions {
   model?: string;
   /** Image size */
   size?: string;
+  /** Aspect ratio for providers that use ratio rather than pixel dimensions */
+  aspectRatio?: string;
   /** Quality setting */
-  quality?: 'standard' | 'hd';
+  quality?: ImageGenerateOptions['quality'];
   /** Style setting (DALL-E 3 only) */
   style?: 'vivid' | 'natural';
   /** Number of images to generate */
   n?: number;
   /** Response format */
   response_format?: 'url' | 'b64_json';
+  /** Provider-specific controls such as output format, compression, or image resolution */
+  vendorOptions?: Record<string, unknown>;
 }
+
+/** High-level edit options; the current vendor model is selected when omitted. */
+export type SimpleImageEditOptions = Omit<ImageEditOptions, 'model'> & { model?: string };
 
 /**
  * ImageGeneration capability class
@@ -105,10 +112,12 @@ export class ImageGeneration {
       model: options.model || this.defaultModel,
       prompt: options.prompt,
       size: options.size,
+      aspectRatio: options.aspectRatio,
       quality: options.quality,
       style: options.style,
       n: options.n,
       response_format: options.response_format || 'b64_json',
+      vendorOptions: options.vendorOptions,
     };
 
     return this.provider.generateImage(fullOptions);
@@ -118,7 +127,7 @@ export class ImageGeneration {
    * Edit an existing image
    * Note: Not all models/vendors support this
    */
-  async edit(options: ImageEditOptions): Promise<ImageResponse> {
+  async edit(options: SimpleImageEditOptions): Promise<ImageResponse> {
     if (!this.provider.editImage) {
       throw new Error(`Image editing not supported by ${this.provider.name}`);
     }
@@ -194,11 +203,11 @@ export class ImageGeneration {
 
     switch (vendor) {
       case Vendor.OpenAI:
-        return IMAGE_MODELS[Vendor.OpenAI].DALL_E_3;
+        return IMAGE_MODELS[Vendor.OpenAI].GPT_IMAGE_2;
       case Vendor.Google:
-        return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
+        return IMAGE_MODELS[Vendor.Google].GEMINI_3_1_FLASH_IMAGE;
       case Vendor.Grok:
-        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE;
+        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE_QUALITY;
       default:
         throw new Error(`No default image model for vendor: ${vendor}`);
     }
@@ -212,13 +221,11 @@ export class ImageGeneration {
 
     switch (vendor) {
       case Vendor.OpenAI:
-        return IMAGE_MODELS[Vendor.OpenAI].GPT_IMAGE_1;
+        return IMAGE_MODELS[Vendor.OpenAI].GPT_IMAGE_2;
       case Vendor.Google:
-        // Imagen 4 doesn't have a separate editing model yet
-        return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
+        return IMAGE_MODELS[Vendor.Google].GEMINI_3_1_FLASH_IMAGE;
       case Vendor.Grok:
-        // grok-imagine-image supports editing
-        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE;
+        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE_QUALITY;
       default:
         throw new Error(`No edit model for vendor: ${vendor}`);
     }

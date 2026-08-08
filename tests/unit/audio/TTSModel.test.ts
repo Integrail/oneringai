@@ -90,7 +90,7 @@ describe('TTSModel Registry', () => {
   describe('getTTSModelsWithFeature', () => {
     it('should find models with streaming', () => {
       const models = getTTSModelsWithFeature('streaming');
-      expect(models.length).toBe(0); // v1 doesn't implement streaming
+      expect(models.some((model) => model.name === 'xai-tts')).toBe(true);
     });
 
     it('should find models with instruction steering', () => {
@@ -174,6 +174,11 @@ describe('TTSModel Registry', () => {
       const defaultVoice = model?.capabilities.voices.find((v) => v.isDefault);
       expect(defaultVoice).toBeDefined();
       expect(defaultVoice?.id).toBe('alloy');
+    });
+
+    it('allows all documented xAI streaming latency levels', () => {
+      const option = getTTSModelInfo('xai-tts')?.capabilities.vendorOptions?.optimize_streaming_latency;
+      expect(option).toMatchObject({ min: 0, max: 2, default: 0 });
     });
   });
 });

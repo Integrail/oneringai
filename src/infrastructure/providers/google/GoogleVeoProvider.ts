@@ -9,6 +9,7 @@ import type {
   IVideoProvider,
   VideoGenerateOptions,
   VideoExtendOptions,
+  VideoEditOptions,
   VideoResponse,
   VideoStatus,
 } from '../../../domain/interfaces/IVideoProvider.js';
@@ -19,6 +20,7 @@ import {
   ProviderRateLimitError,
   ProviderError,
 } from '../../../domain/errors/AIErrors.js';
+import { detectImageFormat, fetchImageAsBase64 } from '../../../utils/imageUtils.js';
 
 /**
  * Google Veo-specific options
@@ -74,6 +76,9 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
           });
 
           const model = options.model || 'veo-3.1-generate-preview';
+          if (model === 'gemini-omni-flash-preview') {
+            return await this.generateOmniVideo(options);
+          }
           const googleOptions = (options.vendorOptions || {}) as GoogleVeoOptions;
 
           // Build config
@@ -171,6 +176,10 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
           // Get stored operation
           let operation = this.pendingOperations.get(jobId);
 
+          if (operation?.kind === 'omni') {
+            return operation.response;
+          }
+
           if (!operation) {
             // Try to retrieve by operation name
             try {
@@ -229,6 +238,12 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
 
           // Get the operation
           const operation = this.pendingOperations.get(jobId);
+          if (operation?.kind === 'omni') {
+            const encoded = operation.response.video?.b64_json;
+            if (!encoded) throw new ProviderError('google', 'No Gemini Omni video data available');
+            this.pendingOperations.delete(jobId);
+            return Buffer.from(encoded, 'base64');
+          }
           if (!operation?.response?.generatedVideos?.[0]?.video) {
             throw new ProviderError('google', 'No video available for download');
           }
@@ -357,6 +372,24 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
     );
   }
 
+  /** Conversational edit for a Gemini Omni interaction ID. */
+  async editVideo(options: VideoEditOptions): Promise<VideoResponse> {
+    return this.executeWithCircuitBreaker(async () => {
+      try {
+        const interaction = await (this.client.interactions as any).create({
+          model: 'gemini-omni-flash-preview',
+          previous_interaction_id: options.videoId,
+          input: options.prompt,
+          response_format: { type: 'video' },
+        });
+        return this.storeOmniResponse(interaction);
+      } catch (error: any) {
+        this.handleError(error);
+        throw error;
+      }
+    }, 'video.edit', { model: 'gemini-omni-flash-preview' });
+  }
+
   /**
    * List available video models
    */
@@ -365,7 +398,53 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
       'veo-2.0-generate-001',
       'veo-3.1-fast-generate-preview',
       'veo-3.1-generate-preview',
+      'veo-3.1-lite-generate-preview',
+      'gemini-omni-flash-preview',
     ];
+  }
+
+  private async generateOmniVideo(options: VideoGenerateOptions): Promise<VideoResponse> {
+    const vendor = options.vendorOptions ?? {};
+    const input: unknown = options.image
+      ? [
+          { type: 'image', ...await this.prepareOmniImageInput(options.image) },
+          { type: 'text', text: options.prompt },
+        ]
+      : options.prompt;
+    const interaction = await (this.client.interactions as any).create({
+      model: 'gemini-omni-flash-preview',
+      input,
+      response_format: {
+        ...((vendor.responseFormat as Record<string, unknown> | undefined) ?? {}),
+        type: 'video',
+        aspect_ratio: options.aspectRatio,
+        ...(options.duration === undefined ? {} : { duration: `${options.duration}s` }),
+      },
+      generation_config: {
+        video_config: {
+          ...((vendor.videoConfig as Record<string, unknown> | undefined) ?? {}),
+          task: options.image ? 'image_to_video' : 'text_to_video',
+        },
+      },
+    });
+    return this.storeOmniResponse(interaction);
+  }
+
+  private storeOmniResponse(interaction: any): VideoResponse {
+    const jobId = interaction.id ?? `omni-${Date.now()}`;
+    const videoData = interaction.output_video?.data;
+    if (!videoData) {
+      throw new ProviderError('google', 'Gemini Omni returned no video output');
+    }
+    const response: VideoResponse = {
+      jobId,
+      status: 'completed',
+      created: Math.floor(Date.now() / 1000),
+      progress: 100,
+      video: { b64_json: videoData, resolution: '720p', format: 'mp4' },
+    };
+    this.pendingOperations.set(jobId, { kind: 'omni', response });
+    return response;
   }
 
   /**
@@ -421,6 +500,25 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
     return {
       imageBytes: data.toString('base64'),
     };
+  }
+
+  /** Interactions image blocks require inline data plus the actual source MIME type. */
+  private async prepareOmniImageInput(image: Buffer | string): Promise<{
+    data: string;
+    mime_type: string;
+  }> {
+    if (Buffer.isBuffer(image)) {
+      const data = image.toString('base64');
+      return { data, mime_type: detectImageFormat(data) };
+    }
+    if (/^(?:https?:|data:image\/)/.test(image)) {
+      const fetched = await fetchImageAsBase64(image);
+      return { data: fetched.base64Data, mime_type: fetched.mimeType.split(';')[0]! };
+    }
+    const fs = await import('fs/promises');
+    const bytes = await fs.readFile(image);
+    const data = bytes.toString('base64');
+    return { data, mime_type: detectImageFormat(data) };
   }
 
   /**

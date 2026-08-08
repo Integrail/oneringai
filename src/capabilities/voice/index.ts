@@ -46,6 +46,7 @@ export type { VoiceSessionEvents } from './VoiceSession.js';
 export { TextPipeline } from './pipelines/TextPipeline.js';
 export { RealtimePipeline } from './pipelines/RealtimePipeline.js';
 export { OpenAIRealtimeSession, OpenAIRealtimeAPI } from './openai/index.js';
+export { GrokRealtimeAPI, GrokRealtimeSession } from './grok/index.js';
 export type {
   OpenAIRealtimeSessionOptions,
   OpenAIRealtimeSessionEvents,
@@ -53,6 +54,8 @@ export type {
   CreateRealtimeTranslationClientSecretOptions,
   OpenAIRealtimeModel,
   OpenAIRealtimeVoice,
+  RealtimePCMSampleRate,
+  OpenAIRealtimePCMSampleRate,
   OpenAIRealtimeAudioFormat,
   OpenAIRealtimeTurnDetection,
   OpenAIServerVAD,
@@ -68,6 +71,12 @@ export type {
   OpenAIRealtimeClientEvent,
   OpenAIRealtimeServerEvent,
 } from './openai/index.js';
+export type {
+  GrokRealtimeClientSecret,
+  GrokRealtimeSessionOptions,
+  GrokRealtimeAudioFormat,
+  GrokRealtimeSessionConfig,
+} from './grok/index.js';
 
 // VAD
 export { EnergyVAD } from './EnergyVAD.js';

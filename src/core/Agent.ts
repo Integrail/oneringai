@@ -23,6 +23,7 @@ import type { HookConfig, HookName } from '../capabilities/agents/types/HookType
 import { AgentEvents } from '../capabilities/agents/types/EventTypes.js';
 import { IDisposable, assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
 import { TextGenerateOptions } from '../domain/interfaces/ITextProvider.js';
+import type { ThinkingConfig } from '../domain/interfaces/ITextProvider.js';
 import { Vendor } from './Vendor.js';
 import type { IContextStorage } from '../domain/interfaces/IContextStorage.js';
 import type { PermissionCheckContext } from './permissions/types.js';
@@ -75,13 +76,7 @@ export interface AgentConfig extends BaseAgentConfig {
   maxIterations?: number;
 
   /** Vendor-agnostic thinking/reasoning configuration */
-  thinking?: {
-    enabled: boolean;
-    /** Budget in tokens for thinking (Anthropic & Google) */
-    budgetTokens?: number;
-    /** Reasoning effort level (OpenAI) */
-    effort?: 'low' | 'medium' | 'high';
-  };
+  thinking?: ThinkingConfig;
 
   /** Vendor-specific options (e.g., Google's thinkingLevel: 'low' | 'high') */
   vendorOptions?: Record<string, unknown>;
@@ -155,13 +150,7 @@ export interface AgentConfig extends BaseAgentConfig {
  */
 export interface RunOptions {
   /** Vendor-agnostic thinking/reasoning configuration */
-  thinking?: {
-    enabled: boolean;
-    /** Budget in tokens for thinking (Anthropic & Google) */
-    budgetTokens?: number;
-    /** Reasoning effort level (OpenAI) */
-    effort?: 'low' | 'medium' | 'high';
-  };
+  thinking?: ThinkingConfig;
 
   /** Temperature for generation */
   temperature?: number;

@@ -103,6 +103,29 @@ describe('GoogleConverter', () => {
       expect(request.tools![0].functionDeclarations![0].description).toBe('Get weather');
     });
 
+    it('forces only the named function through generateContent', async () => {
+      const request = await converter.convertRequest({
+        model: 'gemini-3.6-flash',
+        input: 'Use get_weather',
+        tools: [
+          {
+            type: 'function',
+            function: { name: 'get_weather', parameters: { type: 'object' } },
+          },
+          {
+            type: 'function',
+            function: { name: 'get_time', parameters: { type: 'object' } },
+          },
+        ],
+        tool_choice: { type: 'function', function: { name: 'get_weather' } },
+      });
+
+      expect(request.toolConfig.functionCallingConfig).toEqual({
+        mode: 'ANY',
+        allowedFunctionNames: ['get_weather'],
+      });
+    });
+
     it('forwards json_schema via responseMimeType + responseJsonSchema', async () => {
       const schema = {
         type: 'object',

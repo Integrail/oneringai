@@ -149,7 +149,11 @@ export type { TextToSpeechConfig, SpeechToTextConfig } from './core/index.js';
 
 // Image Capabilities
 export { ImageGeneration } from './capabilities/images/index.js';
-export type { ImageGenerationCreateOptions, SimpleGenerateOptions } from './capabilities/images/index.js';
+export type {
+  ImageGenerationCreateOptions,
+  SimpleGenerateOptions,
+  SimpleImageEditOptions,
+} from './capabilities/images/index.js';
 export { createImageProvider } from './core/index.js';
 
 // Video Capabilities
@@ -157,6 +161,7 @@ export { VideoGeneration } from './capabilities/video/index.js';
 export type {
   VideoGenerationCreateOptions,
   SimpleVideoGenerateOptions,
+  SimpleVideoExtendOptions,
 } from './capabilities/video/index.js';
 export { createVideoProvider } from './core/createVideoProvider.js';
 
@@ -164,7 +169,7 @@ export { createVideoProvider } from './core/createVideoProvider.js';
 export { Embeddings } from './capabilities/embeddings/index.js';
 export type { EmbeddingsCreateOptions } from './capabilities/embeddings/index.js';
 export { createEmbeddingProvider } from './core/createEmbeddingProvider.js';
-export type { IEmbeddingProvider, EmbeddingOptions, EmbeddingResponse } from './domain/interfaces/IEmbeddingProvider.js';
+export type { IEmbeddingProvider, EmbeddingContentPart, EmbeddingOptions, EmbeddingResponse } from './domain/interfaces/IEmbeddingProvider.js';
 
 // Speech Capabilities (Voice pseudo-streaming)
 export { VoiceStream, SentenceChunkingStrategy, AudioPlaybackQueue } from './capabilities/speech/index.js';
@@ -184,6 +189,8 @@ export {
   RealtimePipeline,
   OpenAIRealtimeSession,
   OpenAIRealtimeAPI,
+  GrokRealtimeAPI,
+  GrokRealtimeSession,
   EnergyVAD,
   TwilioAdapter,
 } from './capabilities/voice/index.js';
@@ -218,6 +225,8 @@ export type {
   CreateRealtimeTranslationClientSecretOptions,
   OpenAIRealtimeModel,
   OpenAIRealtimeVoice,
+  RealtimePCMSampleRate,
+  OpenAIRealtimePCMSampleRate,
   OpenAIRealtimeAudioFormat,
   OpenAIRealtimeTurnDetection,
   OpenAIServerVAD,
@@ -232,6 +241,10 @@ export type {
   OpenAIRealtimeClientSecret,
   OpenAIRealtimeClientEvent,
   OpenAIRealtimeServerEvent,
+  GrokRealtimeClientSecret,
+  GrokRealtimeSessionOptions,
+  GrokRealtimeAudioFormat,
+  GrokRealtimeSessionConfig,
 } from './capabilities/voice/index.js';
 export type { VoiceBridgeEvents } from './capabilities/voice/index.js';
 export type { VoiceSessionEvents } from './capabilities/voice/index.js';
@@ -706,13 +719,20 @@ export type {
 } from './domain/entities/Connector.js';
 
 // Model Registry
-export type { ILLMDescription } from './domain/entities/Model.js';
+export type {
+  ILLMDescription,
+  ProcessingMode,
+  TokenPricing,
+  LongContextTokenPricing,
+} from './domain/entities/Model.js';
 export {
   LLM_MODELS,
   MODEL_REGISTRY,
   getModelInfo,
   getModelsByVendor,
   getActiveModels,
+  getDeprecatedModels,
+  resolveModelName,
   calculateCost,
 } from './domain/entities/Model.js';
 
@@ -726,6 +746,7 @@ export {
   getTTSModelInfo,
   getTTSModelsByVendor,
   getActiveTTSModels,
+  getDeprecatedTTSModels,
   getTTSModelsWithFeature,
   calculateTTSCost,
 } from './domain/entities/TTSModel.js';
@@ -735,6 +756,7 @@ export {
   getSTTModelInfo,
   getSTTModelsByVendor,
   getActiveSTTModels,
+  getDeprecatedSTTModels,
   getSTTModelsWithFeature,
   calculateSTTCost,
 } from './domain/entities/STTModel.js';
@@ -747,6 +769,7 @@ export {
   getImageModelInfo,
   getImageModelsByVendor,
   getActiveImageModels,
+  getDeprecatedImageModels,
   getImageModelsWithFeature,
   calculateImageCost,
 } from './domain/entities/ImageModel.js';
@@ -759,19 +782,21 @@ export {
   getVideoModelInfo,
   getVideoModelsByVendor,
   getActiveVideoModels,
+  getDeprecatedVideoModels,
   getVideoModelsWithFeature,
   getVideoModelsWithAudio,
   calculateVideoCost,
 } from './domain/entities/VideoModel.js';
 
 // Embedding Model Registry
-export type { IEmbeddingModelDescription, EmbeddingModelCapabilities, EmbeddingModelPricing } from './domain/entities/EmbeddingModel.js';
+export type { IEmbeddingModelDescription, EmbeddingModelCapabilities, EmbeddingModelPricing, EmbeddingCostOptions } from './domain/entities/EmbeddingModel.js';
 export {
   EMBEDDING_MODELS,
   EMBEDDING_MODEL_REGISTRY,
   getEmbeddingModelInfo,
   getEmbeddingModelsByVendor,
   getActiveEmbeddingModels,
+  getDeprecatedEmbeddingModels,
   getEmbeddingModelsWithFeature,
   calculateEmbeddingCost,
 } from './domain/entities/EmbeddingModel.js';
@@ -868,7 +893,7 @@ export type { TaskFailure, ContextOverflowBudget } from './domain/errors/AIError
 
 // ============ Interfaces (for extensibility) ============
 export type { IProvider, ProviderCapabilities } from './domain/interfaces/IProvider.js';
-export type { ITextProvider, TextGenerateOptions, ModelCapabilities } from './domain/interfaces/ITextProvider.js';
+export type { ITextProvider, TextGenerateOptions, ModelCapabilities, ReasoningEffort, ThinkingConfig } from './domain/interfaces/ITextProvider.js';
 export type {
   AdvancedTextCapabilities,
   DataHandlingPolicy,
@@ -898,15 +923,21 @@ export type {
   ITextToSpeechProvider,
   IStreamingTextToSpeechProvider,
   ISpeechToTextProvider,
+  IStreamingSpeechToTextProvider,
   TTSOptions,
   TTSResponse,
   TTSStreamChunk,
   STTOptions,
   STTResponse,
+  STTStreamOptions,
+  STTStreamEvent,
+  STTStreamInput,
   STTOutputFormat,
   WordTimestamp,
   SegmentTimestamp,
 } from './domain/interfaces/IAudioProvider.js';
+
+export { MODEL_REGISTRY_SCHEMA_VERSION } from './domain/types/SharedTypes.js';
 
 // Image Interfaces
 export type {
@@ -947,6 +978,9 @@ export type {
   ISourceLinks,
   VendorOptionSchema,
   IBaseModelDescription,
+  ModelLifecycleStatus,
+  ModelAvailability,
+  ModelEndpoint,
 } from './domain/types/SharedTypes.js';
 
 // ============ External Services & Connector Tools ============

@@ -11,6 +11,8 @@ export type {
 export type {
   OpenAIRealtimeModel,
   OpenAIRealtimeVoice,
+  RealtimePCMSampleRate,
+  OpenAIRealtimePCMSampleRate,
   OpenAIRealtimeAudioFormat,
   OpenAIRealtimeTurnDetection,
   OpenAIServerVAD,

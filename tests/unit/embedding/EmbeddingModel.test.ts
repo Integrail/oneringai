@@ -107,8 +107,10 @@ describe('EmbeddingModel Registry', () => {
 
     it('should return Google models', () => {
       const models = getEmbeddingModelsByVendor(Vendor.Google);
-      expect(models.length).toBe(1);
-      expect(models[0]?.name).toBe('text-embedding-004');
+      expect(models.map((model) => model.name)).toEqual([
+        'gemini-embedding-2',
+        'gemini-embedding-001',
+      ]);
     });
 
     it('should return Ollama models', () => {
@@ -156,7 +158,7 @@ describe('EmbeddingModel Registry', () => {
       const models = getEmbeddingModelsWithFeature('instructionAware');
       expect(models.length).toBeGreaterThan(0);
       expect(models.some((m) => m.name === 'qwen3-embedding')).toBe(true);
-      expect(models.some((m) => m.name === 'text-embedding-004')).toBe(true);
+      expect(models.some((m) => m.name === 'gemini-embedding-2')).toBe(true);
       // OpenAI text-embedding-3 is NOT instruction-aware
       expect(models.some((m) => m.name === 'text-embedding-3-small')).toBe(false);
     });
@@ -203,6 +205,15 @@ describe('EmbeddingModel Registry', () => {
 
     it('should return null for unknown model', () => {
       expect(calculateEmbeddingCost('unknown', 1000)).toBeNull();
+    });
+
+    it('calculates mixed-modality and batch Gemini Embedding 2 usage', () => {
+      const cost = calculateEmbeddingCost('gemini-embedding-2', 1_000_000, {
+        imageTokens: 1_000_000,
+        audioSeconds: 10,
+        batch: true,
+      });
+      expect(cost).toBeCloseTo((0.20 + 0.45 + 0.0016) * 0.5);
     });
   });
 

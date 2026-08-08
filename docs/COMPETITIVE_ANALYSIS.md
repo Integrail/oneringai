@@ -61,7 +61,7 @@
 ### 2.1 OneRingAI
 
 **Package:** `@everworker/oneringai`  
-**Language:** TypeScript (strict mode) | **Runtime:** Node.js 18+ | **Module:** ESM  
+**Language:** TypeScript (strict mode) | **Runtime:** Node.js 22+ | **Module:** ESM
 **Codebase:** ~501 files, ~109,473 lines of code  
 **Architecture:** Connector-First Design
 
@@ -220,7 +220,7 @@ User (messaging channel) --> Gateway (control plane) --> Agent/Provider --> LLM
 | **Design Pattern** | Connector-first registry | Runnable composition (LCEL) | Role-based delegation | Gateway + skills |
 | **Packaging** | Single npm package | Monorepo (15+ packages) | Single PyPI package | Single install + extensions |
 | **Codebase Size** | ~109K LOC | ~200K+ LOC (all packages) | ~100K+ LOC | ~300K+ LOC |
-| **Min Runtime** | Node.js 18+ | Node.js 20+ | Python 3.10+ | Node.js 22+ |
+| **Min Runtime** | Node.js 22+ | Node.js 20+ | Python 3.10+ | Node.js 22+ |
 | **Module System** | ESM only | ESM + CJS | Python modules | ESM only |
 | **Edge/Browser** | No | Yes (Workers, Edge, Deno, Bun) | No | No |
 

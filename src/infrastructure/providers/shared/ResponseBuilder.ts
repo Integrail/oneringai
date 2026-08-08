@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { OutputItem, MessageRole } from '../../../domain/entities/Message.js';
 import { Content, ContentType } from '../../../domain/entities/Content.js';
+import type { ProcessingMode } from '../../../domain/entities/Model.js';
 
 /**
  * Response status type (matches LLMResponse.status)
@@ -31,8 +32,9 @@ export interface UsageStats {
   };
   reasoningTokens?: number;
   nativeToolCalls?: Record<string, number>;
-  processingMode?: 'interactive' | 'batch';
+  processingMode?: ProcessingMode;
   serviceTier?: string;
+  speed?: string;
 }
 
 /**
@@ -126,6 +128,7 @@ export function buildLLMResponse(options: ResponseBuilderOptions): LLMResponse {
       ...(usage.nativeToolCalls && { native_tool_calls: usage.nativeToolCalls }),
       ...(usage.processingMode && { processing_mode: usage.processingMode }),
       ...(usage.serviceTier && { service_tier: usage.serviceTier }),
+      ...(usage.speed && { speed: usage.speed }),
     },
   };
 }
