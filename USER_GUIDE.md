@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 0.10.3
-**Last Updated:** 2026-07-24
+**Version:** 0.11.0
+**Last Updated:** 2026-08-08
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -107,28 +107,29 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 20. [MCP (Model Context Protocol)](#mcp-model-context-protocol)
 21. [Multimodal (Vision)](#multimodal-vision)
 22. [Audio (TTS/STT)](#audio-ttsstt)
-23. [Image Generation](#image-generation)
-24. [Embeddings](#embeddings)
-25. [Video Generation](#video-generation)
-26. [Custom Media Storage](#custom-media-storage)
+23. [OpenAI Realtime API](#openai-realtime-api) — voice agents, live transcription/translation, WebSocket/WebRTC, SIP, and telephony
+24. [Image Generation](#image-generation)
+25. [Embeddings](#embeddings)
+26. [Video Generation](#video-generation)
+27. [Custom Media Storage](#custom-media-storage)
     - IMediaStorage Interface
     - Custom S3 Backend Example
     - FileMediaStorage Default
-27. [Web Search](#web-search)
-28. [Streaming](#streaming)
-29. [External API Integration](#external-api-integration)
-30. [Vendor Templates](#vendor-templates)
+28. [Web Search](#web-search)
+29. [Streaming](#streaming)
+30. [External API Integration](#external-api-integration)
+31. [Vendor Templates](#vendor-templates)
     - Quick Setup for 45+ Services
     - Authentication Methods
     - Complete Vendor Reference
-31. [OAuth for External APIs](#oauth-for-external-apis)
-32. [Model Registry](#model-registry)
-33. [Scoped Connector Registry](#scoped-connector-registry)
+32. [OAuth for External APIs](#oauth-for-external-apis)
+33. [Model Registry](#model-registry)
+34. [Scoped Connector Registry](#scoped-connector-registry)
     - Access Control Policies
     - Multi-Tenant Isolation
     - Using with Agent and ConnectorTools
-34. [Agent Registry](#agent-registry) — Global tracking, deep inspection, parent/child hierarchy, event fan-in, external control
-35. [Agent Orchestrator](#agent-orchestrator) — Multi-agent teams with shared workspace, delegation, and async execution
+35. [Agent Registry](#agent-registry) — Global tracking, deep inspection, parent/child hierarchy, event fan-in, external control
+36. [Agent Orchestrator](#agent-orchestrator) — Multi-agent teams with shared workspace, delegation, and async execution
     - Quick Start
     - Architecture
     - OrchestratorConfig
@@ -141,8 +142,8 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Worker Agent Lifecycle
     - Custom System Prompt
     - Per-Type Configuration
-36. [Advanced Features](#advanced-features)
-37. [Production Deployment](#production-deployment)
+37. [Advanced Features](#advanced-features)
+38. [Production Deployment](#production-deployment)
 
 ---
 
@@ -11527,6 +11528,9 @@ const response = await agent.run([
 ## Audio (TTS/STT)
 
 The library provides comprehensive Text-to-Speech (TTS) and Speech-to-Text (STT) capabilities.
+These APIs are request-based and work best for files or bounded generation. For
+live speech-to-speech, streaming transcription, or continuous translation, use
+the [OpenAI Realtime API](#openai-realtime-api).
 
 ### Text-to-Speech
 
@@ -11842,6 +11846,8 @@ const granularities = stt.getTimestampGranularities();  // ['word', 'segment']
 
 | Model | Provider | Features | Price/minute |
 |-------|----------|----------|--------------|
+| `gpt-live-transcribe` | OpenAI | Recommended realtime streaming transcription, latency control, vocabulary/language hints | $0.017 |
+| `gpt-realtime-whisper` | OpenAI | Low-latency realtime streaming transcription | $0.017 |
 | `whisper-1` | OpenAI | General-purpose, 50+ languages | $0.006 |
 | `gpt-4o-transcribe` | OpenAI | Superior accuracy | $0.006 |
 | `gpt-4o-transcribe-diarize` | OpenAI | Speaker identification | $0.012 |
@@ -11899,6 +11905,682 @@ console.log(`STT cost: $${sttCost}`);  // $0.03
 const groqCost = calculateSTTCost('whisper-large-v3', 300);  // 5 minutes
 console.log(`Groq STT cost: $${groqCost}`);  // $0.0025
 ```
+
+---
+
+## OpenAI Realtime API
+
+The OpenAI Realtime API is the low-latency path for live audio. Unlike the
+request-based TTS/STT APIs above, a realtime session keeps a connection open,
+accepts audio or text as it arrives, and streams events back immediately.
+OneRingAI exposes the GA API through the same connector-first authentication
+used everywhere else in the library.
+
+Use the Realtime API for:
+
+- speech-to-speech agents that reason, answer, and call tools;
+- live captions or call transcription without an assistant response;
+- continuous speech-to-speech translation;
+- browser/mobile audio over WebRTC;
+- server media pipelines over WebSocket; and
+- telephony through OpenAI SIP controls or `VoiceBridge` with Twilio Media Streams.
+
+### Choose a Session Type and Transport
+
+| Goal | Model | Session/endpoint | Recommended transport |
+|------|-------|------------------|-----------------------|
+| Voice agent | `gpt-realtime-2.1` | Realtime conversation, `/v1/realtime` | WebRTC in browsers; WebSocket on servers |
+| Lower-cost voice agent | `gpt-realtime-2.1-mini` | Realtime conversation, `/v1/realtime` | WebRTC or WebSocket |
+| Live transcription | `gpt-live-transcribe` | `type: 'transcription'`, `/v1/realtime?intent=transcription` | WebRTC or WebSocket |
+| Continuous translation | `gpt-realtime-translate` | `/v1/realtime/translations` | WebRTC in browsers; WebSocket on servers |
+| Phone agent through Twilio | `gpt-realtime-2.1` | `VoiceBridge` realtime pipeline | Twilio Media Streams + server WebSocket |
+| Phone agent through OpenAI SIP | Supported realtime voice model | `/v1/realtime/calls/*` control endpoints | SIP |
+
+`OpenAIRealtimeSession` is a server-side WebSocket client. It handles
+connector authentication, session creation, JSON serialization, endpoint
+selection, and the protocol differences between conversation, transcription,
+and translation sessions. It intentionally leaves audio capture/playback to the
+host and exposes every server event so applications are not limited by a closed
+event union as OpenAI evolves the protocol.
+
+`OpenAIRealtimeAPI` contains the REST operations: minting WebRTC credentials and
+controlling SIP calls. It does not put a long-lived OpenAI API key in the browser.
+
+### Authentication and Setup
+
+Create a normal OpenAI connector. The connector may use the default OpenAI base
+URL or an explicit compatible proxy URL.
+
+```typescript
+import {
+  Connector,
+  OpenAIRealtimeAPI,
+  OpenAIRealtimeSession,
+  Vendor,
+} from '@everworker/oneringai';
+
+const openai = Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: {
+    type: 'api_key',
+    apiKey: process.env.OPENAI_API_KEY!,
+  },
+});
+```
+
+Keep the standard API key on a trusted server. For an identifiable end user,
+pass a stable, privacy-preserving `safetyIdentifier` (for example, a one-way hash
+of an internal user id). The library sends it through the
+`OpenAI-Safety-Identifier` header.
+
+### Server WebSocket Voice Agent
+
+The default model is `gpt-realtime-2.1`. Audio sent to `appendAudio()` may be a
+`Buffer` or an already-base64-encoded string. PCM audio is signed 16-bit little
+endian, mono, at 24 kHz; PCMU and PCMA use their native 8 kHz telephony format.
+
+```typescript
+const realtime = new OpenAIRealtimeSession({
+  connector: openai,
+  model: 'gpt-realtime-2.1',
+  safetyIdentifier: hashUserId('user-123'),
+  session: {
+    instructions: 'Be concise, friendly, and confirm important numbers.',
+    reasoning: { effort: 'low' },
+    output_modalities: ['audio'],
+    audio: {
+      input: {
+        format: { type: 'audio/pcm', rate: 24000 },
+        noise_reduction: { type: 'near_field' },
+        turn_detection: {
+          type: 'semantic_vad',
+          eagerness: 'auto',
+          create_response: true,
+          interrupt_response: true,
+        },
+      },
+      output: {
+        format: { type: 'audio/pcm', rate: 24000 },
+        voice: 'marin',
+      },
+    },
+  },
+});
+
+realtime.on('event', (event) => {
+  switch (event.type) {
+    case 'response.output_audio.delta':
+      playPcm24(Buffer.from(event.delta, 'base64'));
+      break;
+    case 'response.output_audio_transcript.delta':
+      process.stdout.write(event.delta);
+      break;
+    case 'error':
+      console.error(event.error);
+      break;
+  }
+});
+
+realtime.on('error', console.error); // socket, parsing, and connection errors
+realtime.on('close', (code, reason) => console.log('closed', code, reason));
+
+await realtime.connect();
+
+// Text turns are useful for testing or mixed text/audio applications.
+realtime.sendText('Introduce yourself in one short sentence.');
+realtime.createResponse();
+
+// Stream microphone/server audio as it arrives.
+realtime.appendAudio(pcm24Chunk);
+
+// Only commit/request manually when automatic VAD is disabled.
+realtime.commitAudio();
+realtime.createResponse();
+```
+
+`connect()` resolves after `session.created`. If an initial `session` was
+provided, the library then sends it through `session.update`. Register event
+listeners before connecting so no early events are missed.
+
+### Session Helpers and Events
+
+The wrapper keeps the protocol accessible instead of hiding it behind a narrow
+abstraction:
+
+| Method | Client event/behavior |
+|--------|-----------------------|
+| `updateSession(session)` | Sends `session.update` using the correct session shape |
+| `appendAudio(bufferOrBase64)` | Sends the appropriate audio-buffer append event |
+| `commitAudio()` | Commits a standard/transcription audio turn |
+| `clearAudio()` | Clears uncommitted standard/transcription input audio |
+| `sendText(text)` | Adds a user text conversation item |
+| `sendImage(url)` | Adds an image input conversation item |
+| `createResponse(config?)` | Requests a voice-agent response |
+| `cancelResponse()` | Cancels the active response |
+| `truncateItem(itemId, endMs, contentIndex?)` | Truncates assistant audio already in conversation state |
+| `closeTranslation()` | Sends translation-only `session.close` so pending output can drain |
+| `send(event)` | Sends any GA client event directly |
+| `close(code?, reason?)` | Closes the WebSocket and removes listeners |
+
+Every server message is emitted through the typed `event` subscription. At
+runtime it is also emitted under its exact event-type string for consumers using
+the underlying `EventEmitter` dynamically, except API `error` payloads: Node
+reserves the `error` event for `Error` objects, so OpenAI error payloads remain
+on the raw `event` stream. Prefer the typed `event` listener shown above.
+
+`OpenAIRealtimeServerEvent` and `OpenAIRealtimeClientEvent` have a typed `type`
+and `event_id`, plus an open index signature. Narrow on `event.type` before
+reading event-specific fields.
+
+### Audio, VAD, and Interruption Configuration
+
+Supported audio formats are:
+
+```typescript
+type OpenAIRealtimeAudioFormat =
+  | { type: 'audio/pcm'; rate: 24000 }
+  | { type: 'audio/pcmu' }
+  | { type: 'audio/pcma' };
+```
+
+Turn detection accepts `server_vad`, `semantic_vad`, or `null`:
+
+```typescript
+// Silence-based VAD
+const serverVAD = {
+  type: 'server_vad' as const,
+  threshold: 0.5,
+  prefix_padding_ms: 400,
+  silence_duration_ms: 500,
+  idle_timeout_ms: 15_000,
+  create_response: true,
+  interrupt_response: true,
+};
+
+// Model-based end-of-turn detection
+const semanticVAD = {
+  type: 'semantic_vad' as const,
+  eagerness: 'auto' as const, // low | medium | high | auto
+  create_response: true,
+  interrupt_response: true,
+};
+```
+
+Set `turn_detection: null` when your application owns the turn boundary. Append
+audio, call `commitAudio()`, and then `createResponse()`. When users interrupt
+playback, cancel the response, stop local playback, and use `truncateItem()` to
+keep server conversation state aligned with what the user actually heard.
+`VoiceBridge` performs this barge-in sequence automatically.
+
+Input noise reduction supports `{ type: 'near_field' }`,
+`{ type: 'far_field' }`, or `null`. Output speed is supported from 0.25 to 1.5.
+
+### Advanced Session Configuration
+
+The session type covers reasoning, tools, tracing, stored prompts, token limits,
+parallel tool calls, and retention-ratio truncation:
+
+```typescript
+const advanced = new OpenAIRealtimeSession({
+  connector: 'openai',
+  model: 'gpt-realtime-2.1',
+  session: {
+    reasoning: { effort: 'low' },
+    max_output_tokens: 2048,
+    parallel_tool_calls: true,
+    prompt: {
+      id: 'pmpt_voice_support',
+      version: '3',
+      variables: { company: 'Acme' },
+    },
+    tracing: {
+      workflow_name: 'phone-support',
+      group_id: 'call-42',
+      metadata: { region: 'eu' },
+    },
+    truncation: {
+      type: 'retention_ratio',
+      retention_ratio: 0.8,
+      token_limits: { post_instructions: 12_000 },
+    },
+    tools: [{
+      type: 'mcp',
+      server_label: 'support',
+      connector_id: 'conn_support_mcp',
+      allowed_tools: { read_only: true },
+      require_approval: 'never',
+      defer_loading: true,
+    }],
+  },
+});
+```
+
+For a function tool sent directly to OpenAI, use the flattened Realtime shape:
+
+```typescript
+const lookupTool = {
+  type: 'function' as const,
+  name: 'lookup_order',
+  description: 'Look up an order by id',
+  parameters: {
+    type: 'object',
+    properties: { orderId: { type: 'string' } },
+    required: ['orderId'],
+    additionalProperties: false,
+  },
+};
+```
+
+Raw `OpenAIRealtimeSession` surfaces OpenAI tool-call events but deliberately
+does not execute function tools. Use `VoiceBridge` when local `ToolFunction`s
+should execute through OneRingAI's `ToolManager`, permissions, circuit breakers,
+and tool context. Remote MCP tools remain provider-executed and may be included
+under `realtime.tools`.
+
+### Voice-Agent Models
+
+| Model | Use | Context/output | Registry status |
+|-------|-----|----------------|-----------------|
+| `gpt-realtime-2.1` | Most capable production voice agent; reasoning, vision, audio, tools | 128K / 32K | Active, preferred |
+| `gpt-realtime-2.1-mini` | Faster and lower cost; reasoning, vision, audio, tools | 128K / 32K | Active |
+| `gpt-realtime-2` | Realtime reasoning and tool workflows | 128K / 32K | Active |
+| `gpt-realtime-translate` | Dedicated continuous interpreter | 16K / 2K | Active; translation endpoint only |
+| `gpt-realtime-1.5` | Previous-generation realtime voice model | 32K / 4K | Active |
+| `gpt-realtime`, `gpt-realtime-mini` | Legacy compatibility | 32K / 4K | Inactive/deprecated in registry |
+
+Realtime voices are `alloy`, `ash`, `ballad`, `coral`, `echo`, `marin`, `sage`,
+`shimmer`, `verse`, and `cedar`; custom `{ id: 'voice_…' }` references are also
+accepted by the session type. OpenAI recommends `marin` or `cedar` for best
+quality, and `VoiceBridge` defaults to `marin`. Select the voice before the model
+first emits audio; OpenAI does not allow changing it later in the same session.
+
+### Realtime Transcription
+
+Use a transcription session when the application needs streaming text without
+an assistant response. The connection uses `intent=transcription`; the actual
+transcription model belongs in `session.audio.input.transcription.model`.
+OneRingAI applies that distinction automatically.
+
+```typescript
+const transcription = new OpenAIRealtimeSession({
+  connector: 'openai',
+  session: {
+    type: 'transcription',
+    audio: {
+      input: {
+        format: { type: 'audio/pcm', rate: 24000 },
+        noise_reduction: { type: 'near_field' },
+        transcription: {
+          model: 'gpt-live-transcribe',
+          prompt: 'Customer support call about account AC-42.',
+          keywords: ['AC-42', 'premium plan', 'billing'],
+          languages: ['en', 'fr'],
+          delay: 'low',
+        },
+        turn_detection: null,
+      },
+    },
+  },
+});
+
+transcription.on('event', (event) => {
+  if (event.type === 'conversation.item.input_audio_transcription.delta') {
+    process.stdout.write(event.delta);
+  }
+  if (event.type === 'conversation.item.input_audio_transcription.completed') {
+    console.log('\nfinal:', event.transcript);
+  }
+});
+
+await transcription.connect();
+transcription.appendAudio(pcm24Chunk);
+transcription.commitAudio();
+```
+
+`gpt-live-transcribe` is the recommended streaming model. The registry also
+includes `gpt-realtime-whisper`; both are priced at $0.017 per audio minute.
+Use `languages` for multiple expected languages and do not combine it with the
+singular `language` field. With automatic VAD enabled, the server can commit
+turns; with `turn_detection: null`, the host commits them explicitly.
+
+Completion events from separate turns are not guaranteed to arrive in order.
+Use `item_id` and `content_index` to reconcile partial and final transcripts.
+Live transcription does not provide word-level timestamps, speaker labels, or
+confidence scores; use a compatible file-transcription workflow when those are
+required.
+
+### Realtime Translation
+
+Translation is a dedicated continuous protocol, not a voice-agent prompt. It
+uses `gpt-realtime-translate` and `/v1/realtime/translations`. Do not call
+`createResponse()` or wait for a conversation turn: keep appending source audio,
+including silence between phrases, and consume translated output as it arrives.
+
+```typescript
+const translation = new OpenAIRealtimeSession({
+  connector: 'openai',
+  model: 'gpt-realtime-translate', // also selects realtime/translations
+  session: {
+    audio: {
+      output: { language: 'es' },
+    },
+  },
+});
+
+translation.on('event', (event) => {
+  if (event.type === 'session.input_transcript.delta') {
+    updateSourceCaption(event.delta);
+  }
+  if (event.type === 'session.output_transcript.delta') {
+    updateSpanishCaption(event.delta);
+  }
+  if (event.type === 'session.output_audio.delta') {
+    playPcm24(Buffer.from(event.delta, 'base64'));
+  }
+  if (event.type === 'session.closed') {
+    translation.close();
+  }
+});
+
+await translation.connect();
+translation.appendAudio(pcm24Chunk);
+
+// At end of source media, flush pending translation before closing the socket.
+translation.closeTranslation();
+```
+
+The WebSocket `session.update` translation shape contains only the target output
+language. The WebRTC client-secret shape additionally requires
+`model: 'gpt-realtime-translate'`; the library exposes separate TypeScript types
+so the two wire contracts cannot be accidentally mixed.
+
+Use one translation session per output language. For two-way interpretation,
+keep participant tracks separate and create one session per direction. For
+WebSocket media, source audio is base64 24 kHz PCM16. For browser media, WebRTC
+handles capture and playback as media tracks.
+
+### Browser and Mobile WebRTC Credentials
+
+Create ephemeral credentials on your server and return only the short-lived
+secret to the client. `expiresAfterSeconds` must be between 10 and 7,200.
+
+```typescript
+const api = new OpenAIRealtimeAPI('openai');
+
+// Voice-agent or transcription credential.
+const voiceSecret = await api.createClientSecret({
+  session: {
+    type: 'realtime',
+    model: 'gpt-realtime-2.1-mini',
+    instructions: 'Answer briefly.',
+    audio: { output: { voice: 'marin' } },
+  },
+  expiresAfterSeconds: 600,
+  safetyIdentifier: hashUserId('user-123'),
+});
+
+// Translation has a separate credential endpoint and session shape.
+const translationSecret = await api.createTranslationClientSecret({
+  session: {
+    model: 'gpt-realtime-translate',
+    audio: { output: { language: 'de' } },
+  },
+  safetyIdentifier: hashUserId('user-123'),
+});
+
+// Send `voiceSecret.value` or `translationSecret.value` to the intended client.
+```
+
+The browser creates an `RTCPeerConnection`, adds its microphone track, creates
+the `oai-events` data channel, and exchanges SDP with OpenAI using the ephemeral
+secret. OneRingAI mints credentials but does not wrap browser WebRTC primitives;
+this keeps media permissions and peer-connection lifecycle in the browser where
+they belong. Use `/v1/realtime/calls` for a voice-agent SDP offer and
+`/v1/realtime/translations/calls` for translation.
+
+Never send the connector's standard API key to a browser or mobile application.
+Mint client secrets per session and associate the safety identifier when the
+secret is created.
+
+### SIP Call Control
+
+`OpenAIRealtimeAPI` also wraps server-side controls for an OpenAI SIP call. The
+`callId` normally comes from the incoming-call webhook event.
+
+```typescript
+const api = new OpenAIRealtimeAPI('openai');
+
+await api.acceptCall(callId, {
+  model: 'gpt-realtime-2.1',
+  instructions: 'You are Acme telephone support.',
+  audio: { output: { voice: 'cedar' } },
+});
+
+// Reject an unanswered call (486 = busy, for example).
+await api.rejectCall(callId, 486);
+
+// Transfer an accepted call.
+await api.referCall(callId, 'sip:human-agent@example.com');
+
+// End an accepted call.
+await api.hangupCall(callId);
+```
+
+Webhook signature validation, replay protection, routing policy, and mapping the
+incoming payload to `callId` remain host responsibilities. Accept/reject/refer/
+hangup calls are authenticated through the selected connector.
+
+### `VoiceBridge` Realtime Telephony
+
+For Twilio Media Streams, use `VoiceBridge` with `pipeline: 'realtime'`. It
+creates a fresh full `Agent` per call, translates agent instructions and enabled
+local tools into the Realtime session, streams native PCMU in both directions,
+executes tool calls through the agent's `ToolManager`, maintains a transcript,
+and handles interruption timing and truncation.
+
+```typescript
+import {
+  TwilioAdapter,
+  VoiceBridge,
+} from '@everworker/oneringai';
+
+const bridge = VoiceBridge.create({
+  agent: {
+    connector: 'openai',
+    model: 'gpt-realtime-2.1',
+    instructions: 'Be a concise and helpful phone support agent.',
+    tools: [lookupOrder, createTicket],
+    permissions: {
+      onApprovalRequired: approveVoiceTool,
+    },
+  },
+  pipeline: 'realtime',
+  voice: 'marin',
+  speed: 1,
+  turnDetection: 'semantic_vad',
+  semanticVADEagerness: 'auto',
+  noiseReduction: 'far_field',
+  inputTranscription: true,
+  transcriptionModel: 'gpt-4o-transcribe',
+  interruptible: true,
+  greeting: 'Hello, this is Acme support. How can I help?',
+  greetingOutbound: 'Hello, I am calling from Acme support.',
+  safetyIdentifier: hashUserId('caller-123'),
+  maxConcurrentCalls: 20,
+  maxCallDuration: 3600,
+  realtime: {
+    reasoning: { effort: 'low' },
+    tracing: { workflow_name: 'twilio-support' },
+    truncation: { type: 'retention_ratio', retention_ratio: 0.8 },
+  },
+  hooks: {
+    onCallStart: async (session) => isAllowedCaller(session.from),
+    onInterrupt: async (session) => audit('interrupt', session.sessionId),
+    onCallEnd: async (session, summary) => saveCallSummary(session, summary),
+    onError: async (error, session) => reportCallError(error, session),
+  },
+});
+
+const twilio = TwilioAdapter.createStandalone({
+  connector: 'twilio',
+  port: 3000,
+  publicUrl: 'https://voice.example.com',
+});
+
+bridge.on('transcript', (session, entry) => {
+  console.log(session.callId, entry.role, entry.text);
+});
+
+bridge.attach(twilio);
+await twilio.start();
+```
+
+Realtime `beforeAgentResponse` and `afterAgentResponse` hooks are observational:
+the model has already consumed or generated audio concurrently, so returned text
+cannot rewrite that audio. Use agent instructions, tools, or session controls to
+change realtime behavior. `onCallStart`, `onInterrupt`, `onError`, and
+`onCallEnd` retain their normal lifecycle semantics.
+
+`VoiceBridge` realtime configuration:
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `voice` | `marin` | Realtime output voice |
+| `speed` | `1` | Output speed, 0.25–1.5 |
+| `turnDetection` | `server_vad` | `server_vad`, `semantic_vad`, or `none` for local VAD |
+| `vadThreshold` | `0.5` | Server VAD sensitivity |
+| `silenceDurationMs` | `500` | Silence before server-VAD turn completion |
+| `prefixPaddingMs` | `400` | Audio retained before detected speech |
+| `idleTimeoutMs` | unset | Optional server-VAD idle prompt timeout |
+| `semanticVADEagerness` | `auto` | Semantic end-of-turn eagerness |
+| `noiseReduction` | `near_field` | `near_field`, `far_field`, or `none` |
+| `inputTranscription` | `true` | Caller transcripts for hooks, context, and UI |
+| `transcriptionModel` | `gpt-4o-transcribe` | Input transcription model |
+| `transcriptionLanguage` | unset | Optional language hint |
+| `interruptible` | `true` | Permit caller barge-in |
+| `realtime` | `{}` | Advanced GA session options; agent instructions/tools are merged |
+| `safetyIdentifier` | unset | Privacy-preserving OpenAI end-user identifier |
+
+When `turnDetection: 'none'`, `VoiceBridge` uses local `EnergyVAD`, commits the
+audio buffer, and requests each response itself. The existing `vad` and
+`silenceTimeout` options configure that local detector. Server and semantic VAD
+do not use `EnergyVAD`.
+
+On barge-in, the pipeline cancels the active model response, clears queued
+telephony playback, and truncates the assistant conversation item at the media
+timestamp actually reached by the caller. Tool calls and results are added to
+the bridge transcript as `tool_use` and `tool_result` entries.
+
+### Tool Security
+
+There are two distinct tool paths:
+
+1. **Local OneRingAI tools** are supplied through `agent.tools`. `VoiceBridge`
+   executes them through the normal `ToolManager`, including permission policy,
+   user rules, circuit breakers, tool context, and execution hooks.
+2. **Provider-hosted MCP tools** are supplied through `realtime.tools`. They run
+   through OpenAI's Realtime tool path; configure connector authorization,
+   allowed tools, and approval behavior explicitly.
+
+Do not place long-lived secrets directly in model-visible tool definitions.
+Prefer an OpenAI-managed connector reference (`connector_id`) or resolve
+credentials on the trusted server. This field is an OpenAI connector id, not a
+OneRingAI connector-registry name. Treat third-party MCP data movement as an
+explicit trust decision.
+
+### Realtime Cost Estimation
+
+Realtime voice-agent models have separate text, audio, and image token prices.
+Select the modality when calculating cost. Translation is billed by audio
+duration rather than tokens.
+
+```typescript
+import { calculateCost } from '@everworker/oneringai';
+
+const audioTokenCost = calculateCost(
+  'gpt-realtime-2.1',
+  12_000,
+  4_000,
+  {
+    modality: 'audio',
+    cachedInputTokens: 2_000,
+  },
+);
+
+const translationCost = calculateCost(
+  'gpt-realtime-translate',
+  0,
+  0,
+  { audioMinutes: 15 },
+); // $0.51 at $0.034/minute
+```
+
+If `gpt-realtime-translate` is used without `audioMinutes`, `calculateCost()`
+returns `null`. Image output cost is also `null` when the registry has no image
+output price. Inspect `getModelInfo(model).features.pricing` for the exact
+modality metadata used by the calculator.
+
+### Production Checklist and Boundaries
+
+- Use WebRTC for browser/mobile capture and playback; use WebSocket when a
+  trusted server already owns raw audio.
+- Never expose the standard OpenAI connector token to a client. Mint a new
+  ephemeral secret for each WebRTC session.
+- Set `safetyIdentifier` to a stable privacy-preserving value per end user.
+- Benchmark VAD, noise reduction, reasoning effort, latency, interruption, and
+  reconnect behavior with real microphones, accents, network conditions, and
+  telephony audio.
+- Handle the raw `error` event payload and socket-level `error` separately.
+- Stop local playback when cancelling a response; keep server conversation state
+  aligned with `truncateItem()`.
+- For translation, send `closeTranslation()`, continue reading until
+  `session.closed`, and only then close the socket.
+- Reconcile transcription turns by `item_id`, not event arrival order.
+- Apply normal OneRingAI permission policies to every local tool used by a phone
+  or voice agent.
+- Validate SIP webhook signatures and make accept/refer decisions on a trusted
+  server.
+- Record consent and disclosures where call recording, transcription, synthetic
+  speech, or automated calling laws require them.
+
+The library's WebSocket client transports raw audio but does not capture a
+microphone or play sound. The WebRTC helper mints credentials but does not manage
+`RTCPeerConnection`. SIP helpers control an existing OpenAI call but do not
+provision phone numbers or receive webhooks. `VoiceBridge` supplies those media
+and lifecycle integrations for supported telephony adapters.
+
+### Public Realtime Exports
+
+The package root exports:
+
+- runtime classes: `OpenAIRealtimeSession`, `OpenAIRealtimeAPI`,
+  `RealtimePipeline`, and `VoiceBridge`;
+- session/API types: `OpenAIRealtimeSessionOptions`,
+  `CreateRealtimeClientSecretOptions`, and
+  `CreateRealtimeTranslationClientSecretOptions`;
+- configuration types: `OpenAIRealtimeSessionConfig`,
+  `OpenAIRealtimeTranscriptionSessionConfig`,
+  `OpenAIRealtimeTranslationSessionConfig`, and
+  `OpenAIRealtimeTranslationClientSessionConfig`;
+- protocol types: `OpenAIRealtimeClientEvent`,
+  `OpenAIRealtimeServerEvent`, `OpenAIRealtimeClientSecret`, audio/VAD types,
+  function/MCP tool types, voices, and model ids; and
+- telephony types: `RealtimePipelineConfig`, `VoiceBridgeConfig`,
+  `VoicePipelineEvents`, `TranscriptMessage`, and adapter/session types.
+
+Run the complete server-side example with:
+
+```bash
+npm run example:realtime
+```
+
+OpenAI reference material: [Realtime overview](https://developers.openai.com/api/docs/guides/realtime),
+[WebSocket](https://developers.openai.com/api/docs/guides/realtime-websocket),
+[WebRTC](https://developers.openai.com/api/docs/guides/realtime-webrtc),
+[transcription](https://developers.openai.com/api/docs/guides/realtime-transcription),
+[translation](https://developers.openai.com/api/docs/guides/realtime-translation),
+and [SIP](https://developers.openai.com/api/docs/guides/realtime-sip).
 
 ---
 
@@ -14488,7 +15170,7 @@ interface ILLMDescription {
 
 ### Available Models
 
-**OpenAI (40 models):**
+**OpenAI (44 models):**
 - GPT-5.5 (flagship)
 - GPT-5.4: standard, pro, mini, nano
 - GPT-5.3: codex, chat-latest

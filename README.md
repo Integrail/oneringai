@@ -110,7 +110,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
 - 📊 **Model Registry** - Complete metadata for 60+ latest (2026) models with pricing and features
 - 🎤 **Audio Capabilities** - Text-to-Speech (TTS) and Speech-to-Text (STT) with OpenAI and Groq
-- ☎️ **Realtime Voice** - OpenAI Realtime GA over WebSocket, WebRTC client secrets, SIP call control, semantic/server VAD, native tools, and Twilio bridging
+- ☎️ **[OpenAI Realtime API](./USER_GUIDE.md#openai-realtime-api)** - GA voice agents, live transcription, and speech translation over WebSocket/WebRTC, plus SIP call control, tools, VAD, and Twilio bridging
 - 🖼️ **Image Generation** - gpt-image-1.5, gpt-image-1, Google Imagen 4 with editing and variations
 - 🎬 **Video Generation** - NEW: OpenAI Sora 2 and Google Veo 3 for AI video creation
 - 🔢 **Embeddings** - NEW: Multi-vendor embedding generation with MRL dimension control (OpenAI, Google, Ollama, Mistral)
@@ -1683,7 +1683,12 @@ const voice = VoiceStream.create({
 for await (const event of voice.wrap(agent.stream('Tell me a story'))) { ... }
 ```
 
-**OpenAI Realtime GA** — native speech-to-speech over server WebSocket:
+### OpenAI Realtime API (GA)
+
+Build native speech-to-speech agents, streaming transcription, and continuous
+speech translation with the current OpenAI Realtime API. OneRingAI provides a
+connector-first server WebSocket client, ephemeral WebRTC credentials, SIP call
+control, and a production telephony pipeline:
 
 ```typescript
 import { OpenAIRealtimeSession } from '@everworker/oneringai';
@@ -1714,6 +1719,9 @@ rejects, transfers, or hangs up SIP calls. `VoiceBridge` uses the same GA API
 with PCMU telephony audio and supports server VAD, semantic VAD, local/manual
 VAD, noise reduction, barge-in truncation, agent permissions, local tools,
 remote MCP tools, tracing, stored prompts, and retention-ratio truncation. See
+the [complete OpenAI Realtime API guide](./USER_GUIDE.md#openai-realtime-api)
+for voice-agent, transcription, translation, WebRTC, SIP, tool, event, pricing,
+and production examples. A runnable server-side example is also available at
 [`examples/openai-realtime.ts`](./examples/openai-realtime.ts).
 
 **Available Models:**

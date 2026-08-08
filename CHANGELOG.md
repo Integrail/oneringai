@@ -7,13 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Complete OpenAI Realtime API support.** New connector-first
+  `OpenAIRealtimeSession` and `OpenAIRealtimeAPI` surfaces support GA server
+  WebSockets, short-lived WebRTC client secrets, SIP accept/reject/refer/hangup,
+  standard voice-agent sessions, dedicated realtime transcription, and continuous
+  speech translation. The raw evolving event stream remains available alongside
+  helpers for text, images, audio buffers, response lifecycle, truncation, and
+  graceful translation shutdown.
+- **Current realtime model registry.** Added `gpt-realtime-2.1` (preferred),
+  `gpt-realtime-2.1-mini`, `gpt-realtime-2`, `gpt-realtime-translate`,
+  `gpt-live-transcribe`, and `gpt-realtime-whisper`, including multimodal
+  capability metadata and modality-aware or duration-aware cost calculation.
+- **Production realtime telephony.** `VoiceBridge`'s realtime pipeline now uses
+  the GA client with native PCMU audio, server or semantic VAD, optional local
+  VAD, noise reduction, barge-in cancellation and audio truncation, streaming
+  transcripts, local `ToolManager` execution, remote MCP tools, stored prompts,
+  tracing, reasoning controls, and retention-ratio truncation.
+
+### Changed
+
+- **Realtime defaults and events use the GA contract.** The preferred default is
+  `gpt-realtime-2.1`; output configuration lives under `session.audio.output`,
+  current `response.output_*` events are handled, transcription connects with
+  `intent=transcription`, and translation uses its dedicated endpoint and event
+  namespace. Legacy `gpt-realtime` and `gpt-realtime-mini` registry entries remain
+  available but are marked inactive.
+
 ### Fixed
 
+- **Realtime transport and schema correctness.** REST helpers now resolve absolute
+  connector URLs. Translation WebSocket updates omit client-secret-only fields,
+  translation audio uses only supported configuration, and transcription selects
+  its model in the nested session configuration rather than the WebSocket query.
 - **Anthropic structured-output schema portability.** Native JSON schemas now pass through the
   official Anthropic SDK transformer before becoming `output_config.format.schema`. Unsupported
   grammar constraints such as `minItems > 1`, `maxItems`, string lengths, and numeric bounds move
   into descriptions instead of causing provider 400 errors; the caller's original schema is not
   mutated and remains available for host-side validation.
+
+### Documentation
+
+- **Realtime API documentation is now end-to-end.** The README highlights and
+  links to a dedicated User Guide chapter covering voice agents, realtime
+  transcription, realtime translation, WebSocket/WebRTC, SIP controls,
+  `VoiceBridge`, tools and MCP, VAD and interruption handling, events, costs,
+  security, and production guidance. A runnable server-side example is included.
+
+### Validation
+
+- Seven live Realtime integration tests pass with the OpenAI API, covering native
+  audio, text output, `gpt-realtime-2.1`, `gpt-realtime-2.1-mini`,
+  `gpt-realtime-2`, both streaming transcription models, continuous translation,
+  and standard/translation client secrets. Existing live OpenAI Agent/STT/TTS
+  integration tests, strict typecheck, ESLint, the distributable build, and all
+  6,299 unit tests also pass.
 
 ## [0.11.0] — 2026-07-24
 
