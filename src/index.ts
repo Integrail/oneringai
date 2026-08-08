@@ -177,7 +177,16 @@ export type {
 } from './capabilities/speech/index.js';
 
 // Voice Calling Capabilities (Twilio, telephony)
-export { VoiceBridge, VoiceSession, TextPipeline, RealtimePipeline, EnergyVAD, TwilioAdapter } from './capabilities/voice/index.js';
+export {
+  VoiceBridge,
+  VoiceSession,
+  TextPipeline,
+  RealtimePipeline,
+  OpenAIRealtimeSession,
+  OpenAIRealtimeAPI,
+  EnergyVAD,
+  TwilioAdapter,
+} from './capabilities/voice/index.js';
 export { mulawToPcm, pcmToMulaw, resamplePcm, twilioToStt, sttToTwilio } from './capabilities/voice/index.js';
 export type {
   AudioFrame,
@@ -203,6 +212,26 @@ export type {
   IncomingCallInfo,
   OutboundCallConfig,
   TwilioAdapterConfig,
+  OpenAIRealtimeSessionOptions,
+  OpenAIRealtimeSessionEvents,
+  CreateRealtimeClientSecretOptions,
+  CreateRealtimeTranslationClientSecretOptions,
+  OpenAIRealtimeModel,
+  OpenAIRealtimeVoice,
+  OpenAIRealtimeAudioFormat,
+  OpenAIRealtimeTurnDetection,
+  OpenAIServerVAD,
+  OpenAISemanticVAD,
+  OpenAIRealtimeFunctionTool,
+  OpenAIRealtimeMCPTool,
+  OpenAIRealtimeTool,
+  OpenAIRealtimeSessionConfig,
+  OpenAIRealtimeTranscriptionSessionConfig,
+  OpenAIRealtimeTranslationSessionConfig,
+  OpenAIRealtimeTranslationClientSessionConfig,
+  OpenAIRealtimeClientSecret,
+  OpenAIRealtimeClientEvent,
+  OpenAIRealtimeServerEvent,
 } from './capabilities/voice/index.js';
 export type { VoiceBridgeEvents } from './capabilities/voice/index.js';
 export type { VoiceSessionEvents } from './capabilities/voice/index.js';

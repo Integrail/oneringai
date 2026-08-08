@@ -45,6 +45,29 @@ export type { VoiceSessionEvents } from './VoiceSession.js';
 // Pipelines
 export { TextPipeline } from './pipelines/TextPipeline.js';
 export { RealtimePipeline } from './pipelines/RealtimePipeline.js';
+export { OpenAIRealtimeSession, OpenAIRealtimeAPI } from './openai/index.js';
+export type {
+  OpenAIRealtimeSessionOptions,
+  OpenAIRealtimeSessionEvents,
+  CreateRealtimeClientSecretOptions,
+  CreateRealtimeTranslationClientSecretOptions,
+  OpenAIRealtimeModel,
+  OpenAIRealtimeVoice,
+  OpenAIRealtimeAudioFormat,
+  OpenAIRealtimeTurnDetection,
+  OpenAIServerVAD,
+  OpenAISemanticVAD,
+  OpenAIRealtimeFunctionTool,
+  OpenAIRealtimeMCPTool,
+  OpenAIRealtimeTool,
+  OpenAIRealtimeSessionConfig,
+  OpenAIRealtimeTranscriptionSessionConfig,
+  OpenAIRealtimeTranslationSessionConfig,
+  OpenAIRealtimeTranslationClientSessionConfig,
+  OpenAIRealtimeClientSecret,
+  OpenAIRealtimeClientEvent,
+  OpenAIRealtimeServerEvent,
+} from './openai/index.js';
 
 // VAD
 export { EnergyVAD } from './EnergyVAD.js';

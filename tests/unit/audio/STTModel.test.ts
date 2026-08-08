@@ -20,6 +20,8 @@ describe('STTModel Registry', () => {
       expect(STT_MODEL_REGISTRY['whisper-1']).toBeDefined();
       expect(STT_MODEL_REGISTRY['gpt-4o-transcribe']).toBeDefined();
       expect(STT_MODEL_REGISTRY['gpt-4o-transcribe-diarize']).toBeDefined();
+      expect(STT_MODEL_REGISTRY['gpt-realtime-whisper']).toBeDefined();
+      expect(STT_MODEL_REGISTRY['gpt-live-transcribe']).toBeDefined();
       expect(STT_MODEL_REGISTRY['whisper-large-v3']).toBeDefined();
     });
 
@@ -101,7 +103,8 @@ describe('STTModel Registry', () => {
 
     it('should find models with streaming', () => {
       const models = getSTTModelsWithFeature('streaming');
-      expect(models.length).toBe(0); // v1 doesn't implement streaming
+      expect(models.map((model) => model.name)).toContain('gpt-realtime-whisper');
+      expect(models.map((model) => model.name)).toContain('gpt-live-transcribe');
     });
 
     it('should find models with punctuation', () => {
@@ -142,6 +145,8 @@ describe('STTModel Registry', () => {
     it('should have STT_MODELS constants', () => {
       expect(STT_MODELS[Vendor.OpenAI].WHISPER_1).toBe('whisper-1');
       expect(STT_MODELS[Vendor.OpenAI].GPT_4O_TRANSCRIBE).toBe('gpt-4o-transcribe');
+      expect(STT_MODELS[Vendor.OpenAI].GPT_REALTIME_WHISPER).toBe('gpt-realtime-whisper');
+      expect(STT_MODELS[Vendor.OpenAI].GPT_LIVE_TRANSCRIBE).toBe('gpt-live-transcribe');
       expect(STT_MODELS[Vendor.Groq].WHISPER_LARGE_V3).toBe('whisper-large-v3');
     });
   });

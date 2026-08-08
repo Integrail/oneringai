@@ -13,12 +13,22 @@
  */
 
 import { EventEmitter } from 'events';
-import { Connector } from '../../../core/Connector.js';
-import { ToolManager } from '../../../core/ToolManager.js';
+import { ContentType } from '../../../domain/entities/Content.js';
+import { MessageRole } from '../../../domain/entities/Message.js';
+import { Vendor } from '../../../core/Vendor.js';
 import { logger } from '../../../infrastructure/observability/Logger.js';
 import { pcmToMulaw, resamplePcm } from '../adapters/twilio/codecs.js';
-import type { AgentConfig } from '../../../core/Agent.js';
-import type { ToolFunction } from '../../../domain/entities/Tool.js';
+import { OpenAIRealtimeSession } from '../openai/OpenAIRealtimeSession.js';
+import type { Agent } from '../../../core/Agent.js';
+import type { ToolManager } from '../../../core/ToolManager.js';
+import { ToolCallState, type ToolFunction, type ToolResult } from '../../../domain/entities/Tool.js';
+import type { OutputItem } from '../../../domain/entities/Message.js';
+import type {
+  OpenAIRealtimeServerEvent,
+  OpenAIRealtimeSessionConfig,
+  OpenAIRealtimeTurnDetection,
+  OpenAIRealtimeVoice,
+} from '../openai/RealtimeTypes.js';
 import type { VoiceSession } from '../VoiceSession.js';
 import type {
   IVoicePipeline,
@@ -28,6 +38,7 @@ import type {
   VoicePipelineEvents,
   VoiceHooks,
   TranscriptMessage,
+  IVoiceActivityDetector,
 } from '../types.js';
 
 // =============================================================================
@@ -35,28 +46,34 @@ import type {
 // =============================================================================
 
 export interface RealtimePipelineInitConfig {
-  agentConfig: AgentConfig;
+  agent: Agent;
   session: VoiceSession;
-  voice?: string;
-  turnDetection?: 'server_vad' | 'none';
+  voice?: OpenAIRealtimeVoice;
+  speed?: number;
+  turnDetection?: 'server_vad' | 'semantic_vad' | 'none';
   vadThreshold?: number;
   silenceDurationMs?: number;
+  prefixPaddingMs?: number;
+  idleTimeoutMs?: number;
+  semanticVADEagerness?: 'low' | 'medium' | 'high' | 'auto';
+  noiseReduction?: 'near_field' | 'far_field' | 'none';
   inputTranscription?: boolean;
   transcriptionModel?: string;
+  transcriptionLanguage?: string;
+  realtime?: Omit<OpenAIRealtimeSessionConfig, 'type' | 'model'>;
+  safetyIdentifier?: string;
   greeting?: string;
   interruptible?: boolean;
   hooks?: VoiceHooks;
+  manualVAD?: IVoiceActivityDetector;
+  realtimeSessionFactory?: (options: ConstructorParameters<typeof OpenAIRealtimeSession>[0]) => OpenAIRealtimeSession;
 }
 
 // =============================================================================
 // OpenAI Realtime API event types (subset we use)
 // =============================================================================
 
-interface RealtimeServerEvent {
-  type: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}
+type RealtimeServerEvent = OpenAIRealtimeServerEvent;
 
 // =============================================================================
 // RealtimePipeline
@@ -65,10 +82,10 @@ interface RealtimeServerEvent {
 export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
   private config: RealtimePipelineInitConfig;
   private session: VoiceSession;
+  private agent: Agent;
   private toolManager: ToolManager;
   private tools: ToolFunction[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private ws: any = null;
+  private realtime: OpenAIRealtimeSession | null = null;
   private state: SessionState = 'idle';
   private destroyed = false;
   private ignoringEvents = false;
@@ -76,6 +93,8 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
   private transcript: TranscriptMessage[] = [];
   private agentTranscriptBuffer = '';
   private pendingToolCalls = new Map<string, { name: string; arguments: string }>();
+  private activeToolExecutions = 0;
+  private awaitingToolContinuation = false;
   private isResponseActive = false;
   private currentResponseId: string | null = null;
   private currentAssistantItemId: string | null = null;
@@ -94,102 +113,58 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
     super();
     this.config = config;
     this.session = config.session;
-    this.tools = (config.agentConfig.tools ?? []) as ToolFunction[];
-
-    // Create standalone ToolManager and register all tools
-    this.toolManager = new ToolManager();
-    for (const tool of this.tools) {
-      this.toolManager.register(tool);
-    }
+    this.agent = config.agent;
+    this.toolManager = config.agent.tools;
+    this.tools = this.toolManager.getEnabled();
   }
 
   // ─── IVoicePipeline Implementation ────────────────────────────────
 
   async init(sessionInfo: VoiceSessionInfo): Promise<void> {
+    if (this.agent.connector.vendor !== Vendor.OpenAI) {
+      throw new Error('RealtimePipeline requires an OpenAI connector');
+    }
+    if (this.config.speed !== undefined && (this.config.speed < 0.25 || this.config.speed > 1.5)) {
+      throw new RangeError('Realtime voice speed must be between 0.25 and 1.5');
+    }
     this.sessionInfo = sessionInfo;
     this.setState('connected');
 
-    const { agentConfig } = this.config;
-
-    // Resolve connector to get API key
-    const connector = typeof agentConfig.connector === 'string'
-      ? Connector.get(agentConfig.connector)
-      : agentConfig.connector as unknown as Connector;
-    const apiKey = connector.getApiKey();
-    const model = agentConfig.model;
-
-    const wsUrl = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
+    const model = this.agent.model;
 
     logger.info({
       model,
       sessionId: sessionInfo.sessionId,
-      voice: this.config.voice ?? 'alloy',
+      voice: this.config.voice ?? 'marin',
       turnDetection: this.config.turnDetection ?? 'server_vad',
       toolCount: this.tools.length,
     }, '[RealtimePipeline] Connecting to OpenAI Realtime API');
 
-    // Dynamic import — ws is an optional peer dependency
-    const { default: WebSocket } = await import('ws' as string);
-
-    this.ws = new WebSocket(wsUrl, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'OpenAI-Beta': 'realtime=v1',
-      },
+    const factory = this.config.realtimeSessionFactory ?? ((options) => new OpenAIRealtimeSession(options));
+    this.realtime = factory({
+      connector: this.agent.connector,
+      model,
+      safetyIdentifier: this.config.safetyIdentifier,
     });
-
-    // Wait for connection + session.created
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Timeout waiting for OpenAI Realtime session.created'));
-      }, 15000);
-
-      this.ws.on('open', () => {
-        logger.debug({ sessionId: sessionInfo.sessionId }, '[RealtimePipeline] WebSocket connected');
-      });
-
-      this.ws.on('message', (data: Buffer | string) => {
-        const event = JSON.parse(typeof data === 'string' ? data : data.toString()) as RealtimeServerEvent;
-        if (event.type === 'session.created') {
-          clearTimeout(timeout);
-          logger.info({
-            sessionId: sessionInfo.sessionId,
-            realtimeSessionId: event.session?.id,
-          }, '[RealtimePipeline] Session created');
-          resolve();
-        } else if (event.type === 'error') {
-          clearTimeout(timeout);
-          logger.error({ event }, '[RealtimePipeline] Error during init');
-          reject(new Error(`Realtime API error: ${JSON.stringify(event.error)}`));
-        }
-      });
-
-      this.ws.on('error', (error: Error) => {
-        clearTimeout(timeout);
-        logger.error({ error: error.message }, '[RealtimePipeline] WebSocket connection error');
-        reject(error);
-      });
-    });
-
-    // Wire up ongoing message handler
-    this.ws.on('message', (data: Buffer | string) => {
-      this.handleServerEvent(JSON.parse(typeof data === 'string' ? data : data.toString()));
-    });
-
-    this.ws.on('close', (code: number, reason: string) => {
+    this.realtime.on('event', (event) => this.handleServerEvent(event));
+    this.realtime.on('close', (code, reason) => {
       logger.info({ code, reason: reason?.toString() }, '[RealtimePipeline] WebSocket closed');
       if (!this.destroyed) {
         this.emitError(new Error(`WebSocket closed unexpectedly: ${code}`));
       }
     });
-
-    this.ws.on('error', (error: Error) => {
+    this.realtime.on('error', (error) => {
       logger.error({ error: error.message }, '[RealtimePipeline] WebSocket error');
       this.emitError(error);
     });
+    const created = await this.realtime.connect();
+    logger.info({
+      sessionId: sessionInfo.sessionId,
+      realtimeSessionId: (created.session as { id?: string } | undefined)?.id,
+    }, '[RealtimePipeline] Session created');
 
     // Send session.update with instructions, tools, audio config
-    this.sendSessionUpdate();
+    await this.sendSessionUpdate();
 
     // If greeting, trigger initial response
     if (this.config.greeting) {
@@ -206,7 +181,7 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
   }
 
   processAudio(frame: AudioFrame): void {
-    if (this.destroyed || !this.ws || this.ws.readyState !== 1) return;
+    if (this.destroyed || !this.realtime?.isConnected) return;
 
     let mulaw: Buffer;
     if (frame.encoding === 'mulaw' && frame.sampleRate === 8000) {
@@ -225,6 +200,12 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
       type: 'input_audio_buffer.append',
       audio: mulaw.toString('base64'),
     });
+
+    if (this.config.turnDetection === 'none' && this.config.manualVAD) {
+      const event = this.config.manualVAD.process(frame);
+      if (event === 'speech_start') this.onSpeechStart();
+      if (event === 'speech_end') void this.onSpeechEnd();
+    }
   }
 
   async onSpeechEnd(): Promise<void> {
@@ -237,7 +218,9 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
   }
 
   onSpeechStart(): void {
-    // Server VAD handles this automatically
+    if (this.config.turnDetection === 'none' && this.isAssistantPlaybackActive()) {
+      this.handleBargeIn('manual_interrupt');
+    }
   }
 
   interrupt(): void {
@@ -276,20 +259,12 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
     this.destroyed = true;
     this.ignoringEvents = true;
 
-    const ws = this.ws;
-    this.ws = null;
-
-    if (ws) {
-      try {
-        ws.removeAllListeners('message');
-        ws.removeAllListeners('close');
-        ws.removeAllListeners('error');
-        if (ws.readyState === 1 || ws.readyState === 0) {
-          ws.close();
-        }
-      } catch (error) {
-        logger.debug({ error }, '[RealtimePipeline] WebSocket close error during destroy');
-      }
+    const realtime = this.realtime;
+    this.realtime = null;
+    try {
+      realtime?.close();
+    } catch (error) {
+      logger.debug({ error }, '[RealtimePipeline] WebSocket close error during destroy');
     }
 
     this.currentResponseId = null;
@@ -304,8 +279,8 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
     this.responseStartTimestamp = null;
     this.latestMediaTimestamp = 0;
     this.hasStartedAudioForCurrentResponse = false;
+    this.config.manualVAD?.reset();
 
-    this.toolManager.destroy();
     this.setState('ended');
     this.removeAllListeners();
 
@@ -317,9 +292,7 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
 
   // ─── Session Update ───────────────────────────────────────────────
 
-  private sendSessionUpdate(): void {
-    const { agentConfig } = this.config;
-
+  private async sendSessionUpdate(): Promise<void> {
     // Convert tools to Realtime API format (flattened)
     const tools = this.tools.map(t => ({
       type: 'function' as const,
@@ -328,47 +301,102 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
       parameters: t.definition.function.parameters ?? { type: 'object', properties: {} },
     }));
 
-    // Build turn detection config
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let turnDetection: any = null;
-    if (this.config.turnDetection !== 'none') {
+    const configured = this.config.realtime ?? {};
+    const configuredInput = configured.audio?.input ?? {};
+    const configuredOutput = configured.audio?.output ?? {};
+
+    let turnDetection: OpenAIRealtimeTurnDetection = configuredInput.turn_detection ?? null;
+    if (this.config.turnDetection === 'semantic_vad') {
+      turnDetection = {
+        type: 'semantic_vad',
+        eagerness: this.config.semanticVADEagerness ?? 'auto',
+        create_response: true,
+        interrupt_response: this.config.interruptible !== false,
+      };
+    } else if (this.config.turnDetection === 'none') {
+      turnDetection = null;
+    } else if (this.config.turnDetection === 'server_vad'
+      || configuredInput.turn_detection === undefined) {
       turnDetection = {
         type: 'server_vad',
-        threshold: this.config.vadThreshold ?? 0.6,
+        threshold: this.config.vadThreshold ?? 0.5,
         silence_duration_ms: this.config.silenceDurationMs ?? 500,
-        prefix_padding_ms: 400,
+        prefix_padding_ms: this.config.prefixPaddingMs ?? 400,
+        ...(this.config.idleTimeoutMs === undefined ? {} : { idle_timeout_ms: this.config.idleTimeoutMs }),
+        create_response: true,
+        interrupt_response: this.config.interruptible !== false,
       };
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sessionUpdate: any = {
-      type: 'session.update',
-      session: {
-        instructions: agentConfig.instructions || '',
-        tools,
-        tool_choice: 'auto',
-        input_audio_format: 'g711_ulaw',
-        output_audio_format: 'g711_ulaw',
-        voice: this.config.voice ?? 'alloy',
-        turn_detection: turnDetection,
+    const agentInstructions = await this.buildAgentInstructions();
+    const instructions = [agentInstructions, configured.instructions]
+      .filter((value): value is string => Boolean(value?.trim()))
+      .join('\n\n');
+    const noiseReduction = this.config.noiseReduction === 'none'
+      ? null
+      : this.config.noiseReduction
+        ? { type: this.config.noiseReduction }
+        : configuredInput.noise_reduction ?? { type: 'near_field' as const };
+    const session: OpenAIRealtimeSessionConfig = {
+      ...configured,
+      type: 'realtime',
+      instructions,
+      tools: [...tools, ...(configured.tools ?? [])],
+      tool_choice: configured.tool_choice ?? 'auto',
+      parallel_tool_calls: configured.parallel_tool_calls ?? true,
+      output_modalities: configured.output_modalities ?? ['audio'],
+      audio: {
+        input: {
+          ...configuredInput,
+          // VoiceBridge's telephony protocol is G.711 mu-law at 8 kHz.
+          format: { type: 'audio/pcmu' },
+          noise_reduction: noiseReduction,
+          turn_detection: turnDetection,
+        },
+        output: {
+          ...configuredOutput,
+          format: { type: 'audio/pcmu' },
+          voice: this.config.voice ?? configuredOutput.voice ?? 'marin',
+          ...(this.config.speed === undefined ? {} : { speed: this.config.speed }),
+        },
       },
     };
 
     // Enable input transcription for hooks/logging
-    if (this.config.inputTranscription !== false) {
-      sessionUpdate.session.input_audio_transcription = {
-        model: this.config.transcriptionModel ?? 'gpt-4o-transcribe',
+    if (this.config.inputTranscription === false
+      || (this.config.inputTranscription === undefined && configuredInput.transcription === null)) {
+      session.audio!.input!.transcription = null;
+    } else {
+      const configuredTranscription = configuredInput.transcription ?? {};
+      session.audio!.input!.transcription = {
+        ...configuredTranscription,
+        model: this.config.transcriptionModel
+          ?? configuredTranscription.model
+          ?? 'gpt-4o-transcribe',
+        ...(this.config.transcriptionLanguage
+          ? { language: this.config.transcriptionLanguage }
+          : {}),
       };
     }
 
-    this.sendEvent(sessionUpdate);
+    this.realtime?.updateSession(session);
 
     logger.info({
       toolCount: tools.length,
-      voice: sessionUpdate.session.voice,
+      voice: session.audio?.output?.voice,
       turnDetection: turnDetection?.type ?? 'none',
       inputTranscription: this.config.inputTranscription !== false,
     }, '[RealtimePipeline] Session updated');
+  }
+
+  private async buildAgentInstructions(): Promise<string> {
+    const prepared = await this.agent.context.prepare();
+    return prepared.input
+      .filter((item) => item.type === 'message' && item.role === MessageRole.DEVELOPER)
+      .flatMap((item) => item.type === 'message' ? item.content : [])
+      .filter((content) => content.type === ContentType.INPUT_TEXT)
+      .map((content) => content.type === ContentType.INPUT_TEXT ? content.text : '')
+      .join('\n\n');
   }
 
   // ─── Server Event Handler ─────────────────────────────────────────
@@ -422,6 +450,7 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
         const callerText = event.transcript ?? '';
         if (callerText.trim()) {
           this.addTranscript('caller', callerText);
+          this.agent.context.addUserMessage(callerText);
           this.fireHookSafe('beforeAgentResponse', callerText);
         }
         break;
@@ -446,6 +475,7 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
         break;
 
       // ── Audio output ────────────────────────────────────────
+      case 'response.output_audio.delta':
       case 'response.audio.delta': {
         if (!this.hasStartedAudioForCurrentResponse) {
           this.responseStartTimestamp = this.latestMediaTimestamp;
@@ -472,6 +502,7 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
         break;
       }
 
+      case 'response.output_audio.done':
       case 'response.audio.done':
         logger.debug({
           latestMediaTimestamp: this.latestMediaTimestamp,
@@ -481,14 +512,22 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
         break;
 
       // ── Agent transcript ────────────────────────────────────
+      case 'response.output_audio_transcript.delta':
       case 'response.audio_transcript.delta':
         this.agentTranscriptBuffer += event.delta ?? '';
         break;
 
+      case 'response.output_audio_transcript.done':
       case 'response.audio_transcript.done': {
         const agentText = event.transcript ?? this.agentTranscriptBuffer;
         if (agentText.trim()) {
           this.addTranscript('agent', agentText);
+          const output: OutputItem[] = [{
+            type: 'message',
+            role: MessageRole.ASSISTANT,
+            content: [{ type: ContentType.OUTPUT_TEXT, text: agentText }],
+          }];
+          this.agent.context.addAssistantResponse(output);
           this.fireHookSafe('afterAgentResponse', agentText);
           this.session.incrementTurns();
         }
@@ -512,7 +551,7 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
         if (event.item?.type === 'function_call') {
           this.pendingToolCalls.set(event.item.call_id, {
             name: event.item.name,
-            arguments: '',
+            arguments: event.item.arguments ?? '',
           });
         }
         if (event.item?.type === 'message' && event.item?.role === 'assistant' && event.item?.id) {
@@ -524,8 +563,14 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
 
       case 'response.function_call_arguments.done': {
         const callId = event.call_id;
-        const toolName = event.name;
-        const argsStr = event.arguments ?? '';
+        const pending = this.pendingToolCalls.get(callId);
+        const toolName = event.name ?? pending?.name;
+        const argsStr = event.arguments ?? pending?.arguments ?? '';
+
+        if (!callId || !toolName) {
+          this.emitError(new Error('Realtime API returned an incomplete function call'));
+          break;
+        }
 
         logger.info({ callId, toolName }, '[RealtimePipeline] Tool call received');
 
@@ -574,6 +619,7 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
         if (this.state !== 'ended') {
           this.setState('listening');
         }
+        this.maybeContinueAfterTools();
         break;
       }
 
@@ -627,6 +673,8 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
   // ─── Tool Execution ───────────────────────────────────────────────
 
   private async executeToolCall(callId: string, toolName: string, argsStr: string): Promise<void> {
+    this.activeToolExecutions++;
+    this.recordToolUse(callId, toolName, argsStr);
     try {
       const args = JSON.parse(argsStr || '{}');
       logger.info({ callId, toolName, args }, '[RealtimePipeline] Executing tool');
@@ -635,6 +683,13 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
       const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
 
       this.addTranscript('tool_result', resultStr, toolName, callId);
+      this.recordToolResult({
+        tool_use_id: callId,
+        tool_name: toolName,
+        tool_args: args,
+        content: result,
+        state: ToolCallState.COMPLETED,
+      });
 
       logger.info({ callId, toolName, resultLength: resultStr.length },
         '[RealtimePipeline] Tool executed successfully');
@@ -649,14 +704,18 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
         },
       });
 
-      // Trigger continuation
-      this.sendEvent({ type: 'response.create' });
-
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error({ callId, toolName, error: errorMsg }, '[RealtimePipeline] Tool execution failed');
 
       this.addTranscript('tool_result', `Error: ${errorMsg}`, toolName, callId);
+      this.recordToolResult({
+        tool_use_id: callId,
+        tool_name: toolName,
+        content: { error: errorMsg },
+        error: errorMsg,
+        state: ToolCallState.FAILED,
+      });
 
       // Send error as function output so the model can handle gracefully
       this.sendEvent({
@@ -668,7 +727,43 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
         },
       });
 
-      this.sendEvent({ type: 'response.create' });
+    } finally {
+      this.activeToolExecutions--;
+      this.awaitingToolContinuation = true;
+      this.maybeContinueAfterTools();
+    }
+  }
+
+  private maybeContinueAfterTools(): void {
+    if (!this.awaitingToolContinuation || this.isResponseActive || this.activeToolExecutions > 0) return;
+    this.awaitingToolContinuation = false;
+    this.sendEvent({ type: 'response.create' });
+  }
+
+  private recordToolUse(callId: string, toolName: string, argsStr: string): void {
+    if (this.destroyed) return;
+    try {
+      this.agent.context.addAssistantResponse([{
+        type: 'message',
+        role: MessageRole.ASSISTANT,
+        content: [{
+          type: ContentType.TOOL_USE,
+          id: callId,
+          name: toolName,
+          arguments: argsStr,
+        }],
+      }]);
+    } catch (error) {
+      logger.debug({ error }, '[RealtimePipeline] Could not record tool use in agent context');
+    }
+  }
+
+  private recordToolResult(result: ToolResult): void {
+    if (this.destroyed) return;
+    try {
+      this.agent.context.addToolResults([result]);
+    } catch (error) {
+      logger.debug({ error }, '[RealtimePipeline] Could not record tool result in agent context');
     }
   }
 
@@ -676,12 +771,12 @@ export class RealtimePipeline extends EventEmitter implements IVoicePipeline {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private sendEvent(event: Record<string, any>): void {
-    if (!this.ws || this.ws.readyState !== 1) {
+    if (!this.realtime?.isConnected) {
       logger.warn({ eventType: event.type }, '[RealtimePipeline] Cannot send — WebSocket not open');
       return;
     }
     try {
-      this.ws.send(JSON.stringify(event));
+      this.realtime.send(event as { type: string; [key: string]: unknown });
     } catch (error) {
       logger.error({ eventType: event.type, error: (error as Error).message },
         '[RealtimePipeline] Failed to send event');

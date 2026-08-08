@@ -72,6 +72,15 @@ export interface ILLMDescription {
     /** Supports prompt caching */
     promptCaching?: boolean;
 
+    /** Modality-specific prices. Token prices are USD per million tokens. */
+    pricing?: {
+      text?: { input: number; cachedInput?: number; output: number };
+      audio?: { input: number; cachedInput?: number; output: number };
+      image?: { input: number; cachedInput?: number; output?: number };
+      /** Used by duration-priced realtime translation models. */
+      audioDurationPerMinute?: number;
+    };
+
     /** Parameter support - indicates which sampling parameters are supported */
     parameters?: {
       /** Supports temperature parameter */
@@ -173,6 +182,10 @@ export const LLM_MODELS = {
     GPT_AUDIO: 'gpt-audio',
     GPT_AUDIO_MINI: 'gpt-audio-mini',
     // Realtime Models
+    GPT_REALTIME_2_1: 'gpt-realtime-2.1',
+    GPT_REALTIME_2_1_MINI: 'gpt-realtime-2.1-mini',
+    GPT_REALTIME_2: 'gpt-realtime-2',
+    GPT_REALTIME_TRANSLATE: 'gpt-realtime-translate',
     GPT_REALTIME_1_5: 'gpt-realtime-1.5',
     GPT_REALTIME: 'gpt-realtime',
     GPT_REALTIME_MINI: 'gpt-realtime-mini',
@@ -1208,7 +1221,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       functionCalling: true,
       fineTuning: false,
       predictedOutputs: true,
-      realtime: true,
+      realtime: false,
       vision: true,
       audio: false,
       video: false,
@@ -1243,7 +1256,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       functionCalling: true,
       fineTuning: true,
       predictedOutputs: false,
-      realtime: true,
+      realtime: false,
       vision: true,
       audio: false,
       video: false,
@@ -1371,13 +1384,129 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     },
   },
 
-  // Realtime Models (New generation - replaces gpt-4o-realtime-*)
+  // Realtime Models
+  'gpt-realtime-2.1': {
+    name: 'gpt-realtime-2.1',
+    provider: Vendor.OpenAI,
+    description: 'Most capable realtime reasoning voice model, with improved alphanumeric recognition, silence/noise handling, interruptions, instruction following, and tool use',
+    isActive: true,
+    preferred: true,
+    knowledgeCutoff: '2024-09-30',
+    voices: OPENAI_REALTIME_VOICES,
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: true,
+      vision: true,
+      audio: true,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      pricing: {
+        text: { input: 4, cachedInput: 0.4, output: 24 },
+        audio: { input: 32, cachedInput: 0.4, output: 64 },
+        image: { input: 5, cachedInput: 0.5 },
+      },
+      input: { tokens: 128000, text: true, image: true, audio: true, cpm: 4, cpmCached: 0.4 },
+      output: { tokens: 32000, text: true, audio: true, cpm: 24 },
+    },
+  },
+
+  'gpt-realtime-2.1-mini': {
+    name: 'gpt-realtime-2.1-mini',
+    provider: Vendor.OpenAI,
+    description: 'Fast, lower-cost distilled realtime reasoning model with speech, tools, and improved alphanumeric recognition',
+    isActive: true,
+    knowledgeCutoff: '2024-09-30',
+    voices: OPENAI_REALTIME_VOICES,
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: true,
+      vision: true,
+      audio: true,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      pricing: {
+        text: { input: 0.6, cachedInput: 0.06, output: 2.4 },
+        audio: { input: 10, cachedInput: 0.3, output: 20 },
+        image: { input: 0.8, cachedInput: 0.08 },
+      },
+      input: { tokens: 128000, text: true, image: true, audio: true, cpm: 0.6, cpmCached: 0.06 },
+      output: { tokens: 32000, text: true, audio: true, cpm: 2.4 },
+    },
+  },
+
+  'gpt-realtime-2': {
+    name: 'gpt-realtime-2',
+    provider: Vendor.OpenAI,
+    description: 'Realtime reasoning model with configurable effort and reliable tool use for complex voice-agent workflows',
+    isActive: true,
+    knowledgeCutoff: '2024-09-30',
+    voices: OPENAI_REALTIME_VOICES,
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: true,
+      vision: true,
+      audio: true,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      pricing: {
+        text: { input: 4, cachedInput: 0.4, output: 24 },
+        audio: { input: 32, cachedInput: 0.4, output: 64 },
+        image: { input: 5, cachedInput: 0.5 },
+      },
+      input: { tokens: 128000, text: true, image: true, audio: true, cpm: 4, cpmCached: 0.4 },
+      output: { tokens: 32000, text: true, audio: true, cpm: 24 },
+    },
+  },
+
+  'gpt-realtime-translate': {
+    name: 'gpt-realtime-translate',
+    provider: Vendor.OpenAI,
+    description: 'Streaming speech-to-speech translation model using the dedicated realtime translations endpoint',
+    isActive: true,
+    knowledgeCutoff: '2024-09-30',
+    voices: OPENAI_REALTIME_VOICES,
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: false,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: true,
+      vision: false,
+      audio: true,
+      video: false,
+      batchAPI: false,
+      promptCaching: false,
+      pricing: { audioDurationPerMinute: 0.034 },
+      input: { tokens: 16000, text: false, audio: true, cpm: 0 },
+      output: { tokens: 2000, text: true, audio: true, cpm: 0 },
+    },
+  },
+
   'gpt-realtime-1.5': {
     name: 'gpt-realtime-1.5',
     provider: Vendor.OpenAI,
     description: 'Latest realtime model for voice/audio streaming. Text+audio+image input, text+audio output',
     isActive: true,
-    preferred: true,
     releaseDate: '2025-12-01',
     knowledgeCutoff: '2024-09-30',
     voices: OPENAI_REALTIME_VOICES,
@@ -1394,6 +1523,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       video: false,
       batchAPI: false,
       promptCaching: false,
+      pricing: {
+        text: { input: 4, cachedInput: 0.4, output: 16 },
+        audio: { input: 32, cachedInput: 0.4, output: 64 },
+        image: { input: 5, cachedInput: 0.5 },
+      },
       input: {
         tokens: 32000,
         text: true,
@@ -1414,7 +1548,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-realtime',
     provider: Vendor.OpenAI,
     description: 'Realtime model for voice/audio streaming. Text+audio+image input, text+audio output',
-    isActive: true,
+    isActive: false,
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     voices: OPENAI_REALTIME_VOICES,
@@ -1431,6 +1565,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       video: false,
       batchAPI: false,
       promptCaching: false,
+      pricing: {
+        text: { input: 4, cachedInput: 0.4, output: 16 },
+        audio: { input: 32, cachedInput: 0.4, output: 64 },
+        image: { input: 5, cachedInput: 0.5 },
+      },
       input: {
         tokens: 32000,
         text: true,
@@ -1451,7 +1590,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-realtime-mini',
     provider: Vendor.OpenAI,
     description: 'Cost-efficient realtime model for voice/audio streaming',
-    isActive: true,
+    isActive: false,
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     voices: OPENAI_REALTIME_VOICES,
@@ -1468,6 +1607,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       video: false,
       batchAPI: false,
       promptCaching: false,
+      pricing: {
+        text: { input: 0.6, cachedInput: 0.06, output: 2.4 },
+        audio: { input: 10, cachedInput: 0.3, output: 20 },
+        image: { input: 0.8, cachedInput: 0.08 },
+      },
       input: {
         tokens: 32000,
         text: true,
@@ -2887,11 +3031,20 @@ export function calculateCost(
       extendedTtlInputTokens?: number;
     };
     processingMode?: 'interactive' | 'batch';
+    /** Price using the selected modality when the registry provides it. */
+    modality?: 'text' | 'audio' | 'image';
+    /** Duration for models billed per minute instead of per token. */
+    audioMinutes?: number;
   }
 ): number | null {
   const modelInfo = getModelInfo(model);
   if (!modelInfo) {
     return null;
+  }
+
+  if (modelInfo.features.pricing?.audioDurationPerMinute !== undefined) {
+    if (options?.audioMinutes === undefined) return null;
+    return Math.max(options.audioMinutes, 0) * modelInfo.features.pricing.audioDurationPerMinute;
   }
 
   const normalizedInputTokens = Math.max(inputTokens, 0);
@@ -2910,13 +3063,18 @@ export function calculateCost(
     0,
     normalizedInputTokens - cachedInputTokens - cacheCreationInputTokens,
   );
-  const cachedInputCPM =
-    modelInfo.features.input.cpmCached ?? modelInfo.features.input.cpm;
-
-  const outputCPM = modelInfo.features.output.cpm;
+  const modalityPricing = modelInfo.features.pricing?.[options?.modality ?? 'text'];
+  if (options?.modality === 'image' && outputTokens > 0 && modalityPricing?.output === undefined) {
+    return null;
+  }
+  const inputCPM = modalityPricing?.input ?? modelInfo.features.input.cpm;
+  const cachedInputCPM = modalityPricing?.cachedInput
+    ?? modelInfo.features.input.cpmCached
+    ?? inputCPM;
+  const outputCPM = modalityPricing?.output ?? modelInfo.features.output.cpm;
 
   let cacheCreationCost =
-    (cacheCreationInputTokens / 1_000_000) * modelInfo.features.input.cpm;
+    (cacheCreationInputTokens / 1_000_000) * inputCPM;
   if (modelInfo.provider === Vendor.Anthropic && cacheCreationInputTokens > 0) {
     const shortTokens = Math.min(
       Math.max(options?.cacheCreationDetails?.shortTtlInputTokens ?? 0, 0),
@@ -2931,13 +3089,13 @@ export function calculateCost(
     const unspecifiedTokens = cacheCreationInputTokens - shortTokens - extendedTokens;
     cacheCreationCost =
       ((shortTokens + unspecifiedTokens) / 1_000_000) *
-        modelInfo.features.input.cpm *
+        inputCPM *
         1.25 +
-      (extendedTokens / 1_000_000) * modelInfo.features.input.cpm * 2;
+      (extendedTokens / 1_000_000) * inputCPM * 2;
   }
 
   const inputCost =
-    (uncachedInputTokens / 1_000_000) * modelInfo.features.input.cpm +
+    (uncachedInputTokens / 1_000_000) * inputCPM +
     (cachedInputTokens / 1_000_000) * cachedInputCPM +
     cacheCreationCost;
   const outputCost = (outputTokens / 1_000_000) * outputCPM;

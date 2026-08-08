@@ -41,7 +41,7 @@ export interface STTModelCapabilities {
     translation: boolean;
     /** Speaker identification */
     diarization: boolean;
-    /** Real-time streaming (not implemented in v1) */
+    /** Real-time streaming */
     streaming: boolean;
     /** Automatic punctuation */
     punctuation: boolean;
@@ -84,6 +84,10 @@ export interface ISTTModelDescription extends IBaseModelDescription {
 
 export const STT_MODELS = {
   [Vendor.OpenAI]: {
+    /** Recommended low-latency streaming transcription model */
+    GPT_LIVE_TRANSCRIBE: 'gpt-live-transcribe',
+    /** Streaming transcription over the Realtime API */
+    GPT_REALTIME_WHISPER: 'gpt-realtime-whisper',
     /** NEW: GPT-4o based transcription */
     GPT_4O_TRANSCRIBE: 'gpt-4o-transcribe',
     /** NEW: GPT-4o with speaker diarization */
@@ -123,6 +127,73 @@ const WHISPER_BASE_CAPABILITIES: Omit<STTModelCapabilities, 'features' | 'limits
  */
 export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
   // ======================== OpenAI ========================
+
+  'gpt-live-transcribe': {
+    name: 'gpt-live-transcribe',
+    displayName: 'GPT Live Transcribe',
+    provider: Vendor.OpenAI,
+    description: 'Recommended streaming speech-to-text model with incremental transcript deltas, vocabulary hints, multilingual hints, and tunable latency',
+    isActive: true,
+    sources: {
+      documentation: 'https://developers.openai.com/api/docs/models/gpt-live-transcribe',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text'],
+      features: {
+        translation: false,
+        diarization: false,
+        streaming: true,
+        punctuation: true,
+        profanityFilter: false,
+      },
+      limits: { maxFileSizeMB: 0 },
+      vendorOptions: {
+        delay: {
+          type: 'string',
+          description: 'Streaming transcript latency/accuracy tradeoff',
+          default: 'low',
+        },
+        keywords: {
+          type: 'array',
+          description: 'Literal vocabulary hints such as product names and acronyms',
+        },
+        languages: {
+          type: 'array',
+          description: 'Expected ISO language codes; do not combine with language',
+        },
+      },
+    },
+    pricing: { perMinute: 0.017, currency: 'USD' },
+  },
+
+  'gpt-realtime-whisper': {
+    name: 'gpt-realtime-whisper',
+    displayName: 'GPT Realtime Whisper',
+    provider: Vendor.OpenAI,
+    description: 'Low-latency streaming speech-to-text model for realtime transcription',
+    isActive: true,
+    sources: {
+      documentation: 'https://developers.openai.com/api/docs/models/gpt-realtime-whisper',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-08',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text'],
+      features: {
+        translation: false,
+        diarization: false,
+        streaming: true,
+        punctuation: true,
+        profanityFilter: false,
+      },
+      limits: { maxFileSizeMB: 0 },
+    },
+    pricing: { perMinute: 0.017, currency: 'USD' },
+  },
 
   'gpt-4o-transcribe': {
     name: 'gpt-4o-transcribe',

@@ -110,6 +110,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
 - 📊 **Model Registry** - Complete metadata for 60+ latest (2026) models with pricing and features
 - 🎤 **Audio Capabilities** - Text-to-Speech (TTS) and Speech-to-Text (STT) with OpenAI and Groq
+- ☎️ **Realtime Voice** - OpenAI Realtime GA over WebSocket, WebRTC client secrets, SIP call control, semantic/server VAD, native tools, and Twilio bridging
 - 🖼️ **Image Generation** - gpt-image-1.5, gpt-image-1, Google Imagen 4 with editing and variations
 - 🎬 **Video Generation** - NEW: OpenAI Sora 2 and Google Veo 3 for AI video creation
 - 🔢 **Embeddings** - NEW: Multi-vendor embedding generation with MRL dimension control (OpenAI, Google, Ollama, Mistral)
@@ -1682,9 +1683,42 @@ const voice = VoiceStream.create({
 for await (const event of voice.wrap(agent.stream('Tell me a story'))) { ... }
 ```
 
+**OpenAI Realtime GA** — native speech-to-speech over server WebSocket:
+
+```typescript
+import { OpenAIRealtimeSession } from '@everworker/oneringai';
+
+const realtime = new OpenAIRealtimeSession({
+  connector: 'openai',
+  model: 'gpt-realtime-2.1',
+  session: {
+    reasoning: { effort: 'low' },
+    audio: {
+      input: {
+        format: { type: 'audio/pcm', rate: 24000 },
+        turn_detection: { type: 'semantic_vad', eagerness: 'auto' },
+      },
+      output: { format: { type: 'audio/pcm', rate: 24000 }, voice: 'marin' },
+    },
+  },
+});
+
+realtime.on('event', (event) => {
+  if (event.type === 'response.output_audio.delta') play(event.delta);
+});
+await realtime.connect();
+```
+
+`OpenAIRealtimeAPI` creates short-lived WebRTC client secrets and accepts,
+rejects, transfers, or hangs up SIP calls. `VoiceBridge` uses the same GA API
+with PCMU telephony audio and supports server VAD, semantic VAD, local/manual
+VAD, noise reduction, barge-in truncation, agent permissions, local tools,
+remote MCP tools, tracing, stored prompts, and retention-ratio truncation. See
+[`examples/openai-realtime.ts`](./examples/openai-realtime.ts).
+
 **Available Models:**
 - **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-2.5-flash-preview-tts`, `gemini-2.5-pro-preview-tts`)
-- **STT**: OpenAI (`whisper-1`, `gpt-4o-transcribe`), Groq (`whisper-large-v3` - 12x cheaper!)
+- **STT**: OpenAI (`gpt-live-transcribe`, `gpt-realtime-whisper`, `gpt-4o-transcribe`, `whisper-1`), Groq (`whisper-large-v3` - 12x cheaper!)
 
 ### Embeddings (NEW)
 
@@ -1791,7 +1825,7 @@ console.log(`Optimized: $${cachedCost}`);
 ```
 
 **Available Models:**
-- **OpenAI (40+)**: GPT-5.5 (flagship), GPT-5.4 (+ pro / mini / nano), GPT-5.3, GPT-5.2, GPT-5.1, GPT-5, GPT-4.1, GPT-4o, o3, o4-mini, o1, Deep Research, Audio, Realtime, Open-Source
+- **OpenAI (44)**: GPT-5.5 (flagship), GPT-5.4 (+ pro / mini / nano), GPT-5.3, GPT-5.2, GPT-5.1, GPT-5, GPT-4.1, GPT-4o, o3, o4-mini, o1, Deep Research, Audio, GPT-Realtime-2.1 / 2.1 mini / 2 / Translate, Open-Source
 - **Anthropic (13)**: Claude Opus 4.8, Claude Sonnet 5, Claude Fable 5, Claude Opus 4.7, Claude 4.6 (Opus, Sonnet), Claude 4.5 (Opus, Sonnet, Haiku), Claude 4.1, Claude 4, Claude 3.7 Sonnet
 - **Google (10)**: Gemini 3.1, Gemini 3, Gemini 2.5
 - **Grok (5)**: Grok 4.20 (reasoning, non-reasoning, multi-agent), Grok 4.1 Fast

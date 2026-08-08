@@ -9,6 +9,10 @@
  */
 
 import type { AgentConfig } from '../../core/Agent.js';
+import type {
+  OpenAIRealtimeSessionConfig,
+  OpenAIRealtimeVoice,
+} from './openai/RealtimeTypes.js';
 
 // =============================================================================
 // Audio Frame — internal protocol between adapter and pipeline
@@ -160,12 +164,16 @@ export interface VoiceHooks {
   /**
    * Called after STT produces text, before sending to agent.
    * Return modified text to alter what the agent sees.
+   * In the native realtime pipeline this hook is observational because the
+   * model has already consumed the audio; its return value is ignored.
    */
   beforeAgentResponse?: (text: string, session: VoiceSessionInfo) => Promise<string>;
 
   /**
    * Called after agent produces text, before TTS.
    * Return modified text to alter what the caller hears.
+   * In the native realtime pipeline this hook is observational because audio
+   * is generated concurrently; its return value is ignored.
    */
   afterAgentResponse?: (text: string, session: VoiceSessionInfo) => Promise<string>;
 
@@ -225,15 +233,19 @@ export interface TextPipelineConfig {
 export interface RealtimePipelineConfig {
   pipeline: 'realtime';
 
-  /** Voice for the realtime model (e.g., 'alloy', 'echo', 'shimmer'). Default: 'alloy' */
-  voice?: string;
+  /** Voice for the realtime model. OpenAI recommends marin or cedar. Default: marin. */
+  voice?: OpenAIRealtimeVoice;
+
+  /** Audio playback speed from 0.25 to 1.5. Default: 1.0. */
+  speed?: number;
 
   /**
    * Turn detection mode:
-   * - 'server_vad': OpenAI handles VAD (default, recommended)
-   * - 'none': Manual turn management
+   * - 'server_vad': silence-based server VAD (default)
+   * - 'semantic_vad': model-based end-of-turn detection
+   * - 'none': local EnergyVAD commits each turn manually
    */
-  turnDetection?: 'server_vad' | 'none';
+  turnDetection?: 'server_vad' | 'semantic_vad' | 'none';
 
   /** VAD threshold (0.0-1.0) for server_vad mode. Default: 0.5 */
   vadThreshold?: number;
@@ -241,11 +253,36 @@ export interface RealtimePipelineConfig {
   /** Silence duration in ms before end-of-turn. Default: 500 */
   silenceDurationMs?: number;
 
+  /** Audio retained before server VAD speech start. Default: 400ms. */
+  prefixPaddingMs?: number;
+
+  /** Optional server VAD idle timeout that prompts the model after silence. */
+  idleTimeoutMs?: number;
+
+  /** Semantic VAD response eagerness. Default: auto. */
+  semanticVADEagerness?: 'low' | 'medium' | 'high' | 'auto';
+
+  /** Input noise reduction profile. Default: near_field. */
+  noiseReduction?: 'near_field' | 'far_field' | 'none';
+
   /** Enable input audio transcription for hooks/logging. Default: true */
   inputTranscription?: boolean;
 
   /** Transcription model for input audio. Default: 'gpt-4o-transcribe' */
   transcriptionModel?: string;
+
+  /** Language hint for input transcription. */
+  transcriptionLanguage?: string;
+
+  /**
+   * Advanced GA options including reasoning, tracing, truncation, stored
+   * prompts, remote MCP tools, parallel tool calls, and safety identifier.
+   * Agent instructions and local tools are merged automatically.
+   */
+  realtime?: Omit<OpenAIRealtimeSessionConfig, 'type' | 'model'>;
+
+  /** Stable, privacy-preserving end-user identifier sent in the OpenAI header. */
+  safetyIdentifier?: string;
 }
 
 export type PipelineConfig = TextPipelineConfig | RealtimePipelineConfig;

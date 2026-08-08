@@ -1,0 +1,92 @@
+import { Connector } from '../../../core/Connector.js';
+import type {
+  OpenAIRealtimeClientSecret,
+  OpenAIRealtimeSessionConfig,
+  OpenAIRealtimeTranscriptionSessionConfig,
+  OpenAIRealtimeTranslationClientSessionConfig,
+} from './RealtimeTypes.js';
+
+export interface CreateRealtimeClientSecretOptions {
+  session: OpenAIRealtimeSessionConfig | OpenAIRealtimeTranscriptionSessionConfig;
+  expiresAfterSeconds?: number;
+  safetyIdentifier?: string;
+}
+
+export interface CreateRealtimeTranslationClientSecretOptions {
+  session: OpenAIRealtimeTranslationClientSessionConfig;
+  safetyIdentifier?: string;
+}
+
+/** REST helpers for browser/WebRTC credentials and server-side SIP call control. */
+export class OpenAIRealtimeAPI {
+  readonly connector: Connector;
+
+  constructor(connector: string | Connector) {
+    this.connector = typeof connector === 'string' ? Connector.get(connector) : connector;
+  }
+
+  async createClientSecret(options: CreateRealtimeClientSecretOptions): Promise<OpenAIRealtimeClientSecret> {
+    if (options.expiresAfterSeconds !== undefined
+      && (options.expiresAfterSeconds < 10 || options.expiresAfterSeconds > 7200)) {
+      throw new RangeError('expiresAfterSeconds must be between 10 and 7200');
+    }
+    return this.request('/realtime/client_secrets', {
+      session: options.session,
+      ...(options.expiresAfterSeconds === undefined ? {} : {
+        expires_after: { anchor: 'created_at', seconds: options.expiresAfterSeconds },
+      }),
+    }, options.safetyIdentifier) as Promise<OpenAIRealtimeClientSecret>;
+  }
+
+  async createTranslationClientSecret(
+    options: CreateRealtimeTranslationClientSecretOptions,
+  ): Promise<OpenAIRealtimeClientSecret> {
+    return this.request('/realtime/translations/client_secrets', {
+      session: options.session,
+    }, options.safetyIdentifier) as Promise<OpenAIRealtimeClientSecret>;
+  }
+
+  async acceptCall(callId: string, session: OpenAIRealtimeSessionConfig): Promise<void> {
+    await this.request(`/realtime/calls/${encodeURIComponent(callId)}/accept`, {
+      ...session,
+      type: 'realtime',
+    });
+  }
+
+  async rejectCall(callId: string, statusCode?: number): Promise<void> {
+    await this.request(`/realtime/calls/${encodeURIComponent(callId)}/reject`,
+      statusCode === undefined ? {} : { status_code: statusCode });
+  }
+
+  async hangupCall(callId: string): Promise<void> {
+    await this.request(`/realtime/calls/${encodeURIComponent(callId)}/hangup`);
+  }
+
+  async referCall(callId: string, targetUri: string): Promise<void> {
+    await this.request(`/realtime/calls/${encodeURIComponent(callId)}/refer`, { target_uri: targetUri });
+  }
+
+  private async request(
+    path: string,
+    body?: Record<string, unknown>,
+    safetyIdentifier?: string,
+  ): Promise<unknown> {
+    const base = this.connector.baseURL || 'https://api.openai.com/v1';
+    const url = `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+    const response = await this.connector.fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(safetyIdentifier ? { 'OpenAI-Safety-Identifier': safetyIdentifier } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`OpenAI Realtime API ${response.status}: ${detail || response.statusText}`);
+    }
+    if (response.status === 204) return undefined;
+    const text = await response.text();
+    return text ? JSON.parse(text) : undefined;
+  }
+}

@@ -14498,7 +14498,8 @@ interface ILLMDescription {
 - GPT-4.1: standard, mini, nano
 - GPT-4o: standard, mini
 - Audio: gpt-audio-1.5, gpt-audio, gpt-audio-mini
-- Realtime: gpt-realtime-1.5, gpt-realtime, gpt-realtime-mini
+- Realtime: gpt-realtime-2.1 (recommended), gpt-realtime-2.1-mini, gpt-realtime-2, gpt-realtime-translate, gpt-realtime-1.5; gpt-realtime and gpt-realtime-mini are deprecated
+- Realtime transcription: gpt-live-transcribe (recommended) and gpt-realtime-whisper ($0.017/audio minute)
 - o-series: o3, o4-mini, o3-mini, o1
 - Deep Research: o3-deep-research, o4-mini-deep-research
 - Open-weight: gpt-oss-120b, gpt-oss-20b

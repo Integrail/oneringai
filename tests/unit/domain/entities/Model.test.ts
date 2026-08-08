@@ -13,14 +13,14 @@ describe('Model Registry', () => {
   describe('MODEL_REGISTRY', () => {
     it('should have all models', () => {
       const modelCount = Object.keys(MODEL_REGISTRY).length;
-      expect(modelCount).toBe(68);
+      expect(modelCount).toBe(72);
     });
 
-    it('should have 40 OpenAI models', () => {
+    it('should have 44 OpenAI models', () => {
       const openAIModels = Object.values(MODEL_REGISTRY).filter(
         (model) => model.provider === Vendor.OpenAI
       );
-      expect(openAIModels).toHaveLength(40);
+      expect(openAIModels).toHaveLength(44);
     });
 
     it('should have 13 Anthropic models', () => {
@@ -44,11 +44,13 @@ describe('Model Registry', () => {
       expect(grokModels).toHaveLength(5);
     });
 
-    it('should have all models marked as active', () => {
+    it('should track active and deprecated models', () => {
       const activeCount = Object.values(MODEL_REGISTRY).filter(
         (model) => model.isActive
       ).length;
-      expect(activeCount).toBe(68);
+      expect(activeCount).toBe(70);
+      expect(MODEL_REGISTRY['gpt-realtime'].isActive).toBe(false);
+      expect(MODEL_REGISTRY['gpt-realtime-mini'].isActive).toBe(false);
     });
 
     it('should have valid pricing for all models', () => {
@@ -83,6 +85,8 @@ describe('Model Registry', () => {
       expect(LLM_MODELS[Vendor.OpenAI].GPT_5).toBe('gpt-5');
       expect(LLM_MODELS[Vendor.OpenAI].GPT_5_CHAT).toBe('gpt-5-chat-latest');
       expect(LLM_MODELS[Vendor.OpenAI].O3_MINI).toBe('o3-mini');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_REALTIME_2_1).toBe('gpt-realtime-2.1');
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_REALTIME_2_1_MINI).toBe('gpt-realtime-2.1-mini');
     });
 
     it('should have Anthropic model constants', () => {
@@ -182,7 +186,7 @@ describe('Model Registry', () => {
   describe('getModelsByVendor()', () => {
     it('should filter models by OpenAI vendor', () => {
       const models = getModelsByVendor(Vendor.OpenAI);
-      expect(models).toHaveLength(40);
+      expect(models).toHaveLength(44);
       expect(models.every((m) => m.provider === Vendor.OpenAI)).toBe(true);
     });
 
@@ -241,7 +245,7 @@ describe('Model Registry', () => {
   describe('getActiveModels()', () => {
     it('should return all active models', () => {
       const models = getActiveModels();
-      expect(models).toHaveLength(68);
+      expect(models).toHaveLength(70);
       expect(models.every((m) => m.isActive)).toBe(true);
     });
 
@@ -257,6 +261,17 @@ describe('Model Registry', () => {
   });
 
   describe('calculateCost()', () => {
+    it('should calculate Realtime audio-token cost by modality', () => {
+      const cost = calculateCost('gpt-realtime-2.1', 1_000_000, 1_000_000, {
+        modality: 'audio',
+      });
+      expect(cost).toBe(96);
+    });
+
+    it('should calculate duration-priced realtime translation cost', () => {
+      const cost = calculateCost('gpt-realtime-translate', 0, 0, { audioMinutes: 2.5 });
+      expect(cost).toBeCloseTo(0.085);
+    });
     it('should calculate cost correctly for GPT-5.2', () => {
       // $1.75/M input + $14/M output
       const cost = calculateCost('gpt-5.2', 1_000_000, 1_000_000);

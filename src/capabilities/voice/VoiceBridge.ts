@@ -275,10 +275,9 @@ export class VoiceBridge extends EventEmitter {
       return;
     }
 
-    // Only create Agent for text pipeline (realtime handles LLM internally via WebSocket)
-    if (this.config.pipeline !== 'realtime') {
-      session.createAgent(this.config.agent);
-    }
+    // Both pipelines use a full Agent so realtime gets the same permission,
+    // identity, memory, connector-context, and tool behavior as text calls.
+    session.createAgent(this.config.agent);
 
     const pipeline = this.createPipeline(session);
     session.setPipeline(pipeline);
@@ -392,15 +391,30 @@ export class VoiceBridge extends EventEmitter {
 
     if (pipeline === 'realtime') {
       const cfg = this.config as VoiceBridgeConfig & { pipeline: 'realtime' };
+      const manualVAD = cfg.turnDetection === 'none'
+        ? new EnergyVAD({
+          silenceTimeout: cfg.silenceTimeout ?? DEFAULT_SILENCE_TIMEOUT,
+          ...cfg.vad,
+        })
+        : undefined;
       return new RealtimePipeline({
-        agentConfig: cfg.agent,
+        agent: session.agent!,
         session,
         voice: cfg.voice,
+        speed: cfg.speed,
         turnDetection: cfg.turnDetection,
         vadThreshold: cfg.vadThreshold,
         silenceDurationMs: cfg.silenceDurationMs,
+        prefixPaddingMs: cfg.prefixPaddingMs,
+        idleTimeoutMs: cfg.idleTimeoutMs,
+        semanticVADEagerness: cfg.semanticVADEagerness,
+        noiseReduction: cfg.noiseReduction,
         inputTranscription: cfg.inputTranscription,
         transcriptionModel: cfg.transcriptionModel,
+        transcriptionLanguage: cfg.transcriptionLanguage,
+        realtime: cfg.realtime,
+        safetyIdentifier: cfg.safetyIdentifier,
+        manualVAD,
         greeting,
         interruptible: cfg.interruptible ?? true,
         hooks: cfg.hooks,
