@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 No unreleased changes yet.
 
+## [1.0.1] — 2026-08-09
+
+Patch release focused on making OneRingAI easier to discover, learn, and use
+from both coding agents and runnable reference applications. It also refreshes
+AMOS against the 1.0 APIs and hardens the npm release path.
+
+### Added
+
+- **A complete coding-agent guide.** `AGENTS.md` now gives OpenAI Codex,
+  Claude Code, and custom coding agents a package-native map of the
+  connector-first architecture, agent lifecycle, tools, context plugins,
+  memory, multimodal APIs, MCP, orchestration, and the most important safety
+  invariants. `CLAUDE.md` provides a lightweight compatibility entry point.
+- **Connector and tool catalog.** Added `docs/CONNECTOR_TOOL_CATALOG.md` with
+  the built-in tool inventory, default connector-provided tools, capability
+  requirements, and discovery examples.
+- **Runnable examples index.** Added `examples/README.md`, an examples-specific
+  TypeScript configuration, and a local MCP demo server. Existing examples
+  were updated to the connector-first APIs and current model registry.
+- **Agent onboarding in the README.** The main README now explains how a coding
+  agent can load the bundled guide directly from the installed npm package.
+
+### Changed
+
+- **AMOS terminal demo refreshed.** Updated AMOS to the current Agent,
+  Connector, context, model, prompt, tool, permission, and session APIs;
+  modernized its Node.js 22 build; and routed web search and scraping through
+  Serper and ZenRows connectors.
+- **Documentation audited end to end.** Expanded the README and User Guide,
+  promoted the memory system and context-plugin architecture, documented
+  tool discovery and connector capabilities, and corrected stale examples and
+  API descriptions throughout the memory documentation.
+- **Agent documentation now ships on npm.** The package includes the agent
+  guides, API reference, User Guide, connector/tool catalog, and the focused
+  memory, model-registry, and signal-ingestion documentation.
+
+### Fixed
+
+- **Provider configuration agent history.** Switched the helper to explicit
+  direct-run history handling, added lifecycle cleanup, and selected sensible
+  vendor-specific default models.
+- **Deterministic generated registries.** Removed volatile generation
+  timestamps so builds no longer dirty an otherwise clean release checkout.
+- **Release verification.** Patch releases now create the version commit and
+  Git tag through `npm version`, push tags with the commit, and verify that the
+  expected clean tag points at `HEAD` before publishing.
+
 ## [1.0.0] — 2026-08-08
 
 Version 1.0.0 establishes the supported production contract for OneRingAI's

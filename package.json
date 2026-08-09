@@ -51,8 +51,18 @@
   },
   "files": [
     "dist",
+    "AGENTS.md",
+    "CLAUDE.md",
     "README.md",
     "USER_GUIDE.md",
+    "API_REFERENCE.md",
+    "docs/CONNECTOR_TOOL_CATALOG.md",
+    "docs/MEMORY_GUIDE.md",
+    "docs/MEMORY_API.md",
+    "docs/MEMORY_PERMISSIONS.md",
+    "docs/MEMORY_PREDICATES.md",
+    "docs/MEMORY_SIGNALS.md",
+    "docs/MODEL_REGISTRY_AUDIT.md",
     "CHANGELOG.md",
     "LICENSE"
   ],

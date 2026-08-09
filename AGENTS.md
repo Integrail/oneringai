@@ -1,302 +1,486 @@
-# Codex Development Guide
+# OneRingAI Agent Guide
 
-## Project Overview
+This is the canonical, vendor-neutral guide for coding agents that use or
+modify `@everworker/oneringai`. It is written for OpenAI Codex, Claude Code,
+custom coding agents, and humans delegating integration work to them.
 
-**Name**: `@everworker/oneringai`
-**Purpose**: Unified AI agent library with multi-vendor support for text, image, video, audio, and agentic workflows
-**Language**: TypeScript (strict mode) | **Runtime**: Node.js 18+ | **Package**: ESM
+Read this file before generating OneRingAI code. For exhaustive detail, follow
+the documentation links near the end instead of guessing an API.
 
-## Architecture: Connector-First Design
+## Fast facts
 
+- Package: `@everworker/oneringai`
+- Runtime: Node.js 22+
+- Language: strict TypeScript
+- Package format: ESM with ESM and CJS build outputs
+- Public API: import from `@everworker/oneringai` unless a documented subpath is
+  explicitly required
+- Architecture: connector-first, plugin-first context, one shared tool manager
+
+## Determine your operating mode
+
+### Using OneRingAI as a dependency
+
+- Import only from the package's public exports.
+- Do not import `src/**`, `dist/**`, or undocumented implementation paths.
+- Read the installed package's `README.md`, `AGENTS.md`, `USER_GUIDE.md`, and
+  `API_REFERENCE.md` when they are available under
+  `node_modules/@everworker/oneringai/`.
+- Prefer runnable patterns from `examples/` in the repository over invented
+  method names or provider-specific SDK calls.
+
+### Modifying the OneRingAI repository
+
+- Preserve the connector-first and plugin-first invariants below.
+- Relative TypeScript imports include the `.js` extension.
+- Use `export type { X }` for types and `export { X }` for runtime values.
+- Use errors from `src/domain/errors/AIErrors.ts` where applicable.
+- Do not hand-edit generated registries. Run the relevant generator.
+- Keep changes focused and validate them with the commands at the end.
+
+## The mental model
+
+```text
+Application
+  -> named Connector (credentials + service identity)
+  -> Agent (model + instructions + tools + context)
+  -> provider implementation
+
+AgentContextNextGen
+  -> context plugins (state, memory, catalog, workspace)
+  -> one ToolManager shared by agent and context
+  -> compaction and persistence
 ```
-User Code → Connector Registry → Agent → Provider Factory → ITextProvider
-```
 
-**Key Principles:**
-1. **Connectors are single source of truth** for auth - no dual systems
-2. **Named connectors** - multiple keys per vendor (`openai-main`, `openai-backup`)
-3. **Explicit vendor** - uses `Vendor` enum, no auto-detection
-4. **Unified tool management** - `agent.tools === agent.context.tools` (same instance)
+Non-negotiable rules:
 
-## Core Classes
+1. `Connector` is the single source of truth for authentication.
+2. Connectors are named so multiple accounts or keys can coexist.
+3. AI-provider connectors declare an explicit `Vendor`; do not infer a vendor
+   from a model string.
+4. External-service connectors use `serviceType` and may expose tools through
+   `ConnectorTools.for(connectorName)`.
+5. `agent.tools === agent.context.tools`; do not build a second tool pipeline.
+6. Context capabilities are plugins. Disabled features add no prompt content
+   or tools.
+7. Use model and capability registries rather than assuming a model supports a
+   feature.
 
-- **Connector** (`src/core/Connector.ts`) — Static auth registry. `Connector.create()` / `Connector.get()`
-- **Agent** (`src/core/Agent.ts`) — Main agent extending BaseAgent. `Agent.create({ connector, model, tools })`
-- **AgentContextNextGen** (`src/core/context-nextgen/AgentContextNextGen.ts`) — Plugin-first context manager
-- **ToolManager** (`src/core/ToolManager.ts`) — Unified tool management + execution. `IToolExecutor`, `IDisposable`. Per-tool circuit breakers
-- **Vendor** (`src/core/Vendor.ts`) — Const object: `{ OpenAI, Anthropic, Google, GoogleVertex, Groq, Together, Grok, DeepSeek, Mistral, Perplexity, Ollama, Custom }`
-
-## OAuth: Vendor Refresh Strategy
-
-Every authorization_code vendor template MUST declare a `refreshStrategy: RefreshStrategy` (validated at registry-init time — `initVendorRegistry` throws on missing). Drives whether the library force-merges anything into the authorize URL to guarantee refresh-capable tokens.
-
-**Variants** (`src/connectors/vendors/types.ts`):
-- `{ kind: 'scope', scope: '<token>' }` — vendor requires this scope for refresh-token issuance. Force-merged into `scope` AND stamped on `OAuthConnectorAuth.requiredScope` so reconstitution-from-DB paths re-apply it. Microsoft / Atlassian → `offline_access`, Salesforce → `refresh_token`, Twitter/X → `offline.access` (dot, not underscore!).
-- `{ kind: 'auth_param', key, value }` — vendor requires an authorize-URL query param. Merged into `authorizationParams` without clobbering operator-set keys. Google → `access_type=offline`, Dropbox → `token_access_type=offline`.
-- `{ kind: 'automatic' }` — vendor issues `refresh_token` unconditionally. No-op (Discord, Asana, HubSpot, Stripe, QuickBooks, Box, Zoom, Pipedrive, Ramp, Bitbucket, Airtable, GitLab, PagerDuty, Sentry).
-- `{ kind: 'never_expires' }` — vendor's tokens don't expire; refresh n/a (Notion, Linear, Slack default, Trello, Mailchimp, Zendesk, Intercom, Shopify, GitHub OAuth Apps).
-- `{ kind: 'manual_setup', description }` — refresh requires out-of-band IdP/app config the library can't enforce (e.g. GitHub App "expire user tokens" toggle, Slack token rotation enable). No-op on the wire; surface the description to operators.
-
-**Defensive backfill:** `Connector.setRefreshStrategyBackfill(...)` is registered by `vendors/index.ts` at boot. When a Connector is reconstructed from a persisted config that pre-dates the `requiredScope` annotation, `initOAuthManager` looks up the vendor template by `serviceType` and re-applies the strategy. **No migration required for existing saved connectors.**
-
-**Persistence:** `requiredScope` lives on `OAuthConnectorAuth` and survives encryption/decryption (spread-preserved by `ConnectorConfigStore`). Hosts that bypass `buildAuthConfig` (e.g. v25's `GroupScopedConnectorRegistry`) get the right behavior via the backfill.
-
-## AgentContextNextGen
-
-Plugin-first context manager. Features enable/disable plugins:
+## Minimal working agent
 
 ```typescript
-interface ContextFeatures {
-  workingMemory?: boolean;         // default: true
-  inContextMemory?: boolean;       // default: true
-  persistentInstructions?: boolean; // default: false
-  userInfo?: boolean;              // default: false
-  toolCatalog?: boolean;           // default: false
-  sharedWorkspace?: boolean;       // default: false
-}
+import { Agent, Connector, Vendor } from '@everworker/oneringai';
+
+Connector.create({
+  name: 'openai-main',
+  vendor: Vendor.OpenAI,
+  auth: {
+    type: 'api_key',
+    apiKey: process.env.OPENAI_API_KEY!,
+  },
+});
+
+const instructions = 'Be accurate, concise, and explicit about uncertainty.';
+
+const agent = Agent.create({
+  connector: 'openai-main',
+  model: 'gpt-5.6-terra',
+  instructions,
+});
+
+const response = await agent.run('Explain connector-first architecture.');
+console.log(response.output_text);
 ```
 
-**Tool Catalog scoping:** `toolCategories` = built-in, `identities` = connector categories, `pinned` = always loaded. Plugin tools always available.
+Switching providers changes connector and model—not the agent's tools or task
+logic:
 
-**Key APIs:** `ctx.tools`, `ctx.memory`, `ctx.features`, `ctx.registerPlugin()`, `ctx.getPlugin<T>(name)`, `ctx.addUserMessage()`, `ctx.addAssistantResponse()`, `ctx.addToolResults()`, `ctx.prepare()`, `ctx.save()`, `ctx.load()`
-
-**Compaction:** Happens once before LLM call via `StrategyRegistry`. Default: algorithmic (75% threshold). Tool pairs always removed together.
-
-## Agent run() / stream()
-
-`RunOptions`: `thinking` (vendor-agnostic), `temperature`, `vendorOptions` — override per call.
-
-**Direct LLM access:** `agent.runDirect()` / `agent.streamDirect()` — bypasses context management. Options: `instructions`, `includeTools`, `temperature`, `maxOutputTokens`, `responseFormat`, `thinking`, `vendorOptions`
-
-## Directory Structure
-
-```
-src/
-├── index.ts                    # Main exports (~300 items)
-├── core/                       # Agent, BaseAgent, Connector, Vendor, ToolManager, constants
-│   ├── context-nextgen/        # AgentContextNextGen + plugins
-│   ├── orchestrator/           # createOrchestrator, orchestration tools
-│   ├── permissions/            # PermissionPolicyManager, policies, UserPermissionRulesEngine
-│   ├── mcp/                    # MCPClient, MCPRegistry
-│   └── StorageRegistry.ts      # Centralized storage backend registry
-├── domain/
-│   ├── entities/               # Model.ts, Tool.ts, Message.ts, Memory.ts, Services.ts (35+)
-│   ├── interfaces/             # ITextProvider, IAudioProvider, IToolExecutor, IDisposable, IContextStorage
-│   └── errors/                 # AIErrors.ts, MCPError.ts
-├── capabilities/               # search/, scrape/, images/, video/
-├── infrastructure/
-│   ├── providers/              # OpenAI, Anthropic, Google, Generic (+ base/)
-│   ├── resilience/             # CircuitBreaker, BackoffStrategy, RateLimiter
-│   └── storage/                # FileContextStorage, InMemoryStorage
-├── tools/                      # filesystem/, shell/, web/, desktop/, connector/, code/, json/
-├── connectors/                 # oauth/, storage/
-└── utils/
-```
-
-## Unified Store Tools
-
-All CRUD plugins share 5 generic tools routed by `StoreToolsManager`:
-
-| Tool | Purpose |
-|------|---------|
-| `store_get(store, key?)` | Get entry or all entries |
-| `store_set(store, key, value, ...)` | Create/update entry |
-| `store_delete(store, key)` | Delete entry |
-| `store_list(store, options?)` | List with optional filtering |
-| `store_action(store, action, params?)` | Store-specific ops |
-
-**Store IDs:** `"memory"`, `"context"`, `"instructions"`, `"user_info"`, `"workspace"` (+ custom `IStoreHandler` plugins)
-
-**Custom CRUD plugin:** Implement `IContextPluginNextGen` + `IStoreHandler` with `storeId`/`storeDescription` + handle methods. Register via `ctx.registerPlugin()` — auto-detected.
-
-## NextGen Plugins
-
-| Plugin | Store ID | Purpose |
-|--------|----------|---------|
-| **WorkingMemoryPluginNextGen** | `"memory"` | Tiered storage (raw/summary/findings), auto-eviction. `ctx.memory` shortcut |
-| **InContextMemoryPluginNextGen** | `"context"` | KV storage **directly in context** (no retrieval needed). Priority-based eviction (low→high, critical never evicted) |
-| **PersistentInstructionsPluginNextGen** ⚠️ *deprecated* | `"instructions"` | Keyed instructions persisting to disk. Requires `agentId`. Storage: `~/.oneringai/agents/<agentId>/custom_instructions.json`. **Prefer `MemoryPluginNextGen`.** |
-| **UserInfoPluginNextGen** ⚠️ *deprecated* | `"user_info"` | User-scoped data (not agent-scoped). Stateless — userId from `ToolContext.userId`. Also provides standalone `todo_add/update/remove` tools. **Prefer `MemoryPluginNextGen`.** |
-| **SharedWorkspacePluginNextGen** | `"workspace"` | Multi-agent bulletin board. Versioning, author tracking, append-only log. Extra actions: `log`, `history`, `archive` |
-| **MemoryPluginNextGen** (feature flag `memory`) | — (no KV) | Self-learning knowledge store (read-side). Bootstraps `person:<userId>` + `agent:<agentId>` entities; injects the user profile + any user-specific behavior rules for this agent into the system message; ships **5 read-only** `memory_*` tools. Requires `plugins.memory.memory: MemorySystem` + `userId`. |
-| **MemoryWritePluginNextGen** (feature flag `memoryWrite`) | — (no KV) | Lightweight sidecar — adds the **6 write** `memory_*` tools. No system-message content of its own. Requires `memory: true` (piggy-backs on its bootstrap via a `getOwnSubjectIds` callback). Enable when the agent should mutate memory directly; otherwise use a background extractor like `SessionIngestorPluginNextGen`. |
-
-**WorkingMemory vs InContextMemory:** WorkingMemory stores externally with index in context (needs retrieval). InContextMemory stores values directly in context.
-
-**Memory tools (11 total — split by plugin):**
-- **Read (always via MemoryPluginNextGen):** `memory_recall`, `memory_graph`, `memory_search`, `memory_find_entity` (actions: `find` | `list`), `memory_list_facts`.
-- **Write (via MemoryWritePluginNextGen):** `memory_remember`, `memory_link`, `memory_upsert_entity`, `memory_forget`, `memory_restore`, `memory_set_agent_rule`.
-- **Tool-name migration:** `memory_find_entity` with `action: 'upsert'` was split into a standalone **`memory_upsert_entity`** tool (v0.5.6+). `memory_find_entity` is now read-only.
-- **`memory_set_agent_rule({rule, replaces?})`** — narrow-trigger tool for user-driven agent behavior directives (tone / style / format / language / interaction rules). Writes a fact with `subjectId = agentEntityId`, `predicate = agent_behavior_rule`, private visibility. Rendered back into the system message under `## User-specific instructions for this agent` — per-user-per-agent scoped via `ownerId`. See `MemoryWritePluginNextGen.WRITE_INSTRUCTIONS` for the narrow trigger rules (YES: "be terse"; NO: task requests, calendar actions, factual corrections, user statements).
-
-`SubjectRef` accepts id | `"me"` | `"this_agent"` | `{id}` | `{identifier:{kind,value}}` | `{surface}`. All caller-supplied limits are clamped (maxDepth≤5, topK≤100, limit≤200, etc.). `groupId` flows from plugin config (trusted), never from LLM tool args.
-
-**Assembling tools without plugins:** `createMemoryReadTools(...)` and `createMemoryWriteTools(...)` export the bundles directly; `createMemoryTools(...)` is a convenience wrapper returning all 11. All three factories share the same `CreateMemoryToolsArgs`.
-
-## StorageRegistry (`src/core/StorageRegistry.ts`)
-
-Centralized backend registry. Resolution: explicit param > `StorageRegistry.get()` > file-based default.
-
-- **Singletons**: `media`, `agentDefinitions`, `connectorConfig`, `oauthTokens`
-- **Factories**: `customTools(ctx?)`, `sessions(agentId, ctx?)`, `persistentInstructions(agentId, ctx?)`, `workingMemory(ctx?)`, `userInfo(ctx?)`
-- **Multi-tenant**: `StorageContext` (opaque record) flows to factories. Set via `StorageRegistry.setContext()`.
-
-## User-Scoped Storage (Uniform Pattern)
-
-Both `IUserInfoStorage` and `ICustomToolStorage` take `userId: string | undefined` — **always optional**, defaults to `'default'`.
-- User-scoped: `~/.oneringai/users/<userId>/custom-tools/`, `~/.oneringai/users/<userId>/user_info.json`
-- Agent-scoped: `~/.oneringai/agents/<agentId>/sessions/`, `~/.oneringai/agents/<agentId>/custom_instructions.json`
-
-**Custom tool meta-tools:** `custom_tool_save`, `custom_tool_load`, `custom_tool_list`, `custom_tool_delete`, `custom_tool_draft`, `custom_tool_test`
-
-## Tool Permissions
-
-3-tier evaluation in `PermissionPolicyManager.check()`:
-1. **User rules** (highest, FINAL) — persistent rules with argument conditions
-2. **Parent delegation** (orchestrator) — parent deny is final
-3. **Policy chain** — deny short-circuits
-
-**Tool scopes:** `'always'` (auto-allow: read-only tools, store_*, todo_*, catalog), `'session'` (ask once: write/edit, web_fetch), `'once'` (ask every: bash, execute_javascript)
-
-**Built-in policies:** Allowlist, Blocklist, SessionApproval, PathRestriction, BashFilter, UrlAllowlist, Role, RateLimit
-
-## Agent Orchestrator (`src/core/orchestrator/`)
-
-`createOrchestrator()` returns a regular Agent with orchestration tools + shared workspace.
-
-**7 tools:** `create_agent`, `list_agents`, `destroy_agent`, `assign_turn` (blocking), `assign_turn_async` (non-blocking), `assign_parallel`, `send_message`
-
-`agent.inject(message, role)` — queue message into running agent's context.
-
-## Key Patterns
-
-- **IDisposable**: `destroy(): void` + `isDestroyed: boolean` on ToolManager, AgentContextNextGen, plugins
-- **Registry**: Connector, MCPRegistry, StorageRegistry, ScrapeProvider, SearchProvider
-- **Circuit Breaker**: Per-tool in ToolManager (`setCircuitBreakerConfig`)
-- **Plugin-First**: Plugins provide instructions, content, tools. Register custom via `ctx.registerPlugin()`
-
-## Conventions
-
-**Imports:** Always use `.js` extension: `import { Agent } from './Agent.js'`
-
-**Type exports:** `export type { X }` for interfaces, `export { X }` for enums/runtime values
-
-**Errors:** Use `AIErrors.ts` classes: `ProviderAuthError`, `ToolExecutionError`, etc.
-
-**ToolFunction definition:**
 ```typescript
-const myTool: ToolFunction = {
-  definition: { type: 'function', function: { name, description, parameters } },
-  execute: async (args) => ({ result: 'value' }),
-  describeCall: (args) => args.key,
+Connector.create({
+  name: 'anthropic-main',
+  vendor: Vendor.Anthropic,
+  auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! },
+});
+
+const claudeAgent = Agent.create({
+  connector: 'anthropic-main',
+  model: 'claude-sonnet-4-6',
+  instructions,
+});
+```
+
+## Choose the right surface
+
+| Goal | Preferred API |
+|------|---------------|
+| Stateful, tool-using assistant | `Agent.create()` + `agent.run()` |
+| Token/event streaming | `agent.stream()` |
+| One direct model call without managed context | `agent.runDirect()` / `streamDirect()` |
+| Structured JSON | `responseFormat` on `run()` or `runDirect()` |
+| Authenticated external API | `Connector` + `ConnectorTools.for()` or `Connector.fetch()` |
+| Web search | Serper/Brave/Tavily connector tools or `SearchProvider` |
+| Web scraping | ZenRows/Jina/Firecrawl/ScrapingBee connector tools or `ScrapeProvider` |
+| Dynamic large tool sets | `ToolCatalogPluginNextGen` via `context.features.toolCatalog` |
+| Long-term knowledge | `MemorySystem` and memory context plugins |
+| Image generation/editing | `ImageGeneration` |
+| Video generation | `VideoGeneration` |
+| Text-to-speech / speech-to-text | `TextToSpeech` / `SpeechToText` |
+| Embeddings | `Embeddings` |
+| Multiple cooperating agents | `createOrchestrator()` |
+| External MCP servers | `MCPRegistry` |
+
+## Connectors and external tools
+
+Create one named connector for each credential/account. Pass connector names,
+not service-type names, to agents and tool factories.
+
+```typescript
+import {
+  Agent,
+  Connector,
+  ConnectorTools,
+  Services,
+  Vendor,
+  tools,
+} from '@everworker/oneringai';
+
+Connector.create({
+  name: 'serper-research',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+Connector.create({
+  name: 'zenrows-research',
+  serviceType: Services.Zenrows,
+  auth: { type: 'api_key', apiKey: process.env.ZENROWS_API_KEY! },
+  baseURL: 'https://api.zenrows.com/v1',
+});
+
+const researchAgent = Agent.create({
+  connector: 'openai-main',
+  model: 'gpt-5.6-terra',
+  identities: [
+    { connector: 'serper-research' },
+    { connector: 'zenrows-research' },
+  ],
+  tools: [
+    ...ConnectorTools.for('serper-research'),
+    ...ConnectorTools.for('zenrows-research'),
+    tools.webFetch,
+  ],
+});
+```
+
+Important distinctions:
+
+- The 50 service templates configure authentication and endpoint defaults.
+- A configured connector with `baseURL` gets a generic authenticated API tool.
+- Selected services add specialized tools, such as GitHub, Slack, Microsoft,
+  Google Workspace, Telegram, Twilio, Zoom, Serper, and ZenRows.
+- `identities` limits which connector categories an agent may discover; it is
+  not a substitute for host authorization.
+- Never place API keys in prompts, tool arguments, or source files.
+
+## Agent execution
+
+- `run(input, options?)` uses managed context, tools, compaction, and plugins.
+- `stream(input, options?)` emits typed streaming events.
+- `runDirect(input, options?)` bypasses context management for a direct model
+  call; tools are excluded unless `includeTools` is enabled.
+- `thinking`, `temperature`, and `vendorOptions` are per-call overrides.
+- Read text from `response.output_text`. Structured responses also expose
+  `output_parsed` after successful coercion.
+
+```typescript
+const response = await agent.run('Return the two highest priorities.', {
+  responseFormat: {
+    type: 'json_schema',
+    name: 'priorities',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['items'],
+      additionalProperties: false,
+    },
+  },
+});
+```
+
+Use `run()` rather than streaming when prompt-fallback structured output and
+tools must be combined; the non-streaming path can perform the final repair
+pass.
+
+## Tool system
+
+Tools come from five places:
+
+1. Application-supplied `ToolFunction`s.
+2. The 39 generated connector-free built-ins in eight populated categories.
+3. Context plugins, including `store_*`, `memory_*`, and catalog tools.
+4. Connector-generated generic and specialized tools.
+5. MCP servers.
+
+Minimal custom tool:
+
+```typescript
+import type { ToolFunction } from '@everworker/oneringai';
+
+const getWeather: ToolFunction = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'get_weather',
+      description: 'Get current weather for a city.',
+      parameters: {
+        type: 'object',
+        properties: { city: { type: 'string' } },
+        required: ['city'],
+        additionalProperties: false,
+      },
+    },
+  },
+  execute: async ({ city }) => ({ city, temperatureC: 21 }),
+  describeCall: ({ city }) => `Weather for ${String(city)}`,
 };
 ```
 
-**Adding vendors:** 1) Add to `Vendor` enum 2) Create provider in `infrastructure/providers/` 3) Register in `createProvider.ts`
+Tool guidance:
 
-## Build Commands
+- Tool names must be unique within an agent.
+- Return serializable data; throw meaningful errors for failed execution.
+- Add `describeCall` when a UI should display a human-readable action.
+- Use `PermissionPolicyManager` and user rules for destructive or sensitive
+  tools. The evaluation order is user rules, parent delegation, then policy
+  chain.
+- Use the tool catalog for large tool sets instead of sending every definition
+  to the model on every turn.
+- Use `agent.tools` to register MCP or late-bound tools; do not replace the
+  manager.
 
-```bash
-npm run build          # generate + tsup
-npm run dev            # Watch mode
-npm run typecheck      # Type check
-npm run lint           # ESLint
-npm test               # All tests
-npm run test:unit      # Unit tests only
-npm run test:integration  # Integration tests (requires API keys)
+## Context plugins
+
+`AgentContextNextGen` assembles plugin instructions, plugin content, tools,
+conversation history, current input, token accounting, persistence, and
+compaction into one model request.
+
+| Feature flag | Default | Purpose |
+|--------------|---------|---------|
+| `workingMemory` | `true` | External tiered scratch storage |
+| `inContextMemory` | `true` | Small high-value state directly in the prompt |
+| `persistentInstructions` | `false` | Deprecated keyed instruction store |
+| `userInfo` | `false` | Deprecated user store and TODO tools |
+| `toolCatalog` | `false` | Discover/load/unload tool categories |
+| `sharedWorkspace` | `false` | Versioned multi-agent coordination board |
+| `memory` | `false` | Long-term memory injection plus six read tools |
+| `memoryWrite` | `false` | Six write tools; requires `memory` |
+
+```typescript
+const catalogAgent = Agent.create({
+  connector: 'openai-main',
+  model: 'gpt-5.6-terra',
+  identities: [{ connector: 'serper-research' }],
+  context: {
+    model: 'gpt-5.6-terra',
+    features: { toolCatalog: true },
+    toolCategories: ['filesystem', 'web'],
+    plugins: {
+      toolCatalog: {
+        pinned: ['filesystem'],
+        autoLoadCategories: ['web'],
+      },
+    },
+  },
+});
 ```
 
-## Constants (`src/core/constants.ts`)
+Compaction runs once before the LLM call. Tool-call/result pairs are preserved
+or removed together. Do not pre-compact the same turn in application code.
 
-CONTEXT_DEFAULTS.MAX_TOKENS=128000, COMPACTION_THRESHOLD=0.75 | AGENT_DEFAULTS.MAX_ITERATIONS=50, TEMPERATURE=0.7 | CIRCUIT_BREAKER.FAILURE_THRESHOLD=5 | MEMORY.MAX_SIZE=25MB
+## Long-term memory
 
-## TemplateEngine (`src/core/TemplateEngine.ts`)
+The memory layer is a standalone entity/fact knowledge system, not chat history
+and not only a vector store. It supports provenance, confidence, importance,
+graph traversal, fact and document embeddings, ranked recall, entity
+resolution, bitemporal queries, profiles, signal ingestion, and permissions.
 
-Extensible `{{COMMAND}}` / `{{COMMAND:arg}}` substitution for agent instructions. Static registry pattern.
+The agent integration has 12 tools:
 
-**Two-phase processing:**
-- **Static** (Agent constructor, `processSync`): AGENT_ID, AGENT_NAME, MODEL, VENDOR, USER_ID
-- **Dynamic** (buildSystemMessage, `process`): DATE, TIME, DATETIME, RANDOM
+- Six reads: `memory_recall`, `memory_graph`, `memory_search`,
+  `memory_search_documents`, `memory_find_entity`, `memory_list_facts`.
+- Six writes: `memory_remember`, `memory_link`, `memory_upsert_entity`,
+  `memory_forget`, `memory_restore`, `memory_set_agent_rule`.
 
-**Escaping:** `{{{X}}}` → literal `{{X}}`. `{{raw}}...{{/raw}}` → verbatim block.
+```typescript
+import {
+  Agent,
+  InMemoryAdapter,
+  createMemorySystemWithConnectors,
+} from '@everworker/oneringai';
 
-**Extensibility:** `TemplateEngine.register('NAME', handler, { dynamic?: boolean })`. Handlers: `(arg: string | undefined, ctx: TemplateContext) => string | Promise<string>`.
+const memory = createMemorySystemWithConnectors({
+  store: new InMemoryAdapter(),
+  connectors: {
+    embedding: {
+      connector: 'openai-main',
+      model: 'text-embedding-3-small',
+      dimensions: 1536,
+    },
+    profile: {
+      connector: 'anthropic-main',
+      model: 'claude-sonnet-4-6',
+    },
+  },
+  visibilityPolicy: () => ({ group: 'read', world: 'none' }),
+});
 
-**Date format tokens:** YYYY, YY, MM, DD, HH, hh, mm, ss, A, a
+const memoryAgent = Agent.create({
+  connector: 'anthropic-main',
+  model: 'claude-sonnet-4-6',
+  userId: 'user-123',
+  context: {
+    model: 'claude-sonnet-4-6',
+    agentId: 'assistant-1',
+    features: { memory: true, memoryWrite: true },
+    plugins: { memory: { memory } },
+  },
+});
+```
 
-## MCP Integration
+Memory safety rules:
 
-`MCPRegistry.create({ name, transport, transportConfig })` → `client.connect()` → `client.registerTools(agent.tools)`. Supports stdio + HTTP/HTTPS.
+- Every entity and fact needs an owner; pass a trusted `userId`/scope.
+- `groupId`, principals, and visibility policy come from the host authorization
+  layer, never from LLM-controlled tool arguments.
+- The library default is public-read for backwards compatibility. Production
+  multi-tenant applications should set an explicit `visibilityPolicy`.
+- Prefer retrieval-only agents (`memory: true`) plus
+  `SessionIngestorPluginNextGen` when the LLM should not mutate memory.
+- Task state changes are host-driven via `transitionTaskState`; do not encode
+  state/due dates as parallel facts.
+- For Mongo, run adapter and vector-index migration helpers exactly as described
+  in `docs/MEMORY_GUIDE.md` and `docs/MEMORY_PERMISSIONS.md`.
 
-## Model Registry (`src/domain/entities/Model.ts`)
+## Multimodal and specialized APIs
 
-23+ models: OpenAI (GPT-5.2, GPT-5, GPT-4.1, o3-mini), Anthropic (Codex 4.5/4.x), Google (Gemini 3/2.5). `getModelInfo()`, `calculateCost()`.
+Use the dedicated high-level class rather than calling vendor SDKs directly:
 
-## Services Registry (`src/domain/entities/Services.ts`)
+| Capability | Class / registry |
+|------------|------------------|
+| Images | `ImageGeneration`, `IMAGE_MODELS` |
+| Video | `VideoGeneration`, `VIDEO_MODELS` |
+| Text-to-speech | `TextToSpeech`, `TTS_MODELS` |
+| Speech-to-text | `SpeechToText`, `STT_MODELS` |
+| Embeddings | `Embeddings`, `EMBEDDING_MODELS` |
+| Realtime voice | Realtime APIs documented in `USER_GUIDE.md` |
+| Documents | `DocumentReader`, `readDocumentAsContent`, filesystem tools |
 
-35+ services (Slack, GitHub, Stripe, etc.). `ConnectorTools.for(connectorName)` returns generic API tool.
+Inspect registry metadata for lifecycle, modality, capability, endpoint,
+pricing, and replacement information. `isActive` means callable;
+`lifecycle` describes recommendation/migration state. Token limits may be
+`null`; use `resolveMaxContextTokens()` when a number is required.
 
-## Memory Layer (`src/memory/`)
+## Orchestration and MCP
 
-Brain-like knowledge store: **entities** (pure identity + metadata) + **facts** (triples with provenance, confidence, importance, contextIds). Self-contained — only dependency is `IDisposable`.
+`createOrchestrator()` returns a regular `Agent` with `SharedWorkspace` and five
+tools: `assign_turn`, `delegate_interactive`, `send_message`, `list_agents`, and
+`destroy_agent`. `assign_turn` is asynchronous; results arrive as follow-up
+messages. Use `delegate_interactive` only when the specialist needs a direct
+conversation with the user.
 
-**Core:** `MemorySystem.ts` (facade), `Ranking.ts`, `GenericTraversal.ts`, `types.ts`.
+For MCP:
 
-**Adapters** (pluggable):
-- `adapters/inmemory/InMemoryAdapter.ts` — zero-dep default.
-- `adapters/mongo/` — `MongoMemoryAdapter` + `RawMongoCollection` (mongodb driver) + `MeteorMongoCollection` (Meteor-reactive writes). Configurable collection names, optional `$graphLookup` + Atlas Vector Search fast paths for both facts and entities. Vector indexes **must** be created via `ensureVectorSearchIndexes()` — the helper declares the filter-path schema required for scope/permission filters to take effect. Manual UI creation is discouraged (see deployment checklist).
+```typescript
+import { MCPRegistry } from '@everworker/oneringai';
 
-**Integration** (`src/memory/integration/`):
-- `ConnectorEmbedder` + `ConnectorProfileGenerator` — wire oneringai Connectors into memory's `IEmbedder`/`IProfileGenerator`.
-- `createMemorySystemWithConnectors({ store, connectors: { embedding: {connector, model, dimensions}, profile: {connector, model} } })` — one-call setup.
-- `ExtractionResolver` + `defaultExtractionPrompt` — raw LLM output (`{mentions, facts}`) → resolved entities + facts with `sourceSignalId` attached. Supports `preResolved: {label → entityId}` to bypass upsert for labels bound upstream.
-- `signals/` — high-level facts-producing API: `SignalIngestor` orchestrates adapter → deterministic seed phase → prompt (with locked labels) → `IExtractor` LLM call → `ExtractionResolver`. Ships `PlainTextAdapter`, `EmailSignalAdapter` (seeds from/to/cc + non-free domains, drops BCC), `ConnectorExtractor` (default LLM via Connector). Custom `SignalSourceAdapter` + `IExtractor` are the extension points.
+const client = MCPRegistry.create({
+  name: 'filesystem',
+  transport: 'stdio',
+  transportConfig: { command: 'npx', args: ['-y', 'mcp-server'] },
+});
 
-**Agent integration** (`src/core/context-nextgen/plugins/Memory{,Write}PluginNextGen.ts` + `src/tools/memory/`):
-- `MemoryPluginNextGen` — read-side context plugin. Injects the user profile + top facts + any user-specific behavior rules for this agent into the system message; ships the **5 read** `memory_*` LLM tools; drives self-learning via incremental user-profile regen. Agent-profile auto-render was removed (global agent personality lives on `Agent.create({instructions})`; `agentProfileInjection` config is kept for backward-compat but is a no-op). Feature flag: `memory` (default off). Requires `plugins.memory.memory: MemorySystem` + `userId`.
-- `MemoryWritePluginNextGen` — write-side sidecar. Ships the **6 write** `memory_*` LLM tools (`memory_remember`, `memory_link`, `memory_upsert_entity`, `memory_forget`, `memory_restore`, `memory_set_agent_rule`) and its own instruction block; no system-message content. Feature flag: `memoryWrite` (requires `memory: true`). Shares the read plugin's bootstrapped user/agent entity ids via a `getOwnSubjectIds` callback (wired automatically when both are feature-flagged).
-- `createMemoryReadTools(...)` / `createMemoryWriteTools(...)` / `createMemoryTools(...)` — assemble tools without the plugins. All three share the same `CreateMemoryToolsArgs`. `defaultGroupId` is trusted (from host auth layer); tools never accept a `groupId` arg from the LLM. All numeric limits are clamped (maxDepth≤5, topK≤100, limit≤200, etc.).
-- **Background ingestion alternative:** `SessionIngestorPluginNextGen` (also exported) fires `onBeforePrepare`, extracts facts from the accumulated conversation via a (usually cheaper) dedicated connector+model, and writes them directly to the `MemorySystem`. Pair it with `memory: true` only (no `memoryWrite`) to get a retrieval-only agent whose memory updates happen behind the scenes.
-- **Incremental profile regen:** `IProfileGenerator.generate` takes a single `ProfileGeneratorInput` with `newFacts` (observed since prior), `priorProfile`, `invalidatedFactIds` (supersession + archivals). Generator evolves the prior profile from deltas rather than rewriting from all facts.
+await client.connect();
+client.registerTools(agent.tools);
+```
 
-**Resolution** (`src/memory/resolution/`):
-- `EntityResolver` translates surface forms ("Microsoft", "Q3 Planning") to entity IDs. Tiers: identifier (1.0) → exact displayName (default 0.9) → exact alias (default **0.9 since 0.8.0**, was 0.85) → **semantic** via `identityEmbedding` (capped at 0.89, **opt-in** via `entityResolution.enableSemanticResolution`). All confidences configurable via `entityResolution.displayNameMatchConfidence` / `aliasMatchConfidence`. Conservative default auto-resolve threshold 0.9; configurable via `entityResolution.autoResolveThreshold`. **Tier 2/3 backed by `IMemoryStore.findEntitiesByNormalizedName` (O(1) indexed exact-match, 0.8.0+)** — replaces the legacy substring-then-filter path. Semantic tier calls `IMemoryStore.semanticSearchEntities`; cap ensures enabling the flag alone never auto-merges — caller must also lower `autoResolveThreshold` (e.g. to 0.75) to trust semantic matches.
-- **`IMemoryStore.atomicCreateOrFindByNormalizedName` (0.8.0+)** — load-bearing atomic find-or-create keyed on `(type, normalizedDisplayName, scope)`. Used by `upsertEntityBySurface` to converge concurrent inserts of the same surface. InMemory uses JS event-loop semantics; Mongo uses optimistic find-then-insert + E11000 recovery, gated on the host-installed unique partial index from `ensureNormalizedNameUniqueIndex(entities)`. Mongo deployment migration: backfill via `MemorySystem.backfillNormalizedFields(scope)` → dedup pass → install unique index.
-- `fuzzy.ts` — normalized Levenshtein (strips Inc/Corp/LLC, case-insensitive, punctuation-tolerant).
+Keep MCP clients alive for as long as their tools can execute, and close them
+during application shutdown.
 
-**Entity type conventions** (see `types.ts` header):
-- `person`, `organization`, `topic`: minimal metadata.
-- `task`: `metadata.{state, dueAt, priority, assigneeId, reporterId, projectId}`. State history via supersession facts.
-- `event`: `metadata.{startTime, endTime, attendeeIds, location, kind}`.
-- `project`, `cluster`: extensible.
-- **`canonical` identifier kind** — library-blessed deterministic id for entities without a natural external key. Build via `canonicalIdentifier(type, parts)` from `src/memory/identifiers.ts`. Tier-1 identifier match means re-extractions converge on the same entity across signals.
-- **Task-state vocabulary is configurable** via `MemorySystemConfig.taskStates: { active, terminal }`. Default legacy vocab: `active: ['pending','in_progress','blocked','deferred']`, `terminal: ['done','cancelled']`. Drives `getContext.relatedTasks` filtering. Arrays must be disjoint + non-empty.
-- **`upsertEntityBySurface` accepts `metadata`** — on create, set verbatim; on resolve, conservative `fillMissing` merge (existing keys NEVER overwritten). Opt into shallow-overwrite via `UpsertBySurfaceOptions.metadataMerge: 'overwrite'`. LLM-driven re-extraction cannot flip `state` or `dueAt` by mistake. `ExtractionMention.metadata` flows through the extractor.
-- **`transitionTaskState(taskId, newState, opts, scope)`** — canonical task-state mutator. Sets `metadata.state`, appends `metadata.stateHistory` (capped via `stateHistoryCap`, default 200), sets `completedAt` on terminal. No audit fact is written — `stateHistory` is the only trail. `validate: 'strict'|'warn'|'none'`. No-op when `from === to`. **Host-driven only** — there is no LLM auto-routing; extraction prompts must not emit `state_changed` (that predicate is gone, see consolidation note below).
-- **`listOpenTasks` / `listRecentTopics`** — convenience fetchers for prompt injection. `listOpenTasks` filters by configured `taskStates.active`, supports `assigneeId`/`projectId`, sorts by `dueAt` asc / `updatedAt` desc. Both clamp limit to `[1, 200]`.
-- **Prompt v7 (`DEFAULT_EXTRACTION_PROMPT_VERSION = 7`)** — Parsimony section (1 fact per knowledge, zero-fact valid), metadata-on-mentions replaces attribute facts for `task.state`/`dueAt` + `event.startTime`/etc, task transitions are host-driven (no `state_changed` fact). Type-aware `knownEntities` rendering.
-- **Predicate consolidation (2026-05-25, BREAKING)** — deleted `approved`, `assigned_task`, `delegated_to`, `state_changed`, `has_status`, `current_status`. New `decision_made` predicate (`decision` category) subsumes `approved` and captures choices/agreements first-class. Task assignment lives on `task.metadata.assigneeId`; lineage on `committed_to(person, task)`. Status narratives belong on entity metadata. Standard set: **54 predicates across 11 categories**.
-- **`SignalIngestorConfig.contextHints`** — opt-in auto-inject of open tasks + recent topics into the prompt. `{ openTasks: true | { limit }, recentTopics: true | { days?, limit? } }`. Off by default (token guardrail). Fetched via `memory.listOpenTasks` / `listRecentTopics`, merged after caller-supplied `knownEntities` with id-dedupe.
-- **`CalendarSignalAdapter`** — reference adapter for calendar events. Emits event entity (canonical id + metadata), person seeds for organizer + attendees, `hosted`/`attended` `seedFacts` written deterministically by SignalIngestor. Declined attendees skip `attended` fact. Re-ingestion converges via canonical id.
-- **`ParticipantSeed.metadata`** + **`SeedFact`** + **`ExtractedSignal.seedFacts`** — adapters can now emit type-specific metadata on seeds and deterministic relational facts. SignalIngestor writes seedFacts after seed resolution, one per role-pair.
-- **Standard predicate registry: `attended` + `hosted`** in new `event` category. `resolveRelatedEvents` extended with a third tier that walks `attended`/`hosted` facts so events surface for attendees even without `attendeeIds` metadata duplication.
+## Persistence, tenancy, and cleanup
 
-**Key invariants:**
-- `IFact`: `contextIds?` for multi-entity binding; `importance?` (0..1, default 0.5) multiplies into ranking; `sourceSignalId?` opaque (library user owns the signal store).
-- `getContext` returns profile + topFacts (subject OR object OR contextIds) + relatedTasks + relatedEvents by default. Pass `tiers: 'minimal'` to suppress.
-- **Owner required:** every entity + fact MUST have `ownerId`. `OwnerRequiredError` thrown at creation when absent from both input and `scope.userId`. Admins can set `ownerId` to any user id (no equality check vs `scope.userId`).
-- **Permissions (three-principal):** every record carries optional `permissions: { group?, world? }` with `AccessLevel = 'none'|'read'|'write'`. Owner always has full access. Defaults: `group='read'`, `world='read'` (public-read, owner-write). See `src/memory/AccessControl.ts` + `docs/MEMORY_PERMISSIONS.md`.
-- **Read vs write enforcement:** reads are filtered at storage (adapter translates `canAccess(..., 'read')` into native query). Writes are checked at MemorySystem (`assertCanAccess(..., 'write')` throws `PermissionDeniedError`).
-- Scope visibility: `(groupId, ownerId)` absent = global; both match for user-within-group. Layered under permissions — scope defines the principal; permissions define the level.
-- Tests: 728 memory unit tests (40 files). Mongo real-DB integration gated on `mongodb` + `mongodb-memory-server` optional peer deps.
+- Set `userId` on the agent; it flows into tool execution and session metadata.
+- Restrict visible external identities with `identities`.
+- Configure backend factories through `StorageRegistry` rather than hard-coding
+  storage inside plugins.
+- Save/load context through `agent.context.save()` and `load()` when sessions
+  must survive restarts.
+- Call `destroy()` on disposable agents, contexts, plugins, and clients during
+  teardown.
 
-**Mongo deployment checklist (client app responsibility, not library):**
-- Call `memorySystem.ensureAdapterIndexes()` from your migration — creates the performance + correctness indexes documented in `src/memory/adapters/mongo/indexes.ts`. Idempotent. No-op for `InMemoryAdapter`.
-- **Additionally** create a unique index on `{identifiers.kind: 1, identifiers.value: 1}` for the entities collection (partial, filtered on documents that actually have that identifier). Required to prevent cross-process bootstrap races in `MemoryPluginNextGen` — two containers upserting the same user/agent entity simultaneously produce duplicates otherwise. Not created automatically: adding a unique index to a collection with existing duplicates fails; build + verify it explicitly in a migration.
-- Atlas Vector Search indexes live outside `ensureAdapterIndexes()` because they need runtime parameters (`dimensions`, `similarity`). **Create them programmatically — not through the Atlas UI.**
-  - **Programmatic (required):** `await (adapter as MongoMemoryAdapter).ensureVectorSearchIndexes({ dimensions: embedder.dimensions })`. Idempotent, fire-and-forget — Atlas builds the index asynchronously in 30–60s; runs during startup migrations so the index is ready before real traffic. Creates both the facts-level (`embedding`) and entities-level (`identityEmbedding`, used by `EntityResolver` semantic tier) indexes. Defaults to the adapter's configured `vectorIndexName` / `entityVectorIndexName`; pass `factsIndexName: null` or `entitiesIndexName: null` to skip one. Requires mongodb node driver v6.6+ and Atlas Server v6.0.11+.
-  - **⚠️ Manual UI creation (strongly discouraged — security footgun):** Atlas `$vectorSearch` silently ignores `filter:` clauses for any path not declared as `type:'filter'` in the index. A UI-created index that omits `groupId` / `ownerId` / `permissions.group` / `permissions.world` / `archived` gives you a cross-owner read leak with **no error at query time**. If you truly must create manually, declare every path listed in `FACTS_FILTER_PATHS` / `ENTITIES_FILTER_PATHS` in `MongoMemoryAdapter.ts` as `type:'filter'`, and verify by running `ensureVectorSearchIndexes()` afterward (it's idempotent and will flag drift). The programmatic path is the supported one — treat manual UI creation as unsupported.
+## Documentation routing
+
+| Need | Read |
+|------|------|
+| First integration | `README.md`, then `examples/README.md` |
+| Complete usage guide | `USER_GUIDE.md` |
+| Public signatures | `API_REFERENCE.md` |
+| Connectors and every tool source | `docs/CONNECTOR_TOOL_CATALOG.md` |
+| Long-term memory | `docs/MEMORY_GUIDE.md` |
+| Memory API / security / predicates / ingestion | `docs/MEMORY_API.md`, `docs/MEMORY_PERMISSIONS.md`, `docs/MEMORY_PREDICATES.md`, `docs/MEMORY_SIGNALS.md` |
+| Release migration | `CHANGELOG.md` and the upgrade section in `USER_GUIDE.md` |
+| Runnable examples | `examples/README.md` and `examples/*.ts` |
+
+When documentation and source disagree, verify the public export and tests,
+then fix the stale documentation in the same change.
+
+## Repository map
+
+```text
+src/core/                    Agent, Connector, context, tools, permissions,
+                             orchestration, MCP, storage
+src/core/context-nextgen/    Context manager and plugins
+src/memory/                  Entity/fact memory system and adapters
+src/capabilities/            Search, scrape, images, video, speech, embeddings
+src/infrastructure/          Providers, resilience, storage implementations
+src/tools/                   Built-in and connector tool implementations
+src/connectors/              OAuth, vendor templates, connector storage
+examples/                    Runnable integration examples
+apps/amos/                   Terminal agent reference application
+```
+
+## Repository validation
+
+Use the smallest relevant checks while iterating, then broaden in proportion to
+risk:
+
+```bash
+npm run build
+npm run typecheck
+npm run lint
+npm run test:unit
+npm run examples:check
+```
+
+Integration tests require real credentials and are not the default validation
+path. Never add or print secrets to make them pass.
+
+## Final checklist for coding agents
+
+- Did you use a named connector rather than direct SDK credentials?
+- Did you use only public package exports in consumer code?
+- Did you choose `run`, `stream`, or `runDirect` intentionally?
+- Are tools scoped, permissioned, uniquely named, and serializable?
+- Are connector identities and memory scope derived from trusted host state?
+- Did you avoid deprecated `PersistentInstructions`/`UserInfo` for new designs?
+- Did you use registries rather than guessing model capabilities?
+- Did you follow the specialist guide for memory, OAuth, or MCP work?
+- Did you run the relevant build, type, and test checks?
 
 ---
 
-**Version**: 1.0.0 | **Last Updated**: 2026-08-08 | **Architecture**: Connector-First + NextGen Context
+Version: 1.0.0 | Runtime: Node.js 22+ | Architecture: Connector-first +
+NextGen context

@@ -39,6 +39,40 @@ Read the [complete 1.0.0 release notes](./CHANGELOG.md#100--2026-08-08),
 [upgrade guide](./USER_GUIDE.md#upgrading-to-100), and
 [official-source model audit](./docs/MODEL_REGISTRY_AUDIT.md) before deploying.
 
+## Built for coding agents
+
+OneRingAI ships a canonical **[Agent Guide](./AGENTS.md)** that gives Codex,
+Claude Code, and custom coding agents the complete mental model they need to
+work with the library: connector-first authentication, agents and execution
+modes, tools, context plugins, memory, multimodal APIs, orchestration, MCP,
+tenancy, persistence, documentation routing, and validation.
+
+In this repository, `AGENTS.md` is the shared source of truth and
+[`CLAUDE.md`](./CLAUDE.md) directs Claude Code to it. When OneRingAI is installed
+from npm, both files—plus the public API reference and specialist memory/tool
+guides—are included in the package. If an agent does not discover the guide
+automatically, give it this one instruction:
+
+```text
+Before writing OneRingAI code, read
+node_modules/@everworker/oneringai/AGENTS.md in full. Follow its connector-first
+patterns, use only public package exports, and consult the specialist document
+it routes you to before guessing an API.
+```
+
+That is enough to orient an agent before asking it to build something:
+
+```text
+Now create a TypeScript research agent that uses my named OpenAI connector,
+Serper for search, ZenRows for scraping, and the tool catalog. Keep credentials
+out of code and add a runnable smoke test.
+```
+
+Custom agents can load the same file into their system/developer context. The
+guide is deliberately concise enough to load as context while linking to the
+full User Guide, API reference, connector/tool catalog, memory documentation,
+and runnable examples when deeper work is required.
+
 ## Meet AMOS: a terminal agent built with OneRingAI
 
 > **Want to see the library running as a real application?** AMOS is the
@@ -122,6 +156,7 @@ plugin lifecycle, stores, compaction, persistence, and custom plugins.
 
 - [What's new in v1.0.0](#whats-new-in-v100)
 - [Before upgrading](#before-upgrading)
+- [Built for coding agents](#built-for-coding-agents)
 - [Meet AMOS: a terminal agent built with OneRingAI](#meet-amos-a-terminal-agent-built-with-oneringai)
 - [Memory is a first-class subsystem](#memory-is-a-first-class-subsystem)
 - [Context plugins and tools are modular by design](#context-plugins-and-tools-are-modular-by-design)
@@ -186,6 +221,7 @@ plugin lifecycle, stores, compaction, persistence, and custom plugins.
 
 | Document | Description |
 |----------|-------------|
+| **[Agent Guide](./AGENTS.md)** | Canonical context file for Codex, Claude Code, and custom coding agents: architecture, recipes, capability routing, safety invariants, and documentation map |
 | **[User Guide](./USER_GUIDE.md)** | Comprehensive guide covering every feature with examples — connectors, agents, context, plugins, audio, video, search, MCP, OAuth, and more |
 | **[API Reference](./API_REFERENCE.md)** | Auto-generated reference for all public exports — classes, interfaces, types, and functions with signatures |
 | **[Memory Layer Guide](./docs/MEMORY_GUIDE.md)** | Standalone entity/fact memory system: graph and vector retrieval, ingestion, resolution, profiles, adapters, scaling, and agent integration |
