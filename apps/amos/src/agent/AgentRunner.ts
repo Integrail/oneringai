@@ -1,840 +1,538 @@
 /**
- * AgentRunner - Wrapper around UniversalAgent for AMOS
- *
- * Provides a simplified interface for the app to interact with the agent.
- *
- * Phase 1 Improvements:
- * - Extracted permission config building to permissionUtils.ts (DRY)
- * - Added proper types from library (UniversalResponse, UniversalEvent)
- * - Type-safe response and event mapping
+ * AgentRunner - AMOS adapter for the current OneRingAI Agent API.
  */
 
 import {
-  UniversalAgent,
-  FileSessionStorage,
-  type ToolFunction,
+  Agent,
+  ContentType,
+  FileContextStorage,
+  MessageRole,
+  StreamEventType,
   type ApprovalDecision,
-  type UniversalResponse,
-  type UniversalEvent,
-  type AgentMode,
-  type UniversalAgentContextAccess,
+  type InputItem,
+  type StreamEvent as LibraryStreamEvent,
+  type ToolFunction,
 } from '@everworker/oneringai';
 import type {
-  IAgentRunner,
   AgentResponse,
-  StreamEvent,
   AmosConfig,
-  TokenUsage,
-  ToolApprovalContext,
-  TaskInfo,
+  CacheStatsInfo,
+  ContextBreakdownInfo,
+  ContextBudgetInfo,
   ContextMetrics,
   HistoryEntry,
-  ContextBudgetInfo,
-  ContextBreakdownInfo,
-  CacheStatsInfo,
+  IAgentRunner,
   MemoryEntryInfo,
+  SessionSummaryInfo,
+  StreamEvent,
+  TokenUsage,
+  ToolApprovalContext,
 } from '../config/types.js';
 import { buildPermissionsConfig } from './permissionUtils.js';
 
 export class AgentRunner implements IAgentRunner {
-  private agent: UniversalAgent | null = null;
-  private config: AmosConfig;
+  private agent: Agent | null = null;
+  private readonly config: AmosConfig;
   private tools: ToolFunction[];
-  private sessionDir: string;
-  private _isRunning: boolean = false;
+  private readonly storage: FileContextStorage;
+  private _isRunning = false;
   private _currentModel: string;
   private _currentTemperature: number;
-  private _connectorName: string = '';
+  private _connectorName = '';
   private _instructions: string | null = null;
-
-  // For interactive tool approval
   private _onApprovalRequired: ((context: ToolApprovalContext) => Promise<ApprovalDecision>) | null = null;
 
-  constructor(
-    config: AmosConfig,
-    tools: ToolFunction[],
-    sessionDir: string = './data/sessions'
-  ) {
+  constructor(config: AmosConfig, tools: ToolFunction[], sessionDir = './data/sessions') {
     this.config = config;
     this.tools = tools;
-    this.sessionDir = sessionDir;
     this._currentModel = config.activeModel || config.defaults.model;
     this._currentTemperature = config.defaults.temperature;
+    this.storage = new FileContextStorage({
+      agentId: 'amos',
+      baseDirectory: sessionDir,
+      prettyPrint: true,
+    });
   }
 
-  /**
-   * Set the system instructions (from prompt template)
-   */
   setInstructions(instructions: string | null): void {
     this._instructions = instructions;
-    // Note: Instruction changes require agent recreation
   }
 
-  /**
-   * Get the current instructions
-   */
   getInstructions(): string | null {
     return this._instructions;
   }
 
-  /**
-   * Initialize the agent
-   */
   async initialize(connectorName: string, model: string): Promise<void> {
-    // Destroy existing agent if any
-    if (this.agent) {
-      this.agent.destroy();
-    }
-
+    this.destroyAgentOnly();
     this._connectorName = connectorName;
     this._currentModel = model;
 
-    const sessionConfig = this.config.session.autoSave
-      ? {
-          storage: new FileSessionStorage({ directory: this.sessionDir }),
-          autoSave: true,
-          autoSaveIntervalMs: this.config.session.autoSaveIntervalMs,
-        }
-      : undefined;
+    const agentConfig = this.buildAgentConfig(connectorName, model);
+    const sessionId = this.config.session.activeSessionId;
 
-    // Build permissions config using shared utility (DRY - Phase 1.1)
-    const permissionsConfig = buildPermissionsConfig(this.config, this._onApprovalRequired ?? undefined);
-
-    // If we have a session to resume, use resume method
-    if (this.config.session.activeSessionId && sessionConfig) {
-      try {
-        this.agent = await UniversalAgent.resume(
-          this.config.session.activeSessionId,
-          {
-            connector: connectorName,
-            model: model,
-            tools: this.tools,
-            temperature: this._currentTemperature,
-            instructions: this._instructions || undefined,
-            planning: {
-              enabled: this.config.planning.enabled,
-              autoDetect: this.config.planning.autoDetect,
-              requireApproval: this.config.planning.requireApproval,
-            },
-            session: sessionConfig,
-            permissions: permissionsConfig,
-          }
-        );
-        return;
-      } catch {
-        // Session might not exist, create new agent
-      }
+    if (sessionId && await this.storage.exists(sessionId)) {
+      this.agent = await Agent.resume(sessionId, {
+        ...agentConfig,
+        session: { storage: this.storage },
+      });
+      return;
     }
 
-    // Create new agent with shared permissions config
-    this.agent = UniversalAgent.create({
+    // Old UniversalAgent session files use a different format and location.
+    // Start clean when a configured session no longer exists in current storage.
+    if (sessionId) {
+      this.config.session.activeSessionId = null;
+    }
+    this.agent = Agent.create(agentConfig);
+  }
+
+  private buildAgentConfig(connectorName: string, model: string) {
+    return {
+      name: 'amos',
       connector: connectorName,
-      model: model,
+      model,
       tools: this.tools,
       temperature: this._currentTemperature,
-      instructions: this._instructions || undefined,
-      planning: {
-        enabled: this.config.planning.enabled,
-        autoDetect: this.config.planning.autoDetect,
-        requireApproval: this.config.planning.requireApproval,
+      instructions: this.buildInstructions(),
+      session: {
+        storage: this.storage,
+        autoSave: this.config.session.autoSave,
+        autoSaveIntervalMs: this.config.session.autoSaveIntervalMs,
       },
-      session: sessionConfig,
-      permissions: permissionsConfig,
-    });
+      permissions: buildPermissionsConfig(
+        this.config,
+        this._onApprovalRequired ?? undefined,
+      ),
+    };
   }
 
   /**
-   * Check if agent is ready
+   * UniversalAgent's structured planner was removed before 1.0. AMOS keeps its
+   * planning toggle as model guidance: complex work is planned conversationally,
+   * and approval is requested before state-changing execution when configured.
    */
+  private buildInstructions(): string | undefined {
+    const parts: string[] = [];
+    if (this._instructions?.trim()) parts.push(this._instructions.trim());
+
+    if (this.config.planning.enabled && this.config.planning.autoDetect) {
+      parts.push([
+        'For complex multi-step requests, first present a concise numbered plan.',
+        this.config.planning.requireApproval
+          ? 'Before executing state-changing steps or tools, ask the user to approve the plan and wait for their next message.'
+          : 'After presenting the plan, proceed with its steps.',
+        'Simple requests should be answered directly without unnecessary planning.',
+      ].join(' '));
+    }
+
+    return parts.length > 0 ? parts.join('\n\n') : undefined;
+  }
+
   isReady(): boolean {
     return this.agent !== null;
   }
 
-  /**
-   * Check if agent is running
-   */
   isRunning(): boolean {
     return this._isRunning || (this.agent?.isRunning() ?? false);
   }
 
-  /**
-   * Check if agent is paused
-   */
   isPaused(): boolean {
     return this.agent?.isPaused() ?? false;
   }
 
-  /**
-   * Run a single interaction
-   */
   async run(input: string): Promise<AgentResponse> {
-    if (!this.agent) {
-      throw new Error('Agent not initialized');
-    }
-
+    const agent = this.requireAgent();
     this._isRunning = true;
+    const startedAt = Date.now();
 
     try {
-      const startTime = Date.now();
-      const response = await this.agent.chat(input);
-      const duration = Date.now() - startTime;
+      const response = await agent.run(input);
+      const usage: TokenUsage = {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        totalTokens: response.usage.total_tokens,
+      };
 
-      return this.formatResponse(response, duration);
+      const result: AgentResponse = {
+        text: response.output_text ?? '',
+        mode: 'interactive',
+        usage,
+        duration: Date.now() - startedAt,
+      };
+      await this.autoSaveIfEnabled();
+      return result;
     } finally {
       this._isRunning = false;
     }
   }
 
-  /**
-   * Stream a response
-   */
   async *stream(input: string): AsyncGenerator<StreamEvent> {
-    if (!this.agent) {
-      throw new Error('Agent not initialized');
-    }
-
+    const agent = this.requireAgent();
     this._isRunning = true;
 
     try {
-      for await (const event of this.agent.stream(input)) {
-        yield this.mapStreamEvent(event);
+      for await (const event of agent.stream(input)) {
+        const mapped = this.mapStreamEvent(event);
+        if (mapped) yield mapped;
       }
+      await this.autoSaveIfEnabled();
     } finally {
       this._isRunning = false;
     }
   }
 
-  /**
-   * Pause execution
-   */
   pause(): void {
     this.agent?.pause();
   }
 
-  /**
-   * Resume execution
-   */
   resume(): void {
     this.agent?.resume();
   }
 
-  /**
-   * Cancel execution
-   */
   cancel(): void {
     this.agent?.cancel();
     this._isRunning = false;
   }
 
-  /**
-   * Set the model - requires agent recreation
-   */
   setModel(model: string): void {
     this._currentModel = model;
-    // Note: Model change requires agent recreation
-    // The app should call createAgent() after changing model
   }
 
-  /**
-   * Get the current model
-   */
   getModel(): string {
     return this._currentModel;
   }
 
-  /**
-   * Set temperature - requires agent recreation
-   */
   setTemperature(temp: number): void {
     this._currentTemperature = temp;
-    // Note: Temperature change requires agent recreation
   }
 
-  /**
-   * Get temperature
-   */
   getTemperature(): number {
     return this._currentTemperature;
   }
 
-  /**
-   * Set planning enabled
-   */
-  setPlanningEnabled(enabled: boolean): void {
+  updateTools(tools: ToolFunction[]): void {
     if (this.agent) {
-      this.agent.setPlanningEnabled(enabled);
+      const nextNames = new Set(tools.map((tool) => tool.definition.function.name));
+      for (const oldTool of this.tools) {
+        const name = oldTool.definition.function.name;
+        if (!nextNames.has(name)) this.agent.tools.unregister(name);
+      }
+      for (const tool of tools) {
+        const name = tool.definition.function.name;
+        if (this.agent.tools.has(name)) this.agent.tools.unregister(name);
+        this.agent.addTool(tool);
+      }
     }
+    this.tools = tools;
   }
 
-  /**
-   * Set auto approval
-   */
-  setAutoApproval(enabled: boolean): void {
-    if (this.agent) {
-      this.agent.setAutoApproval(enabled);
-    }
+  getMode(): 'interactive' | 'planning' | 'executing' {
+    return 'interactive';
   }
 
-  /**
-   * Save session
-   */
-  async saveSession(): Promise<string> {
-    if (!this.agent) {
-      throw new Error('Agent not initialized');
+  async saveSession(name?: string): Promise<string> {
+    const agent = this.requireAgent();
+    await agent.saveSession(undefined, name ? { title: name } : undefined);
+    const sessionId = agent.getSessionId();
+    if (!sessionId) throw new Error('Session storage did not assign an ID');
+    if (name) {
+      await this.storage.updateMetadata(sessionId, { title: name });
     }
-
-    await this.agent.saveSession();
-
-    // Return session ID
-    return this.agent.getSessionId() ?? 'unknown';
-  }
-
-  /**
-   * Load session - requires agent recreation
-   */
-  async loadSession(sessionId: string): Promise<void> {
-    // We need to recreate the agent with the session ID
-    // Store the session ID in config and reinitialize
     this.config.session.activeSessionId = sessionId;
-    await this.initialize(this._connectorName, this._currentModel);
+    return sessionId;
   }
 
-  /**
-   * Get session ID
-   */
+  async loadSession(sessionId: string): Promise<void> {
+    const agent = this.requireAgent();
+    const loaded = await agent.loadSession(sessionId);
+    if (!loaded) throw new Error(`Session '${sessionId}' not found`);
+    this.config.session.activeSessionId = sessionId;
+  }
+
+  async listSessions(): Promise<SessionSummaryInfo[]> {
+    const sessions = await this.storage.list();
+    return sessions.map((session) => ({
+      id: session.sessionId,
+      title: session.metadata?.title,
+      createdAt: session.createdAt,
+      lastSavedAt: session.lastSavedAt,
+      messageCount: session.messageCount,
+      memoryEntryCount: session.memoryEntryCount,
+    }));
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.storage.delete(sessionId);
+    if (this.config.session.activeSessionId === sessionId) {
+      this.config.session.activeSessionId = null;
+    }
+  }
+
   getSessionId(): string | null {
     return this.agent?.getSessionId() ?? null;
   }
 
-  /**
-   * Update tools - requires agent recreation
-   */
-  updateTools(tools: ToolFunction[]): void {
-    this.tools = tools;
-    // Note: Tool changes require agent recreation
-  }
-
-  /**
-   * Get current mode
-   */
-  getMode(): AgentMode {
-    return this.agent?.getMode() ?? 'interactive';
-  }
-
-  /**
-   * Get current plan
-   */
-  getPlan(): unknown {
-    return this.agent?.getPlan() ?? null;
-  }
-
-  /**
-   * Get context access (Phase 2 - provides access to UniversalAgent's context)
-   */
-  getContext(): UniversalAgentContextAccess | null {
-    return this.agent?.context ?? null;
-  }
-
-  /**
-   * Get context metrics (Phase 2 - unified metrics from context)
-   *
-   * Returns metrics including:
-   * - History message count
-   * - Memory statistics
-   * - Current mode
-   * - Plan status
-   */
   async getContextMetrics(): Promise<ContextMetrics | null> {
     const context = this.agent?.context;
-    if (!context) {
-      return null;
-    }
+    if (!context) return null;
 
     try {
-      const metrics = await context.getMetrics();
+      const memory = context.memory;
+      const state = memory?.getState();
       return {
-        historyMessageCount: metrics.historyMessageCount,
-        memoryStats: metrics.memoryStats,
-        mode: metrics.mode,
-        hasPlan: metrics.hasPlan,
+        historyMessageCount: context.getConversationLength(),
+        memoryStats: {
+          totalEntries: state?.entries.length ?? 0,
+          totalSizeBytes: state?.entries.reduce((sum, entry) => sum + entry.sizeBytes, 0) ?? 0,
+        },
+        mode: 'interactive',
+        hasPlan: false,
       };
     } catch {
       return null;
     }
   }
 
-  /**
-   * Get conversation history (Phase 2 - access to history via context)
-   *
-   * @param count - Number of recent messages to return (default: all)
-   * @returns Array of history entries
-   */
   async getConversationHistory(count?: number): Promise<HistoryEntry[]> {
     const context = this.agent?.context;
-    if (!context) {
-      return [];
-    }
+    if (!context) return [];
 
     try {
-      const history = context.history;
-      // Note: IHistoryManager methods are async
-      const messages = count
-        ? await history.getRecentMessages(count)
-        : await history.getMessages();
+      const sessionId = this.getSessionId();
+      if (sessionId && context.journal) {
+        const journalEntries = await context.journal.read(sessionId, {
+          types: ['user', 'assistant', 'system'],
+        });
+        const entries = journalEntries
+          .map((entry) => this.mapHistoryItem(entry.item, entry.timestamp))
+          .filter((entry): entry is HistoryEntry => entry !== null);
+        return count ? entries.slice(-count) : entries;
+      }
 
-      return messages.map((msg) => ({
-        id: msg.id || `msg-${Date.now()}`,
-        role: msg.role as 'user' | 'assistant' | 'system',
-        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-        timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+      const entries = context.getConversation()
+        .map((item) => this.mapHistoryItem(item))
+        .filter((entry): entry is HistoryEntry => entry !== null);
+      return count ? entries.slice(-count) : entries;
+    } catch {
+      return [];
+    }
+  }
+
+  async getContextBudget(): Promise<ContextBudgetInfo | null> {
+    const context = this.agent?.context;
+    if (!context) return null;
+
+    try {
+      const budget = await context.calculateBudget();
+      const utilization = budget.utilizationPercent;
+      return {
+        total: budget.maxTokens,
+        reserved: budget.responseReserve,
+        used: budget.totalUsed,
+        available: Math.max(0, budget.available),
+        utilizationPercent: utilization,
+        status: utilization >= 90 ? 'critical' : utilization >= 75 ? 'warning' : 'ok',
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async getContextBreakdown(): Promise<ContextBreakdownInfo | null> {
+    const context = this.agent?.context;
+    if (!context) return null;
+
+    try {
+      const budget = await context.calculateBudget();
+      const flat: Record<string, number> = {
+        systemPrompt: budget.breakdown.systemPrompt,
+        persistentInstructions: budget.breakdown.persistentInstructions,
+        pluginInstructions: budget.breakdown.pluginInstructions,
+        tools: budget.breakdown.tools,
+        conversation: budget.breakdown.conversation,
+        currentInput: budget.breakdown.currentInput,
+        ...Object.fromEntries(
+          Object.entries(budget.breakdown.pluginContents)
+            .map(([name, tokens]) => [`plugin:${name}`, tokens]),
+        ),
+      };
+      const components = Object.entries(flat)
+        .filter(([, tokens]) => tokens > 0)
+        .map(([name, tokens]) => ({
+          name,
+          tokens,
+          percent: budget.totalUsed > 0 ? (tokens / budget.totalUsed) * 100 : 0,
+        }))
+        .sort((a, b) => b.tokens - a.tokens);
+      return { totalUsed: budget.totalUsed, components };
+    } catch {
+      return null;
+    }
+  }
+
+  async getCacheStats(): Promise<CacheStatsInfo | null> {
+    return null;
+  }
+
+  async getMemoryEntries(): Promise<MemoryEntryInfo[]> {
+    const context = this.agent?.context;
+    if (!context) return [];
+
+    try {
+      const state = context.memory?.getState();
+      if (!state) return [];
+      return state.entries.map((entry) => ({
+        key: entry.key,
+        description: entry.description,
+        sizeBytes: entry.sizeBytes,
+        scope: typeof entry.scope === 'string'
+          ? entry.scope
+          : entry.scope.type === 'task'
+            ? `task (${entry.scope.taskIds?.length ?? 0} tasks)`
+            : entry.scope.type,
+        priority: entry.basePriority ?? 'normal',
       }));
     } catch {
       return [];
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Context Inspection (Phase 3 - detailed context inspection)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Get detailed context budget information
-   *
-   * Uses the context builder to calculate current token usage and budget.
-   *
-   * @returns Context budget info or null if not available
-   */
-  async getContextBudget(): Promise<ContextBudgetInfo | null> {
-    const context = this.agent?.context;
-    if (!context) {
-      return null;
-    }
-
-    try {
-      const contextBuilder = context.contextBuilder;
-      const config = contextBuilder.getConfig();
-
-      // Build context to get current usage
-      const built = await contextBuilder.build('', {});
-
-      const total = config.maxTokens ?? 128000;
-      const responseReserve = config.responseReserve ?? 0.15;
-      const reserved = Math.floor(total * responseReserve);
-      const used = built.estimatedTokens;
-      const available = total - reserved - used;
-
-      // Calculate utilization percentage (relative to available budget after reserve)
-      const availableBudget = total - reserved;
-      const utilizationPercent = availableBudget > 0
-        ? (used / availableBudget) * 100
-        : 0;
-
-      // Determine status
-      const utilizationRatio = (used + reserved) / total;
-      let status: 'ok' | 'warning' | 'critical';
-      if (utilizationRatio >= 0.9) {
-        status = 'critical';
-      } else if (utilizationRatio >= 0.75) {
-        status = 'warning';
-      } else {
-        status = 'ok';
-      }
-
-      return {
-        total,
-        reserved,
-        used,
-        available: Math.max(0, available),
-        utilizationPercent,
-        status,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Get detailed token breakdown by component
-   *
-   * @returns Component breakdown or null if not available
-   */
-  async getContextBreakdown(): Promise<ContextBreakdownInfo | null> {
-    const context = this.agent?.context;
-    if (!context) {
-      return null;
-    }
-
-    try {
-      const contextBuilder = context.contextBuilder;
-
-      // Build context to get token breakdown
-      const built = await contextBuilder.build('', {});
-
-      const totalUsed = built.estimatedTokens;
-      const components: ContextBreakdownInfo['components'] = [];
-
-      for (const [name, tokens] of Object.entries(built.tokenBreakdown)) {
-        const percent = totalUsed > 0 ? (tokens / totalUsed) * 100 : 0;
-        components.push({
-          name,
-          tokens,
-          percent,
-        });
-      }
-
-      // Sort by tokens descending
-      components.sort((a, b) => b.tokens - a.tokens);
-
-      return {
-        totalUsed,
-        components,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Get cache statistics
-   *
-   * Note: UniversalAgent does not expose IdempotencyCache through context.
-   * This returns null as cache stats are not available for this agent type.
-   *
-   * @returns Cache stats or null if not available
-   */
-  async getCacheStats(): Promise<CacheStatsInfo | null> {
-    // UniversalAgent doesn't expose cache through context
-    // Cache is used internally by TaskAgent but not exposed here
-    return null;
-  }
-
-  /**
-   * Get all memory entries
-   *
-   * @returns Array of memory entry information
-   */
-  async getMemoryEntries(): Promise<MemoryEntryInfo[]> {
-    const context = this.agent?.context;
-    if (!context) {
-      return [];
-    }
-
-    try {
-      const memory = context.memory;
-      const index = await memory.getIndex();
-
-      return index.entries.map((entry) => {
-        // Format scope as string
-        let scopeStr: string;
-        if (typeof entry.scope === 'string') {
-          scopeStr = entry.scope;
-        } else if (entry.scope && typeof entry.scope === 'object' && 'type' in entry.scope) {
-          const s = entry.scope as { type: string; taskIds?: string[] };
-          if (s.type === 'task' && s.taskIds) {
-            scopeStr = `task (${s.taskIds.length} tasks)`;
-          } else {
-            scopeStr = s.type;
-          }
-        } else {
-          scopeStr = 'session';
-        }
-
-        // Parse size string to bytes (e.g., "1.5 KB" -> 1536)
-        let sizeBytes = 0;
-        const sizeMatch = entry.size.match(/^([\d.]+)\s*(B|KB|MB|GB)$/i);
-        if (sizeMatch) {
-          const value = parseFloat(sizeMatch[1]);
-          const unit = sizeMatch[2].toUpperCase();
-          const multipliers: Record<string, number> = { B: 1, KB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024 };
-          sizeBytes = Math.round(value * (multipliers[unit] || 1));
-        }
-
-        return {
-          key: entry.key,
-          description: entry.description,
-          sizeBytes,
-          scope: scopeStr,
-          priority: entry.effectivePriority,
-        };
-      });
-    } catch {
-      return [];
-    }
-  }
-
-  /**
-   * Destroy the agent
-   */
-  destroy(): void {
-    if (this.agent) {
-      this.agent.destroy();
-      this.agent = null;
-    }
-    this._isRunning = false;
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Permission Management
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Set the callback for interactive tool approval
-   */
-  setApprovalHandler(
-    handler: ((context: ToolApprovalContext) => Promise<ApprovalDecision>) | null
-  ): void {
+  setApprovalHandler(handler: ((context: ToolApprovalContext) => Promise<ApprovalDecision>) | null): void {
     this._onApprovalRequired = handler;
   }
 
-  /**
-   * Approve a tool for the current session
-   */
   approveToolForSession(toolName: string): void {
-    if (this.agent) {
-      this.agent.permissions.approveForSession(toolName);
-    }
+    this.agent?.policyManager.approve(toolName, { scope: 'session' });
   }
 
-  /**
-   * Revoke a tool's approval
-   */
   revokeToolApproval(toolName: string): void {
-    if (this.agent) {
-      this.agent.permissions.revoke(toolName);
-    }
+    this.agent?.policyManager.revoke(toolName);
   }
 
-  /**
-   * Add a tool to the allowlist (always allowed)
-   */
   allowlistTool(toolName: string): void {
-    if (this.agent) {
-      this.agent.permissions.allowlistAdd(toolName);
-    }
+    this.agent?.policyManager.allowlistAdd(toolName);
   }
 
-  /**
-   * Add a tool to the blocklist (always blocked)
-   */
   blocklistTool(toolName: string): void {
-    if (this.agent) {
-      this.agent.permissions.blocklistAdd(toolName);
-    }
+    this.agent?.policyManager.blocklistAdd(toolName);
   }
 
-  /**
-   * Remove a tool from the allowlist
-   */
   removeFromAllowlist(toolName: string): void {
-    if (this.agent) {
-      this.agent.permissions.allowlistRemove(toolName);
-    }
+    this.agent?.policyManager.allowlistRemove(toolName);
   }
 
-  /**
-   * Remove a tool from the blocklist
-   */
   removeFromBlocklist(toolName: string): void {
-    if (this.agent) {
-      this.agent.permissions.blocklistRemove(toolName);
+    this.agent?.policyManager.blocklistRemove(toolName);
+  }
+
+  getApprovedTools(): string[] {
+    const approvals = this.agent?.policyManager.getState().approvals ?? {};
+    return Object.keys(approvals);
+  }
+
+  getAllowlist(): string[] {
+    return this.agent?.policyManager.getState().allowlist ?? this.config.permissions.allowlist;
+  }
+
+  getBlocklist(): string[] {
+    return this.agent?.policyManager.getState().blocklist ?? this.config.permissions.blocklist;
+  }
+
+  toolNeedsApproval(toolName: string): boolean {
+    const tool = this.tools.find((candidate) => candidate.definition.function.name === toolName);
+    if (!tool || this.toolIsBlocked(toolName) || this.getAllowlist().includes(toolName)) return false;
+    if (this.getApprovedTools().includes(toolName)) return false;
+    return tool.permission?.scope === 'once' || tool.permission?.scope === 'session';
+  }
+
+  toolIsBlocked(toolName: string): boolean {
+    return this.getBlocklist().includes(toolName)
+      || this.tools.find((tool) => tool.definition.function.name === toolName)?.permission?.scope === 'never';
+  }
+
+  destroy(): void {
+    this.destroyAgentOnly();
+    this._isRunning = false;
+  }
+
+  private destroyAgentOnly(): void {
+    this.agent?.destroy();
+    this.agent = null;
+  }
+
+  private requireAgent(): Agent {
+    if (!this.agent) throw new Error('Agent not initialized');
+    return this.agent;
+  }
+
+  private async autoSaveIfEnabled(): Promise<void> {
+    if (this.config.session.autoSave) {
+      await this.saveSession();
     }
   }
 
-  /**
-   * Get all tools that have been approved for this session
-   */
-  getApprovedTools(): string[] {
-    return this.agent?.permissions.getApprovedTools() ?? [];
-  }
-
-  /**
-   * Get the current allowlist
-   */
-  getAllowlist(): string[] {
-    return this.agent?.permissions.getAllowlist() ?? [];
-  }
-
-  /**
-   * Get the current blocklist
-   */
-  getBlocklist(): string[] {
-    return this.agent?.permissions.getBlocklist() ?? [];
-  }
-
-  /**
-   * Check if a tool needs approval
-   */
-  toolNeedsApproval(toolName: string): boolean {
-    return this.agent?.permissions.checkPermission(toolName).needsApproval ?? false;
-  }
-
-  /**
-   * Check if a tool is blocked
-   */
-  toolIsBlocked(toolName: string): boolean {
-    return this.agent?.permissions.isBlocked(toolName) ?? false;
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Response & Event Mapping (Phase 1.2 - Type-safe)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Format response from UniversalAgent
-   * Now properly typed with UniversalResponse
-   */
-  private formatResponse(response: UniversalResponse, duration: number): AgentResponse {
-    const usage: TokenUsage | undefined = response.usage
-      ? {
-          inputTokens: response.usage.inputTokens,
-          outputTokens: response.usage.outputTokens,
-          totalTokens: response.usage.totalTokens,
-        }
-      : undefined;
-
-    return {
-      text: response.text,
-      mode: response.mode,
-      plan: response.plan
-        ? {
-            goal: response.plan.goal,
-            tasks: response.plan.tasks?.map((t) => this.mapTask(t)) || [],
-            approved: response.planStatus === 'approved' || response.planStatus === 'executing' || response.planStatus === 'completed',
-          }
-        : undefined,
-      taskProgress: response.taskProgress
-        ? {
-            current: response.taskProgress.completed,
-            total: response.taskProgress.total,
-            currentTask: response.taskProgress.current ? this.mapTask(response.taskProgress.current) : undefined,
-          }
-        : undefined,
-      usage,
-      duration,
-      needsUserAction: response.needsUserAction,
-    };
-  }
-
-  /**
-   * Map a Task from the library to TaskInfo for AMOS
-   */
-  private mapTask(task: { id: string; name: string; description?: string; status: string; result?: unknown }): TaskInfo {
-    return {
-      id: task.id,
-      name: task.name,
-      description: task.description || '',
-      status: task.status as TaskInfo['status'],
-      result: task.result ? String(task.result) : undefined,
-    };
-  }
-
-  /**
-   * Map stream event from UniversalAgent
-   * Now properly typed with UniversalEvent discriminated union
-   */
-  private mapStreamEvent(event: UniversalEvent): StreamEvent {
+  private mapStreamEvent(event: LibraryStreamEvent): StreamEvent | null {
     switch (event.type) {
-      case 'text:delta':
+      case StreamEventType.OUTPUT_TEXT_DELTA:
         return { type: 'text:delta', delta: event.delta };
-
-      case 'text:done':
+      case StreamEventType.OUTPUT_TEXT_DONE:
         return { type: 'text:done', text: event.text };
-
-      case 'mode:changed':
-        return {
-          type: 'mode:changed',
-          fromMode: event.from,
-          toMode: event.to,
-          mode: event.to,
-        };
-
-      case 'plan:created':
-        return {
-          type: 'plan:created',
-          plan: {
-            goal: event.plan.goal,
-            tasks: event.plan.tasks?.map((t) => this.mapTask(t)) || [],
-            approved: false,
-          },
-        };
-
-      case 'plan:approved':
-        return { type: 'plan:approved' };
-
-      case 'task:started':
-        return {
-          type: 'task:started',
-          task: this.mapTask(event.task),
-        };
-
-      case 'task:completed':
-        return {
-          type: 'task:completed',
-          task: {
-            ...this.mapTask(event.task),
-            status: 'completed',
-            result: event.result ? String(event.result) : undefined,
-          },
-        };
-
-      case 'task:failed':
-        return {
-          type: 'task:failed',
-          task: {
-            ...this.mapTask(event.task),
-            status: 'failed',
-          },
-          error: new Error(event.error),
-        };
-
-      case 'tool:start':
-        return {
-          type: 'tool:start',
-          tool: { name: event.name, args: event.args },
-        };
-
-      case 'tool:complete':
-        return {
-          type: 'tool:complete',
-          tool: { name: event.name, result: event.result },
-        };
-
-      case 'tool:error':
-        return {
-          type: 'error',
-          error: new Error(event.error),
-        };
-
-      case 'error':
-        return {
-          type: 'error',
-          error: new Error(event.error),
-        };
-
-      case 'execution:done':
+      case StreamEventType.TOOL_EXECUTION_START:
+        return { type: 'tool:start', tool: { name: event.tool_name, args: event.arguments } };
+      case StreamEventType.TOOL_EXECUTION_DONE:
+        return event.error
+          ? { type: 'error', error: new Error(`${event.tool_name}: ${event.error}`) }
+          : { type: 'tool:complete', tool: { name: event.tool_name, result: event.result } };
+      case StreamEventType.RESPONSE_COMPLETE:
         return {
           type: 'done',
-          usage: undefined, // ExecutionResult doesn't include usage
+          usage: {
+            inputTokens: event.usage.input_tokens,
+            outputTokens: event.usage.output_tokens,
+            totalTokens: event.usage.total_tokens,
+          },
         };
-
-      // Handle other events that AMOS doesn't need to process specially
-      case 'plan:analyzing':
-      case 'plan:modified':
-      case 'plan:awaiting_approval':
-      case 'plan:rejected':
-      case 'task:progress':
-      case 'task:skipped':
-      case 'execution:paused':
-      case 'execution:resumed':
-      case 'needs:approval':
-      case 'needs:input':
-      case 'needs:clarification':
-        // Pass through with type for extensibility
-        return { type: event.type as StreamEvent['type'] };
-
+      case StreamEventType.ERROR:
+        // Agent.stream throws after emitting its terminal provider error. Let the
+        // app's catch path render it once instead of showing duplicate errors.
+        return null;
       default:
-        // Exhaustive check - should never reach here with proper typing
-        return { type: 'done' };
+        return null;
     }
   }
+
+  private mapHistoryItem(item: InputItem, timestamp = Date.now()): HistoryEntry | null {
+    if (item.type !== 'message') return null;
+
+    const role = item.role === MessageRole.USER
+      ? 'user'
+      : item.role === MessageRole.ASSISTANT
+        ? 'assistant'
+        : 'system';
+    const content = item.content.map((part) => {
+      switch (part.type) {
+        case ContentType.INPUT_TEXT:
+        case ContentType.OUTPUT_TEXT:
+          return part.text;
+        case ContentType.TOOL_USE:
+          return `[tool call: ${part.name}]`;
+        case ContentType.TOOL_RESULT:
+          return `[tool result] ${typeof part.content === 'string' ? part.content : JSON.stringify(part.content)}`;
+        case ContentType.INPUT_IMAGE_URL:
+          return '[image]';
+        case ContentType.INPUT_FILE:
+          return `[file: ${part.file_id}]`;
+        case ContentType.THINKING:
+          return '[reasoning]';
+      }
+    }).filter(Boolean).join('\n');
+
+    return {
+      id: item.id ?? `msg-${timestamp}-${role}`,
+      role,
+      content,
+      timestamp: new Date(timestamp),
+    };
+  }
+
 }

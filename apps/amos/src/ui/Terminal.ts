@@ -194,7 +194,9 @@ export class Terminal {
    */
   showProgress(current: number, total: number, message: string = ''): void {
     const width = 30;
-    const percent = Math.min(current / total, 1);
+    const percent = total > 0
+      ? Math.max(0, Math.min(current / total, 1))
+      : 1;
     const filled = Math.round(width * percent);
     const empty = width - filled;
 

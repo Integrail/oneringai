@@ -239,7 +239,7 @@ export {
   coerceFactTemporalFields,
 } from './dateCoercion.js';
 
-// Predicate library — pluggable vocabulary with a 51-predicate standard set.
+// Predicate library — pluggable vocabulary with a 44-predicate standard set.
 export { PredicateRegistry, STANDARD_PREDICATES } from './predicates/index.js';
 export type { PredicateDefinition, PredicateLifecycle } from './predicates/index.js';
 

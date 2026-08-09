@@ -7,7 +7,7 @@
 
 import type {
   AgentPermissionsConfig,
-  PermissionCheckContext,
+  ApprovalRequestContext,
   ApprovalDecision,
 } from '@everworker/oneringai';
 import type { AmosConfig, ToolApprovalContext } from '../config/types.js';
@@ -20,7 +20,7 @@ import type { AmosConfig, ToolApprovalContext } from '../config/types.js';
  *
  * @param config - AMOS application configuration
  * @param onApprovalRequired - Optional callback for interactive approval prompts
- * @returns AgentPermissionsConfig ready for UniversalAgent
+ * @returns AgentPermissionsConfig ready for Agent
  */
 export function buildPermissionsConfig(
   config: AmosConfig,
@@ -36,12 +36,12 @@ export function buildPermissionsConfig(
     tools: permissions.toolOverrides,
     onApprovalRequired:
       permissions.promptForApproval && onApprovalRequired
-        ? async (context: PermissionCheckContext): Promise<ApprovalDecision> => {
+        ? async (context: ApprovalRequestContext): Promise<ApprovalDecision> => {
             return onApprovalRequired({
-              toolName: context.toolCall.function.name,
-              args: context.toolCall.function.arguments,
-              riskLevel: context.config?.riskLevel,
-              reason: context.config?.approvalMessage || 'Tool requires approval',
+              toolName: context.toolName,
+              args: context.args,
+              riskLevel: context.riskLevel,
+              reason: context.approvalMessage || context.decision.reason,
             });
           }
         : undefined,

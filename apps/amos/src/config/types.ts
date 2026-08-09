@@ -4,6 +4,7 @@
  */
 
 import type { Vendor, ToolFunction, PermissionScope, RiskLevel } from '@everworker/oneringai';
+import type { ExternalToolManager } from '../tools/ExternalToolManager.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // App Configuration
@@ -100,7 +101,7 @@ export interface StoredConnectorConfig {
 }
 
 export interface ConnectorAuth {
-  type: 'api_key' | 'oauth' | 'jwt';
+  type: 'api_key' | 'oauth';
   apiKey?: string;
   // Custom header configuration for API key auth
   headerName?: string;   // e.g., 'X-API-KEY', 'X-Subscription-Token'
@@ -112,10 +113,6 @@ export interface ConnectorAuth {
   authorizationUrl?: string;
   redirectUri?: string;
   scope?: string;
-  // JWT fields
-  privateKey?: string;
-  issuer?: string;
-  subject?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,7 +169,7 @@ export interface IAmosApp {
 
   // Agent
   getAgent(): IAgentRunner | null;
-  createAgent(): Promise<void>;
+  createAgent(options?: { freshSession?: boolean }): Promise<void>;
   destroyAgent(): void;
 
   // UI
@@ -184,6 +181,7 @@ export interface IAmosApp {
   prompt(question: string): Promise<string>;
   confirm(question: string): Promise<boolean>;
   select<T extends string>(question: string, options: T[]): Promise<T>;
+  setColorOutput(enabled: boolean): void;
 }
 
 export interface IConnectorManager {
@@ -209,6 +207,7 @@ export interface IToolLoader {
   loadBuiltinTools(): ToolFunction[];
   loadCustomTools(directory: string): Promise<ToolFunction[]>;
   reloadTools(): Promise<void>;
+  applyConfig(enabledTools: string[], disabledTools: string[]): void;
 
   // Management
   getAllTools(): ToolFunction[];
@@ -217,6 +216,11 @@ export interface IToolLoader {
   disableTool(name: string): void;
   isEnabled(name: string): boolean;
   getEnabledTools(): ToolFunction[];
+
+  // Configuration
+  setConfig(config: AmosConfig): void;
+  setExternalToolManager(manager: ExternalToolManager): void;
+  getExternalToolManager(): ExternalToolManager | null;
 
   // External tools
   getExternalToolInfo(): ExternalToolInfo[];
@@ -294,9 +298,16 @@ export interface IAgentRunner {
   getTemperature(): number;
 
   // Session
-  saveSession(): Promise<string>;
+  saveSession(name?: string): Promise<string>;
   loadSession(sessionId: string): Promise<void>;
+  listSessions(): Promise<SessionSummaryInfo[]>;
+  deleteSession(sessionId: string): Promise<void>;
   getSessionId(): string | null;
+
+  // Runtime configuration used by commands
+  setInstructions(instructions: string | null): void;
+  updateTools(tools: ToolFunction[]): void;
+  getMode(): 'interactive' | 'planning' | 'executing';
 
   // Permission Management
   approveToolForSession(toolName: string): void;
@@ -323,11 +334,11 @@ export interface IAgentRunner {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Context Types (Phase 2 - from UniversalAgent context access)
+// Context Types
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Context metrics from UniversalAgent's context access
+ * Context metrics from AgentContextNextGen
  */
 export interface ContextMetrics {
   /** Number of messages in conversation history */
@@ -351,6 +362,15 @@ export interface HistoryEntry {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
+}
+
+export interface SessionSummaryInfo {
+  id: string;
+  title?: string;
+  createdAt: Date;
+  lastSavedAt: Date;
+  messageCount: number;
+  memoryEntryCount: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -434,7 +454,7 @@ export type ExternalProviderType = 'search' | 'scrape';
 /**
  * Available search providers
  */
-export type SearchProvider = 'serper' | 'brave' | 'tavily' | 'rapidapi';
+export type SearchProvider = 'serper';
 
 /**
  * Available scrape providers
@@ -458,7 +478,7 @@ export interface ExternalProviderConfig {
 export interface ExternalToolsConfig {
   /** Global enable/disable for all external tools */
   enabled: boolean;
-  /** Search provider configuration (webSearch tool) */
+  /** Search provider configuration (web_search tool) */
   search: ExternalProviderConfig | null;
   /** Scrape provider configuration (webScrape tool) */
   scrape: ExternalProviderConfig | null;
@@ -473,31 +493,8 @@ export interface ExternalToolsConfig {
 export interface AgentResponse {
   text: string;
   mode: 'interactive' | 'planning' | 'executing';
-  plan?: PlanInfo;
-  taskProgress?: TaskProgress;
   usage?: TokenUsage;
   duration?: number;
-  needsUserAction?: boolean;
-}
-
-export interface PlanInfo {
-  goal: string;
-  tasks: TaskInfo[];
-  approved: boolean;
-}
-
-export interface TaskInfo {
-  id: string;
-  name: string;
-  description: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
-  result?: string;
-}
-
-export interface TaskProgress {
-  current: number;
-  total: number;
-  currentTask?: TaskInfo;
 }
 
 export interface TokenUsage {
@@ -507,22 +504,12 @@ export interface TokenUsage {
 }
 
 export interface StreamEvent {
-  type: 'text:delta' | 'text:done' | 'mode:changed' | 'plan:created' |
-        'plan:approved' | 'task:started' | 'task:completed' | 'task:failed' |
-        'tool:start' | 'tool:complete' | 'tool:approval_required' |
-        'tool:blocked' | 'tool:approved' | 'error' | 'done';
+  type: 'text:delta' | 'text:done' | 'tool:start' | 'tool:complete' | 'error' | 'done';
   delta?: string;
   text?: string;
-  mode?: string;
-  fromMode?: string;
-  toMode?: string;
-  plan?: PlanInfo;
-  task?: TaskInfo;
   tool?: { name: string; args?: unknown; result?: unknown };
   error?: Error;
   usage?: TokenUsage;
-  // Permission-related fields
-  permissionContext?: ToolApprovalContext;
 }
 
 export interface ToolApprovalContext {
@@ -566,7 +553,7 @@ export const DEFAULT_CONFIG: AmosConfig = {
 
   defaults: {
     vendor: 'openai',
-    model: 'gpt-4o',
+    model: 'gpt-5.6-terra',
     temperature: 0.7,
     maxOutputTokens: 4096,
   },

@@ -5,24 +5,30 @@
  */
 
 import 'dotenv/config';
-import { Connector, Agent, Vendor, InputItem, MessageRole, ContentType } from '../src/index.js';
+import { Connector, Agent, Vendor, MessageRole, ContentType } from '../src/index.js';
+import type { InputItem } from '../src/index.js';
 
 async function main() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required. Add it to .env before running this example.');
+  }
+
   // Create connector
   Connector.create({
     name: 'openai',
     vendor: Vendor.OpenAI,
-    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
+    auth: { type: 'api_key', apiKey },
   });
 
   console.log('🤖 Multi-Turn Conversation Example\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
   // Create agent with instructions
+  const instructions = 'You are a knowledgeable tour guide. Be informative but concise.';
   const agent = Agent.create({
     connector: 'openai',
-    model: 'gpt-4',
-    instructions: 'You are a knowledgeable tour guide. Be informative but concise.',
+    model: 'gpt-4.1-mini',
   });
 
   // Build conversation history
@@ -43,7 +49,7 @@ async function main() {
     ],
   });
 
-  const response1 = await agent.run(conversationHistory);
+  const response1 = await agent.runDirect(conversationHistory, { instructions });
   console.log('🤖 Assistant:', response1.output_text);
   console.log('\n─────────────────────────\n');
 
@@ -67,7 +73,7 @@ async function main() {
     ],
   });
 
-  const response2 = await agent.run(conversationHistory);
+  const response2 = await agent.runDirect(conversationHistory, { instructions });
   console.log('🤖 Assistant:', response2.output_text);
   console.log('\n─────────────────────────\n');
 
@@ -91,16 +97,23 @@ async function main() {
     ],
   });
 
-  const response3 = await agent.run(conversationHistory);
+  const response3 = await agent.runDirect(conversationHistory, { instructions });
   console.log('🤖 Assistant:', response3.output_text);
   totalTokens += response3.usage?.total_tokens || 0;
+  conversationHistory.push(
+    ...response3.output.filter((item): item is InputItem => item.type === 'message' || item.type === 'compaction')
+  );
 
   console.log('\n\n📊 Conversation Summary');
   console.log('─────────────────────────');
-  console.log(`Total turns: ${conversationHistory.length}`);
+  console.log(`Total user turns: ${conversationHistory.filter((item) => item.type === 'message' && item.role === MessageRole.USER).length}`);
   console.log(`Total tokens used: ${totalTokens}`);
 
+  agent.destroy();
   console.log('\n\n✅ Conversation completed!');
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

@@ -128,7 +128,7 @@ EXAMPLES:
     lines.push('  Use "/external setup" to configure search/scrape providers.');
     lines.push('');
     lines.push('EXAMPLES:');
-    lines.push('  /model gpt-4o            Switch to GPT-4o model');
+    lines.push('  /model gpt-5.6-terra     Switch to a current OpenAI model');
     lines.push('  /vendor anthropic        Switch to Anthropic');
     lines.push('  /connector list          List all connectors');
     lines.push('  /tool list               List available tools');

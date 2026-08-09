@@ -6,6 +6,8 @@
  */
 
 import { Agent } from '../core/Agent.js';
+import { Connector } from '../core/Connector.js';
+import { Vendor } from '../core/Vendor.js';
 import { MessageBuilder } from '../utils/messageBuilder.js';
 import { parseJsonPermissive } from '../utils/jsonRepair.js';
 import { InputItem } from '../domain/entities/Message.js';
@@ -35,13 +37,13 @@ export class ProviderConfigAgent {
    * @returns Promise<string | ConnectorConfigResult> - Either next question or final config
    */
   async run(initialInput?: string): Promise<string | ConnectorConfigResult> {
+    this.agent?.destroy();
+    this.conversationHistory = [];
+
     // Create agent with specialized instructions
     this.agent = Agent.create({
       connector: this.connectorName,
       model: this.getDefaultModel(),
-      instructions: this.getSystemInstructions(),
-      temperature: 0.1, // Very low temperature for consistent, focused behavior
-      maxIterations: 10,
     });
 
     const builder = new MessageBuilder();
@@ -53,8 +55,12 @@ export class ProviderConfigAgent {
     // Store in history
     this.conversationHistory.push(...builder.build());
 
-    // Run conversation - instructions from agent config are always included
-    const response = await this.agent.run(this.conversationHistory);
+    // This class owns the explicit history, so bypass Agent's managed context.
+    // Mixing both would resend prior provider message IDs on later turns.
+    const response = await this.agent.runDirect(this.conversationHistory, {
+      instructions: this.getSystemInstructions(),
+      temperature: 0.1,
+    });
 
     // Store assistant response in history
     this.conversationHistory.push(...response.output.filter(
@@ -90,8 +96,10 @@ export class ProviderConfigAgent {
     // Update history with user message
     this.conversationHistory.push(...builder.build());
 
-    // Run with full history
-    const response = await this.agent.run(this.conversationHistory);
+    const response = await this.agent.runDirect(this.conversationHistory, {
+      instructions: this.getSystemInstructions(),
+      temperature: 0.1,
+    });
 
     // Store assistant response in history
     this.conversationHistory.push(...response.output.filter(
@@ -205,7 +213,10 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
    * Get default model
    */
   private getDefaultModel(): string {
-    // Use GPT-4.1 for best instruction following
+    const vendor = Connector.get(this.connectorName)?.vendor;
+    if (vendor === Vendor.Anthropic) return 'claude-haiku-4-5-20251001';
+    if (vendor === Vendor.Google || vendor === Vendor.GoogleVertex) return 'gemini-2.5-flash';
+    if (vendor === Vendor.Grok) return 'grok-4.3';
     return 'gpt-4.1';
   }
 
@@ -213,8 +224,14 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
    * Reset conversation
    */
   reset(): void {
+    this.agent?.destroy();
     this.conversationHistory = [];
     this.agent = null;
+  }
+
+  /** Release the underlying agent and clear the current conversation. */
+  destroy(): void {
+    this.reset();
   }
 }
 

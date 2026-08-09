@@ -4,6 +4,8 @@
 
 A powerful terminal-based AI assistant powered by `@everworker/oneringai`. AMOS provides runtime configuration, multi-vendor support, tool permissions, session management, and an extensible command system.
 
+> The current CLI is text-and-tools based. Image, audio, and video generation commands have not been implemented yet despite the historical “Multimodal” name.
+
 ---
 
 ## Table of Contents
@@ -30,7 +32,7 @@ A powerful terminal-based AI assistant powered by `@everworker/oneringai`. AMOS 
 
 ### Prerequisites
 
-- Node.js 18 or higher
+- Node.js 22 or higher
 - npm or yarn
 
 ### Installation
@@ -80,7 +82,7 @@ I'm an AI assistant that can help you with a wide variety of tasks...
 | `/help` | Show all available commands |
 | `/status` | Show current agent status |
 | `/model list` | List available models |
-| `/model gpt-4o` | Switch to a specific model |
+| `/model gpt-5.6-terra` | Switch to a specific model |
 | `/prompt list` | List available prompts |
 | `/context` | Show context usage overview |
 | `/exit` | Exit AMOS |
@@ -117,9 +119,9 @@ Most commands have short aliases:
 /model <name>           Switch to specified model
 
 Examples:
-  /model gpt-4o
-  /model claude-opus-4-5-20251101
-  /model gemini-3-flash-preview
+  /model gpt-5.6-terra
+  /model claude-sonnet-5
+  /model gemini-3.6-flash
 ```
 
 ### Vendor Management
@@ -172,6 +174,7 @@ Supported vendors:
 /session list           List saved sessions
 /session save [name]    Save current session
 /session load <id>      Load a saved session
+/session delete <id>    Delete a saved session
 /session new            Start a new session
 ```
 
@@ -222,7 +225,7 @@ This shows all models available for your current vendor, including:
 ### Switching Models
 
 ```
-/model gpt-4o
+/model gpt-5.6-terra
 ```
 
 The model switch takes effect immediately. AMOS will recreate the agent with the new model.
@@ -233,9 +236,9 @@ AMOS supports multiple AI providers:
 
 | Vendor | Example Models |
 |--------|---------------|
-| OpenAI | gpt-4o, gpt-4-turbo, o1-preview |
-| Anthropic | claude-opus-4-5, claude-sonnet-4, claude-haiku-3-5 |
-| Google | gemini-3-flash-preview, gemini-2.5-pro |
+| OpenAI | gpt-5.6-terra, gpt-5.4-mini |
+| Anthropic | claude-sonnet-5, claude-opus-5 |
+| Google | gemini-3.6-flash, gemini-3.1-pro-preview |
 | Groq | llama-3.3-70b-versatile |
 | Together | mixtral-8x7b-instruct |
 | Mistral | mistral-large |
@@ -249,7 +252,7 @@ To switch vendors:
 
 ## Connectors (API Keys)
 
-Connectors store your API credentials securely and allow you to switch between different API keys or providers.
+Connectors let you switch between API keys and providers. AMOS stores connector JSON locally in plaintext, so keep `data/connectors/` private and out of version control.
 
 ### Adding a Connector
 
@@ -366,7 +369,7 @@ AMOS includes built-in tools that the AI can use to accomplish tasks.
 
 **External Tools (Web):**
 - `web_fetch` - Fetch web page content (no API key needed)
-- `web_search` - Search the web (requires Serper, Brave, Tavily, or RapidAPI)
+- `web_search` - Search the web through a Serper connector
 - `web_scrape` - Scrape web pages with anti-bot protection (requires ZenRows)
 
 ### External Tools Setup
@@ -386,9 +389,6 @@ External tools like `web_search` and `web_scrape` require API connectors to func
 
 **Available Search Providers:**
 - `serper` - Google search via Serper.dev (fast, 2,500 free queries)
-- `brave` - Brave's independent search index
-- `tavily` - AI-optimized search with summaries
-- `rapidapi` - Real-time web search via RapidAPI
 
 **Available Scrape Providers:**
 - `zenrows` - Enterprise scraping with anti-bot protection
@@ -487,7 +487,7 @@ Shows:
 - Utilization percentage with visual bar
 - Token usage (used / available)
 - Current status (OK, Warning, Critical)
-- Current mode (interactive, planning, executing)
+- Current Agent mode (interactive; planning is conversational guidance)
 
 Example output:
 ```
@@ -644,7 +644,7 @@ Shows all current settings organized by category.
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `defaults.model` | Default model | `gpt-4o` |
+| `defaults.model` | Default model | `gpt-5.6-terra` |
 | `defaults.temperature` | Temperature | `0.7` |
 | `ui.streamResponses` | Stream output | `true` |
 | `ui.showTokenUsage` | Show token counts | `true` |
@@ -791,9 +791,9 @@ interface ToolFunction {
 
 ### Model Selection
 
-- Use `gpt-4o` for general tasks (fast, capable)
-- Use `claude-opus` for complex reasoning
-- Use `gpt-4o-mini` or `claude-haiku` for simple tasks (cheaper)
+- Use a current general-purpose model such as `gpt-5.6-terra`
+- Use a current reasoning model for complex work
+- Use a current mini/fast model for simple, lower-cost tasks
 
 ### Tool Permissions
 

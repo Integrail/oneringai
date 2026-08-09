@@ -1,0 +1,2 @@
+{"timestamp":1786270339503,"type":"user","item":{"type":"message","id":"1786270339503_zplytze","role":"user","content":[{"type":"input_text","text":"hi"}]},"turnIndex":1}
+{"timestamp":1786270341784,"type":"assistant","item":{"type":"message","id":"1786270341784_hanlor0","role":"assistant","content":[{"type":"output_text","text":"Hello! How can I help you today?"}]},"turnIndex":1}

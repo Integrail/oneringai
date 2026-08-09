@@ -1,5 +1,5 @@
 /**
- * Standard predicate library — 45 predicates across 10 categories.
+ * Standard predicate library — 44 predicates across 10 categories.
  *
  * Shipped with the memory layer; opt-in via `PredicateRegistry.standard()`.
  * Users can extend (`.register(...)`), override, or replace entirely with

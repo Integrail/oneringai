@@ -52,7 +52,7 @@ const memory = new MemorySystem({
 });
 ```
 
-54 predicates across 9 categories. Good starting point for general knowledge-graph use cases (people, orgs, tasks, communications).
+44 predicates across 10 categories. Good starting point for general knowledge-graph use cases (people, orgs, tasks, communications).
 
 ### Pattern 2 — extend the standard library with your domain
 
@@ -108,13 +108,13 @@ const memory = new MemorySystem({
 PredicateRegistry.standard()
 ```
 
-Returns a fresh instance (safe to mutate). 45 predicates in 10 categories:
+Returns a fresh instance (safe to mutate). 44 predicates in 10 categories:
 
 | Category | Predicates |
 |---|---|
 | **identity** | `works_at`, `reports_to`, `current_title`, `current_role`, `located_in`, `is_member_of`, `founded` |
 | **organizational** | `part_of`, `subsidiary_of`, `manages`, `owns`, `acquired`, `merged_with` |
-| **task** | `committed_to`, `blocked_by`, `depends_on`, `prepares_for`, `cancelled_due_to` |
+| **task** | `committed_to`, `blocked_by`, `depends_on`, `prepares_for` |
 | **decision** | `decision_made` |
 | **communication** | `emailed`, `called`, `messaged`, `met_with`, `mentioned`, `cc_ed`, `responded_to`, `interaction_count` *(aggregate)* |
 | **observation** | `observed_topic`, `expressed_concern`, `expressed_interest`, `acknowledged`, `noted` |
@@ -129,7 +129,7 @@ Special predicates with auto-behavior:
 - **`isAggregate`** (updates in place): `interaction_count`.
 - **`profile`**: consumed by `MemorySystem.getContext` as the canonical per-entity profile. Don't rename.
 
-> **Single-entity attributes are metadata, not facts.** Task state lives on `task.metadata.state` (set at creation, transitioned via `MemorySystem.transitionTaskState`). Same for `dueAt`, `priority`, `completedAt`, `createdBy`, `createdAt` — and for event/task time on `metadata.startTime`/`endTime`/`scheduledAt`. No `state_changed` / `completed` / `created` / `reviewed` / `has_due_date` / `has_priority` / `occurred_on` / `scheduled_for` / `started_on` / `ended_on` predicates exist — the entity carries that information itself. Only **relationships between two entities** (`committed_to`, `prepares_for`, `blocked_by`, `depends_on`, `cancelled_due_to`) live as facts. See [MEMORY_GUIDE.md](MEMORY_GUIDE.md#task-state-machine).
+> **Single-entity attributes are metadata, not facts.** Task state lives on `task.metadata.state` (set at creation, transitioned via `MemorySystem.transitionTaskState`). Same for `dueAt`, `priority`, `completedAt`, `createdBy`, `createdAt`—and for event/task time on `metadata.startTime`/`endTime`/`scheduledAt`. No `state_changed` / `completed` / `created` / `reviewed` / `has_due_date` / `has_priority` / `occurred_on` / `scheduled_for` / `started_on` / `ended_on` / `cancelled_due_to` predicates exist. Inter-entity relationships such as `prepares_for`, `blocked_by`, and `depends_on` remain facts. `committed_to` is retained for backward-compatible queries but excluded from the default extraction prompt because a task entity now carries assignment and evidence itself. See [transitioning task state](MEMORY_GUIDE.md#transitioning-task-state--transitiontaskstate).
 
 ---
 

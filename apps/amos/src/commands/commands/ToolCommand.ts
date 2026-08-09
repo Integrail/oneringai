@@ -122,6 +122,8 @@ ALIASES:
     }
 
     const approvedTools = agent?.getApprovedTools() ?? [];
+    const allowlistedTools = new Set(agent?.getAllowlist() ?? config.permissions.allowlist);
+    const blocklistedTools = new Set(agent?.getBlocklist() ?? config.permissions.blocklist);
 
     for (const [category, categoryTools] of categorized) {
       lines.push(`${category}:`);
@@ -132,9 +134,9 @@ ALIASES:
 
         // Determine permission marker
         let permMarker = '';
-        if (config.permissions.blocklist.includes(name)) {
+        if (blocklistedTools.has(name)) {
           permMarker = ' [blocked]';
-        } else if (config.permissions.allowlist.includes(name)) {
+        } else if (allowlistedTools.has(name) || tool.permission?.scope === 'always') {
           permMarker = ' [allowed]';
         } else if (approvedTools.includes(name)) {
           permMarker = ' [approved]';
@@ -185,6 +187,8 @@ ALIASES:
         disabledTools,
       },
     });
+    app.getAgent()?.updateTools(toolLoader.getEnabledTools());
+    await app.saveConfig();
 
     return this.success(`Tool "${name}" enabled.`);
   }
@@ -220,6 +224,8 @@ ALIASES:
         disabledTools,
       },
     });
+    app.getAgent()?.updateTools(toolLoader.getEnabledTools());
+    await app.saveConfig();
 
     return this.success(`Tool "${name}" disabled.`);
   }
@@ -260,8 +266,10 @@ ALIASES:
     // Get permission info
     const agent = app.getAgent();
     const config = app.getConfig();
-    const isAllowlisted = config.permissions.allowlist.includes(name);
-    const isBlocklisted = config.permissions.blocklist.includes(name);
+    const isAllowlisted = agent?.getAllowlist().includes(name)
+      ?? config.permissions.allowlist.includes(name);
+    const isBlocklisted = agent?.getBlocklist().includes(name)
+      ?? config.permissions.blocklist.includes(name);
     const isApproved = agent?.getApprovedTools().includes(name) ?? false;
     const needsApproval = agent?.toolNeedsApproval(name) ?? !isAllowlisted;
     const isBlocked = agent?.toolIsBlocked(name) ?? isBlocklisted;
@@ -295,6 +303,11 @@ ${paramsStr}
 
     try {
       await toolLoader.reloadTools();
+      toolLoader.applyConfig(
+        app.getConfig().tools.enabledTools,
+        app.getConfig().tools.disabledTools,
+      );
+      app.getAgent()?.updateTools(toolLoader.getEnabledTools());
       const tools = toolLoader.getAllTools();
       return this.success(`Reloaded ${tools.length} tools.`);
     } catch (error) {
@@ -304,7 +317,11 @@ ${paramsStr}
 
   private getToolCategory(name: string): string {
     // Categorize by prefix or known categories
-    if (name.startsWith('file_') || name.startsWith('fs_')) return 'File System';
+    if (name.startsWith('file_') || name.startsWith('fs_') ||
+        ['read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory'].includes(name)) {
+      return 'File System';
+    }
+    if (name === 'bash' || name.startsWith('shell_')) return 'Shell';
     if (name.startsWith('web_') || name.startsWith('http_')) return 'Web';
     if (name.startsWith('db_') || name.startsWith('sql_')) return 'Database';
     if (name.startsWith('code_') || name.startsWith('exec_')) return 'Code Execution';
@@ -399,6 +416,7 @@ ${paramsStr}
           // Remove from blocklist if present
           configAdd.permissions.blocklist = configAdd.permissions.blocklist.filter(t => t !== name);
           app.updateConfig({ permissions: configAdd.permissions });
+          await app.saveConfig();
         }
 
         return this.success(`Tool "${name}" added to allowlist (always allowed).`);
@@ -417,6 +435,7 @@ ${paramsStr}
         const configRm = app.getConfig();
         configRm.permissions.allowlist = configRm.permissions.allowlist.filter(t => t !== name);
         app.updateConfig({ permissions: configRm.permissions });
+        await app.saveConfig();
 
         return this.success(`Tool "${name}" removed from allowlist.`);
 
@@ -438,6 +457,7 @@ ${paramsStr}
         const configClear = app.getConfig();
         configClear.permissions.allowlist = [];
         app.updateConfig({ permissions: configClear.permissions });
+        await app.saveConfig();
         return this.success('Allowlist cleared.');
 
       default:
@@ -480,6 +500,7 @@ ${paramsStr}
           // Remove from allowlist if present
           configAdd.permissions.allowlist = configAdd.permissions.allowlist.filter(t => t !== name);
           app.updateConfig({ permissions: configAdd.permissions });
+          await app.saveConfig();
         }
 
         return this.success(`Tool "${name}" added to blocklist (always blocked).`);
@@ -498,6 +519,7 @@ ${paramsStr}
         const configRm = app.getConfig();
         configRm.permissions.blocklist = configRm.permissions.blocklist.filter(t => t !== name);
         app.updateConfig({ permissions: configRm.permissions });
+        await app.saveConfig();
 
         return this.success(`Tool "${name}" removed from blocklist.`);
 
@@ -519,6 +541,7 @@ ${paramsStr}
         const configClear = app.getConfig();
         configClear.permissions.blocklist = [];
         app.updateConfig({ permissions: configClear.permissions });
+        await app.saveConfig();
         return this.success('Blocklist cleared.');
 
       default:
@@ -543,8 +566,10 @@ ${paramsStr}
         return this.error(`Tool "${name}" not found.`);
       }
 
-      const isAllowlisted = config.permissions.allowlist.includes(name);
-      const isBlocklisted = config.permissions.blocklist.includes(name);
+      const isAllowlisted = agent?.getAllowlist().includes(name)
+        ?? config.permissions.allowlist.includes(name);
+      const isBlocklisted = agent?.getBlocklist().includes(name)
+        ?? config.permissions.blocklist.includes(name);
       const isApproved = agent?.getApprovedTools().includes(name) ?? false;
       const needsApproval = agent?.toolNeedsApproval(name) ?? true;
       const isBlocked = agent?.toolIsBlocked(name) ?? isBlocklisted;

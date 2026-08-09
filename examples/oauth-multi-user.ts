@@ -11,7 +11,9 @@ import {
   FileStorage,
   generateEncryptionKey,
 } from '../src/index.js';
-import * as http from 'http';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Simulated user database (in real app, this would be your user system)
 interface User {
@@ -26,8 +28,13 @@ const users: User[] = [
   { id: 'user789', name: 'Charlie', email: 'charlie@example.com' },
 ];
 
-// Create ONE OAuth manager for the provider
-// All users share the same OAuth configuration
+const tokenDirectory = mkdtempSync(join(tmpdir(), 'oneringai-oauth-users-'));
+process.once('exit', () => rmSync(tokenDirectory, { recursive: true, force: true }));
+const encryptionKey = process.env.OAUTH_ENCRYPTION_KEY || generateEncryptionKey();
+process.env.OAUTH_ENCRYPTION_KEY ||= encryptionKey;
+
+// Create ONE OAuth manager for the provider. All users share its configuration,
+// while the temporary FileStorage keeps each user's token isolated.
 const oauth = new OAuthManager({
   flow: 'authorization_code',
   clientId: process.env.GITHUB_CLIENT_ID || 'your-client-id',
@@ -39,8 +46,8 @@ const oauth = new OAuthManager({
 
   // Use file storage so tokens persist across restarts
   storage: new FileStorage({
-    directory: './tokens',
-    encryptionKey: process.env.OAUTH_ENCRYPTION_KEY || generateEncryptionKey(),
+    directory: tokenDirectory,
+    encryptionKey,
   }),
 });
 
@@ -102,7 +109,7 @@ async function main() {
   console.log('    ✅ Encrypted with AES-256-GCM');
   console.log('    ✅ Isolated per user');
   console.log('    ✅ Auto-refreshed when expired');
-  console.log('    ✅ Persisted to disk (survive restarts)');
+  console.log('    ✅ Stored in encrypted files (this demo cleans up its temporary directory)');
 
   // ==================== Example 3: Using Tokens (Simulated) ====================
   console.log('\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
@@ -200,7 +207,7 @@ async function main() {
   console.log('Example 5: Storage Backend Options');
   console.log('────────────────────────────────────────────────────────────\n');
 
-  console.log('1️⃣  FileStorage (current example):');
+  console.log('1️⃣  FileStorage:');
   console.log('   ✅ Best for: Desktop apps, CLI tools, single-server apps');
   console.log('   ✅ Pros: Simple, persists across restarts');
   console.log('   ❌ Cons: Not suitable for multi-server deployments\n');
@@ -267,4 +274,7 @@ async function main() {
   console.log('✨ Your OAuth system now supports unlimited users!');
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

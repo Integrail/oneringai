@@ -13,11 +13,16 @@ import 'dotenv/config';
 import { Connector, Agent, Vendor, tools } from '../src/index.js';
 
 async function main() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required. Add it to .env before running this example.');
+  }
+
   // Create connector
   Connector.create({
     name: 'openai',
     vendor: Vendor.OpenAI,
-    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
+    auth: { type: 'api_key', apiKey },
   });
 
   console.log('🔧 JSON Manipulation Tool Demo\n');
@@ -26,7 +31,7 @@ async function main() {
   // Create agent with JSON manipulation tool
   const agent = Agent.create({
     connector: 'openai',
-    model: 'gpt-4',
+    model: 'gpt-4.1-mini',
     tools: [tools.jsonManipulator],
     instructions: 'You are a JSON manipulation assistant. When asked to modify JSON, use the json_manipulate tool.',
   });
@@ -131,18 +136,23 @@ ${JSON.stringify(teamObject)}
   console.log(JSON.stringify(configObject, null, 2));
   console.log('');
 
-  const response4 = await agent.run(`
-Transform this configuration object:
-${JSON.stringify(configObject)}
+  let transformedConfig: unknown = configObject;
+  const operations = [
+    { operation: 'delete' as const, path: 'app.settings.notifications.sms' },
+    { operation: 'replace' as const, path: 'app.settings.theme', value: 'dark' },
+    { operation: 'add' as const, path: 'app.settings.features', value: { beta: true } },
+  ];
 
-Please:
-1. Delete the sms notification setting
-2. Change the theme to "dark"
-3. Add a new field app.settings.features with value {"beta": true}
-`);
+  for (const operation of operations) {
+    const result = await tools.jsonManipulator.execute({ ...operation, object: transformedConfig });
+    if (!result.success || result.result === null) {
+      throw new Error(result.error || `Failed operation at ${operation.path}`);
+    }
+    transformedConfig = result.result;
+  }
 
-  console.log('🤖 Agent response:');
-  console.log(response4.output_text);
+  console.log('Result after chaining three tool calls:');
+  console.log(JSON.stringify(transformedConfig, null, 2));
   console.log('');
 
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -155,6 +165,10 @@ Please:
   console.log('  • Auto-creates intermediate objects for "add"');
   console.log('  • Safe: original object not mutated');
   console.log('  • Clear error messages for invalid operations');
+  agent.destroy();
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

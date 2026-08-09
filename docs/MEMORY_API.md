@@ -2,7 +2,11 @@
 
 Detailed API reference for `src/memory/` (v2).
 
-All public symbols are exported from `@everworker/oneringai/src/memory/index.js` (or `./memory` depending on your import configuration). The memory layer is self-contained — its only dependency on the rest of oneringai is via the `integration/` subfolder, which you can choose to use or replace.
+All supported public symbols are exported from `@everworker/oneringai`. There
+is currently no `./memory` package subpath, so do not import internal
+`src/memory/*` files. The memory core remains architecturally self-contained;
+connector-backed helpers live in its integration layer but are re-exported at
+the package root.
 
 ---
 
@@ -183,7 +187,7 @@ interface MemorySystemConfig {
   embedder?: IEmbedder;                         // optional; enables semantic search + identity embedding
   profileGenerator?: IProfileGenerator;         // optional; enables regenerateProfile + auto-regen
   ruleEngine?: IRuleEngine;                     // optional; enables deriveFactsFor
-  profileRegenerationThreshold?: number;        // default 10 new atomic facts
+  profileRegenerationThreshold?: number;        // default 3 new atomic facts
   topFactsRanking?: RankingConfig;              // default half-life 90d, min confidence 0.2
   embeddingQueue?: EmbeddingQueueConfig;        // default concurrency 4, retries 3
   entityResolution?: EntityResolutionConfig;    // default threshold 0.90, minFuzzy 0.85, identityEmbedding enabled
@@ -402,12 +406,15 @@ addFact(
 - `id`: `fact_<uuid>`
 - `createdAt`: now
 - `observedAt`: now
-- `isSemantic`: `true` for document kind; `true` for atomic with `details.length ≥ 80`; else `false`.
-- `groupId`/`ownerId`: derived from input → subject entity → scope.
+- `isSemantic`: defaults to `true`; `isSemantic: false` is the explicit opt-out.
+- `groupId`: input → subject entity → scope. `ownerId`: input → caller
+  `scope.userId` → subject owner (system fallback).
 
 **Supersession:** if `supersedes` set, the new fact is written first, then the predecessor is archived (crash-safe ordering).
 
-**Embedding queue:** if `isSemantic && embedder configured`, the fact is enqueued for async embedding. Writes return immediately.
+**Embedding queue:** if `isSemantic !== false` and an embedder is configured,
+the fact composer runs; non-empty changed output is enqueued asynchronously.
+Writes return immediately.
 
 **Profile auto-regen:** if `kind === 'atomic' && profileGenerator configured`, checks threshold and fires background regen if met.
 
@@ -560,6 +567,10 @@ regenerateProfile(
 ```
 
 Runs the profile generator against the entity's atomic facts visible at the target scope, writes the resulting document fact with `predicate: 'profile'`, supersedes the prior profile at the same scope if present.
+
+For current writes, pass `targetScope.ownerId` (optionally with `groupId`). The
+owner invariant prevents creation of new ownerless global/group profiles;
+ownerless variants are legacy-data fallbacks only.
 
 **Auto-triggers:** `addFact` schedules this in the background (debounced per `(entityId, scope)` via an in-flight set) when the fact count for the entity reaches `profileRegenerationThreshold`.
 
@@ -856,16 +867,16 @@ Adapts an LLM connector + model into `IProfileGenerator` via `Agent.runDirect` w
 class ConnectorProfileGenerator implements IProfileGenerator {
   constructor(config: ConnectorProfileGeneratorConfig);
   static withAgent(args: { agent; promptTemplate?; temperature?; maxOutputTokens? }): ConnectorProfileGenerator;
-  generate(entity, atomicFacts, priorProfile, targetScope): Promise<{ details; summaryForEmbedding }>;
+  generate(input: ProfileGeneratorInput): Promise<{ details: string; summaryForEmbedding: string }>;
   destroy(): void;
 }
 
 interface ConnectorProfileGeneratorConfig {
   connector: string;
   model: string;                                     // e.g. 'claude-sonnet-4-6'
-  promptTemplate?: (ctx: PromptContext) => string;   // override defaultProfilePrompt
+  promptTemplate?: (ctx: ProfileGeneratorInput) => string; // override defaultProfilePrompt
   temperature?: number;                              // default 0.3
-  maxOutputTokens?: number;                          // default 1200
+  maxOutputTokens?: number;                          // default undefined (provider ceiling)
 }
 ```
 
@@ -893,7 +904,7 @@ type MemorySystemWithConnectorsConfig = Omit<MemorySystemConfig, 'embedder' | 'p
 Default prompt for profile regeneration. Takes entity + atomic facts + prior profile + target scope, returns structured JSON. Override via `ConnectorProfileGeneratorConfig.promptTemplate`.
 
 ```ts
-function defaultProfilePrompt(ctx: PromptContext): string;
+function defaultProfilePrompt(ctx: ProfileGeneratorInput): string;
 ```
 
 ---
@@ -908,15 +919,33 @@ For the "raw signal → structured memory" pipeline.
 function defaultExtractionPrompt(ctx: ExtractionPromptContext): string;
 
 interface ExtractionPromptContext {
-  signalText: string;
+  signalText?: string;
+  signalThread?: SignalThreadMessage[];
   signalSourceDescription?: string;       // e.g. "email from john@acme.com"
   targetScope?: ScopeFields;
   knownEntities?: IEntity[];              // pre-loaded candidates to hint at
   referenceDate?: Date;                   // for relative dates like "next Friday"
+  predicateRegistry?: PredicateRegistry;
+  maxPredicatesPerCategory?: number;
+  preResolvedBindings?: PreResolvedBinding[];
+  extractableEntityTypes?: readonly string[];
+  priorFacts?: IFact[];                   // enables reconciliation operations
+  anchors?: Anchor[];
+  eagerness?: EagernessProfile;
+  anchorContextDescription?: string;
+  negativeExamples?: Array<{ snippet: string; reason?: string }>;
+  priorThreadContext?: Array<{ header: string; body: string }>;
+  subjectOfHintsEnabled?: boolean;
 }
 ```
 
 Instructs the LLM to emit JSON with `mentions` (local label → surface + type + identifiers + aliases) and `facts` (triples referencing mention labels, not entity IDs).
+
+`DEFAULT_EXTRACTION_PROMPT_VERSION` is currently `13`; use it when pinning
+prompt snapshots. `DEFAULT_EXTRACTABLE_ENTITY_TYPES` exposes the default
+seven-type mention vocabulary. Every task extraction still assumes `task` is
+allowed—the built-in prompt's task guidance is intentionally structural, not a
+fully removable optional paragraph.
 
 ### `ExtractionResolver`
 
@@ -1098,7 +1127,7 @@ interface PredicateDefinition {
 }
 
 class PredicateRegistry {
-  static standard(): PredicateRegistry;                // 54-predicate starter set
+  static standard(): PredicateRegistry;                // 44-predicate starter set
   static empty(): PredicateRegistry;
 
   register(def: PredicateDefinition): this;
@@ -1125,13 +1154,13 @@ class PredicateRegistry {
 
 ### Standard library
 
-`PredicateRegistry.standard()` returns a fresh registry with 45 predicates across 10 categories:
+`PredicateRegistry.standard()` returns a fresh registry with 44 predicates across 10 categories:
 
 | Category | Predicates |
 |---|---|
 | identity | works_at, reports_to, current_title, current_role, located_in, is_member_of, founded |
 | organizational | part_of, subsidiary_of, manages, owns, acquired, merged_with |
-| task | committed_to, blocked_by, depends_on, prepares_for, cancelled_due_to |
+| task | committed_to, blocked_by, depends_on, prepares_for |
 | decision | decision_made |
 | communication | emailed, called, messaged, met_with, mentioned, cc_ed, responded_to, interaction_count *(aggregate)* |
 | observation | observed_topic, expressed_concern, expressed_interest, acknowledged, noted |
@@ -1142,7 +1171,7 @@ class PredicateRegistry {
 
 `singleValued`: `current_title`, `current_role`. `isAggregate`: `interaction_count`.
 
-> **Single-entity attributes are metadata, not facts.** Task state lives on `task.metadata.state` (set at creation, transitioned via `MemorySystem.transitionTaskState`). The same applies to `dueAt`, `priority`, `completedAt`, `createdBy`/`createdAt`, and event/task scheduling on `metadata.startTime`/`endTime`. No `state_changed` / `has_status` / `current_status` / `completed` / `created` / `reviewed` / `has_due_date` / `has_priority` / `occurred_on` / `scheduled_for` / `started_on` / `ended_on` predicates exist — these were all deleted in 2026-05 consolidation passes. Only **relationships between two entities** (`committed_to`, `prepares_for`, `blocked_by`, `depends_on`, `cancelled_due_to`) live as facts. See [MEMORY_GUIDE.md](MEMORY_GUIDE.md#task-state-machine).
+> **Single-entity attributes are metadata, not facts.** Task state lives on `task.metadata.state` (set at creation, transitioned via `MemorySystem.transitionTaskState`). The same applies to `dueAt`, `priority`, `completedAt`, `createdBy`/`createdAt`, and event/task scheduling on `metadata.startTime`/`endTime`. No `state_changed` / `has_status` / `current_status` / `completed` / `created` / `reviewed` / `has_due_date` / `has_priority` / `occurred_on` / `scheduled_for` / `started_on` / `ended_on` / `cancelled_due_to` predicates exist. Inter-entity relationships such as `prepares_for`, `blocked_by`, and `depends_on` remain facts. `committed_to` is retained for backward-compatible queries but excluded from the default extraction prompt. See [transitioning task state](MEMORY_GUIDE.md#transitioning-task-state--transitiontaskstate).
 
 **Note:** `profile` is consumed by `MemorySystem.getContext` (document fact with predicate=`profile` is the canonical per-entity profile). Do not rename.
 
@@ -1224,7 +1253,7 @@ Attached to every `IEntity` and `IFact` as an optional `permissions` field.
 - **Owner required.** Every record must have `ownerId`. `MemorySystem.upsertEntity` / `addFact` throw `OwnerRequiredError` when neither input nor scope provides one. Admin delegation is allowed — `input.ownerId` can be any user id; equality with `scope.userId` is NOT enforced.
 - **Owner always wins.** If `record.ownerId === caller.userId`, the caller has full access regardless of `permissions`.
 - **The `permissions.{group, world}` block is write-once via the first-class API.** `MemorySystem.upsertEntity` does NOT rewrite `permissions` on existing records; the dirty path silently preserves stored permissions. Use the store's `updateEntity` / `updateFact` as an admin escape hatch, or re-emit as the owner. (Explicit `acl` grants ARE mutable — via `setAccess`; see [Principal ACLs](#principal-acls-explicit-grants) below.) See [MEMORY_PERMISSIONS.md § Changing access](./MEMORY_PERMISSIONS.md#changing-access-on-an-existing-record).
-- **Profile regeneration preserves privacy.** `regenerateProfile` inherits the prior profile's `permissions` when one exists (so a private profile stays private across auto-regen). First-time generation uses library defaults.
+- **Profile regeneration preserves privacy.** `regenerateProfile` inherits the prior profile's `permissions` when one exists (so a private profile stays private across auto-regen). First-time generation goes through `visibilityPolicy`, falling back to library defaults only when no policy applies.
 - **Supersession chains stay per-subject.** `addFact` with `supersedes` now validates that `predecessor.subjectId === input.subjectId` and throws otherwise — prevents retrieval corruption where "what superseded F1?" returns a fact about a different subject.
 
 ### Defaults (when `permissions` is omitted)
@@ -1234,7 +1263,11 @@ DEFAULT_GROUP_LEVEL = 'read'    // meaningful only when groupId is set
 DEFAULT_WORLD_LEVEL = 'read'
 ```
 
-Records are **public-read / owner-write** by default. Opt out with `permissions.world = 'none'` (group-private) or `permissions.group = 'none'` (owner-private-within-group). `permissions.group` is silently ignored when `record.groupId` is unset (group principal doesn't exist for groupless records).
+Records are **public-read / owner-write** by default. Set
+`permissions.world = 'none'` for group-private access, or set both
+`permissions.group = 'none'` and `permissions.world = 'none'` for owner-only
+access. `permissions.group` is silently ignored when `record.groupId` is unset
+(the group principal does not exist for groupless records).
 
 ### Pure evaluators
 
@@ -1433,7 +1466,7 @@ Full list of exported types:
 **Integration**
 - `ConnectorEmbedderConfig`, `ConnectorProfileGeneratorConfig`
 - `MemoryConnectorsConfig`, `MemorySystemWithConnectorsConfig`
-- `PromptContext` (profile prompt), `ExtractionPromptContext`, `PreResolvedBinding`
+- `ProfileGeneratorInput` (profile prompt), `ExtractionPromptContext`, `PreResolvedBinding`
 - `ExtractionMention`, `ExtractionFactSpec`, `ExtractionOutput`
 - `IngestionResolvedEntity`, `IngestionError`, `IngestionResult`
 - `ExtractionResolverOptions`

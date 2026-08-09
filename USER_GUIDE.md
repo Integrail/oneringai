@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
 **Version:** 1.0.0
-**Last Updated:** 2026-08-08
+**Last Updated:** 2026-08-09
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -21,13 +21,15 @@ A comprehensive guide to using all features of the @everworker/oneringai library
    - Multi-User Support (`userId`)
    - Auth Identities (`identities`)
 7. [Tools & Function Calling](#tools--function-calling)
-    - Built-in Tools Overview (160+ tools across 18 categories)
+    - Built-in, plugin-provided, and connector-generated tools
+    - [Connector & Tool Catalog](./docs/CONNECTOR_TOOL_CATALOG.md) — complete 50-template matrix and every specialized pack
     - Developer Tools (Filesystem & Shell — 11 tools)
     - [Custom Tool Generation](#custom-tool-generation) — Agents create, test, and persist their own tools
     - [Document Reader](#document-reader) — PDF, DOCX, XLSX, PPTX, CSV, HTML, images
     - Web Tools (webFetch, web_search via ConnectorTools, web_scrape via ConnectorTools)
     - JSON Tool
-    - GitHub Connector Tools (search_files, search_code, read_file, get_pr, pr_files, pr_comments, create_pr)
+    - GitHub Connector Tools (8 tools, including list_branches)
+    - [Slack Connector Tools](#slack-connector-tools) — channels, messages, threads, search, mentions, reactions, and users (10 tools)
     - Microsoft Graph Connector Tools (11 tools: email, calendar, meetings, Teams transcripts, OneDrive/SharePoint files)
     - [Google Workspace Connector Tools](#google-workspace-connector-tools) — Gmail, Calendar, Meet, Drive (11 tools)
     - [Zoom Connector Tools](#zoom-connector-tools) — Meeting management and transcripts (3 tools)
@@ -53,7 +55,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Setup and Configuration
     - Priority-Based Eviction
     - Tools (store_set/store_delete/store_list with store="whiteboard")
-    - UI Display (`showInUI`) and User Pinning
+    - Host UI metadata (`showInUI`) and host-defined pinning
     - Use Cases and Best Practices
 14. [Persistent Instructions](#persistent-instructions-nextgen-plugin)
     - Setup and Configuration
@@ -72,7 +74,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
     - Quick Start (in-process, dev)
     - Storage backends (InMemoryAdapter, MongoMemoryAdapter — raw + Meteor)
     - What gets injected into the system message (rules, user profile, optional org profile)
-    - Plugin config (incl. `groupBootstrap`, `recentActivity`, `defaultVisibility`)
+    - Plugin config (incl. `groupBootstrap`, `personaEntityId`, ACL principals, `recentActivity`, and host visibility policy)
     - The 12 `memory_*` tools (6 read + 6 write incl. `memory_set_agent_rule`)
     - Behavior rules — `memory_set_agent_rule`
     - Background ingestion via `SessionIngestorPluginNextGen`
@@ -119,6 +121,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 28. [Web Search](#web-search)
 29. [Streaming](#streaming)
 30. [External API Integration](#external-api-integration)
+    - [Complete Connector & Tool Catalog](./docs/CONNECTOR_TOOL_CATALOG.md)
 31. [Vendor Templates](#vendor-templates)
     - Quick Setup for 50 Services
     - Authentication Methods
@@ -396,7 +399,7 @@ Connector.create({
 });
 
 // 2. Create an agent
-const agent = Agent.create({
+const legacyAgent = Agent.create({
   connector: 'openai',
   model: 'gpt-5.6-terra',
 });
@@ -1537,7 +1540,8 @@ Unknown `{{COMMANDS}}` are left as-is — they won't cause errors and can coexis
 
 #### API Reference
 
-```typescript
+```text
+// Static API signatures
 // Register a handler (overrides existing, including built-ins)
 TemplateEngine.register(name: string, handler: TemplateHandler, options?: { dynamic?: boolean }): void;
 
@@ -1797,7 +1801,7 @@ class DatabaseContextStorage implements IContextStorage {
 
 ### Centralized Storage Registry
 
-Instead of configuring each subsystem separately, use `StorageRegistry` to set all storage backends in one call. Every subsystem (custom tools, media, sessions, persistent instructions, working memory, OAuth tokens) resolves its storage lazily from the registry at execution time, falling back to built-in defaults (file-based for custom tools/media/persistent instructions, in-memory for OAuth tokens/working memory, and none — must be configured explicitly — for sessions; see the table below).
+Instead of configuring each subsystem separately, use `StorageRegistry` to set storage backends in one call. Custom tools, media, sessions, context plugins, OAuth, routines, correlation records, agent/connector definitions, and permission rules consult the registry. Resolution can happen during construction or lazily at execution time depending on the subsystem; the table below records each actual default.
 
 ```typescript
 import { StorageRegistry } from '@everworker/oneringai';
@@ -1813,6 +1817,13 @@ StorageRegistry.configure({
   sessions: (agentId) => new RedisContextStorage(agentId),
   persistentInstructions: (agentId) => new DBInstructionsStorage(agentId),
   workingMemory: () => new RedisMemoryStorage(),
+  userInfo: (ctx) => new MongoUserInfoStorage(ctx?.userId),
+  routineDefinitions: (ctx) => new MongoRoutineDefinitionStorage(ctx?.userId),
+  routineExecutions: (ctx) => new MongoRoutineExecutionStorage(ctx?.userId),
+
+  // Additional global backends
+  correlations: new MongoCorrelationStorage(),
+  permissionRules: new MongoPermissionRulesStorage(),
 });
 
 // That's it! All agents, tools, and plugins will use these backends automatically.
@@ -1838,7 +1849,11 @@ const agent = Agent.create({ connector: 'openai', model: 'gpt-4.1' });
 | `sessions` | `(agentId, ctx?) => IContextStorage` | — | `AgentContextNextGen` constructor |
 | `persistentInstructions` | `(agentId, ctx?) => IPersistentInstructionsStorage` | `FilePersistentInstructionsStorage` | `PersistentInstructionsPluginNextGen` |
 | `workingMemory` | `(ctx?) => IMemoryStorage` | `InMemoryStorage` | `WorkingMemoryPluginNextGen` |
+| `userInfo` | `(ctx?) => IUserInfoStorage` | `FileUserInfoStorage` | `UserInfoPluginNextGen` |
 | `routineDefinitions` | `(ctx?) => IRoutineDefinitionStorage` | `FileRoutineDefinitionStorage` | Routine definition persistence |
+| `routineExecutions` | `(ctx?) => IRoutineExecutionStorage` | — | Routine execution detail/list tools |
+| `correlations` | `ICorrelationStorage` | — | Agent correlation/result routing |
+| `permissionRules` | `IUserPermissionRulesStorage` | — | Persistent per-user permission rules |
 
 **Individual access:**
 
@@ -1877,7 +1892,7 @@ StorageRegistry.setContext({ userId: 'alice', tenantId: 'acme-corp' });
 const agent = Agent.create({ connector: 'openai', model: 'gpt-4.1', userId: 'alice' });
 ```
 
-If no global context is set, `AgentContextNextGen` auto-derives one from its `userId` config (i.e., `{ userId }`) — but only for the `sessions` factory. The `workingMemory` and `persistentInstructions` factories only ever receive `StorageRegistry.getContext()` (the explicitly-set global context), with no per-instance `userId` fallback. So `Agent.create({ userId: 'alice' })` alone partitions **session** storage by user but does **not** automatically partition working-memory or persistent-instructions storage — call `StorageRegistry.setContext({ userId })` for those too.
+If no global context is set, `AgentContextNextGen` derives `{ userId }` for the `sessions` factory. Custom-tool, user-info, and routine tools can derive `{ userId }` from their per-call `ToolContext`. The `workingMemory` and `persistentInstructions` factories receive only `StorageRegistry.getContext()` and have no per-instance fallback, so call `StorageRegistry.setContext({ userId, tenantId })` when those backends must be partitioned. Because the registry context is process-global, request-concurrent multi-tenant servers should prefer explicitly scoped factories/instances over mutating global context during overlapping requests.
 
 ### Session Management APIs
 
@@ -2112,7 +2127,7 @@ if (restored) {
 
 // With config overrides
 const devAgent = await Agent.fromStorage('support-bot', defStorage, {
-  model: 'gpt-3.5-turbo',  // Override model for development
+  model: 'gpt-5.6-luna',  // Override with an economical current model
 });
 ```
 
@@ -2157,6 +2172,41 @@ The library includes a **powerful, universal context management system** that au
 ### AgentContextNextGen - The Modern API
 
 **AgentContextNextGen** is the modern, plugin-first context manager. It provides clean separation of concerns with composable plugins:
+
+#### What the plugin architecture is for
+
+A context plugin is a bounded capability, not just a prompt fragment. A plugin
+can own all of the following as one lifecycle unit:
+
+| Responsibility | Why it belongs in the plugin |
+|----------------|------------------------------|
+| Static instructions | Teaches the model when and how to use the capability |
+| Dynamic context content | Injects only the state needed for the current call |
+| Tools | Makes feature-specific operations available through the shared `ToolManager` |
+| Token accounting | Lets the context budget show exactly what each capability costs |
+| Compaction | Lets a feature reduce its own content safely when the context fills |
+| Persistence | Saves and restores plugin state with the conversation session |
+| Cleanup | Releases resources through the common `IDisposable` lifecycle |
+
+`AgentContextNextGen.prepare()` assembles one system message from the enabled
+plugins and compacts at most once immediately before the LLM call. Conversation
+tool-call/result pairs remain atomic, the newest input is never compacted, and
+disabling a feature removes its prompt content and feature tools.
+
+The word “memory” appears in several plugin names because they solve different
+problems:
+
+| Use case | Choose | Data location / retrieval model |
+|----------|--------|---------------------------------|
+| Scratch notes and large intermediate findings | `WorkingMemoryPluginNextGen` | Values live outside the prompt; an index is injected and the agent retrieves details with `store_*` |
+| Small state the model must always see | `InContextMemoryPluginNextGen` | Full values live directly in the prompt |
+| Durable people, organizations, tasks, events, documents, relationships, and learned profiles | `MemoryPluginNextGen` | Standalone entity/fact system with ranked, graph, vector, and bitemporal retrieval |
+| Let the LLM mutate durable memory | `MemoryWritePluginNextGen` | Six controlled write tools layered on the read plugin |
+| Learn from conversations without LLM write tools | `SessionIngestorPluginNextGen` | Background extraction into the same `MemorySystem` |
+
+See the [Memory Layer Guide](./docs/MEMORY_GUIDE.md) for the standalone system
+and the [Self-Learning Memory](#self-learning-memory-nextgen-plugin) section for
+agent wiring.
 
 ```typescript
 import { AgentContextNextGen } from '@everworker/oneringai';
@@ -2228,6 +2278,11 @@ AgentContextNextGen uses a plugin architecture with these core components:
 | **InContextMemoryPluginNextGen** | `ctx.getPlugin('in_context_memory')` | Live key-value storage in context |
 | **PersistentInstructionsPluginNextGen** | `ctx.getPlugin('persistent_instructions')` | Disk-persisted agent instructions |
 | **UserInfoPluginNextGen** | `ctx.getPlugin('user_info')` | User-scoped preferences + TODO tracking, auto-injected into context |
+| **ToolCatalogPluginNextGen** | `ctx.getPlugin('tool_catalog')` | Scoped discovery and dynamic loading/unloading of tool categories |
+| **SharedWorkspacePluginNextGen** | `ctx.getPlugin('shared_workspace')` | Versioned multi-agent coordination board |
+| **MemoryPluginNextGen** | `ctx.getPlugin('memory')` | Profile injection plus six graph/vector/document retrieval tools |
+| **MemoryWritePluginNextGen** | `ctx.getPlugin('memory_write')` | Six controlled durable-memory mutation tools |
+| **SessionIngestorPluginNextGen** | Manually registered | Optional background extraction from accumulated conversation turns |
 | **Conversation** | `ctx.getConversation()` | Built-in conversation tracking (Message[]) |
 
 #### Using AgentContextNextGen with Agent
@@ -2271,7 +2326,7 @@ console.log(`Used: ${budget.totalUsed}/${budget.maxTokens} tokens`);
 // Option 2: Pass existing AgentContextNextGen instance
 const sharedContext = AgentContextNextGen.create({ model: 'gpt-4.1' });
 const agent1 = Agent.create({ connector: 'openai', model: 'gpt-4.1', context: sharedContext });
-const agent2 = Agent.create({ connector: 'anthropic', model: 'claude', context: sharedContext });
+const agent2 = Agent.create({ connector: 'anthropic', model: 'claude-sonnet-5', context: sharedContext });
 // Both agents share the same context state and ToolManager!
 ```
 
@@ -2325,6 +2380,15 @@ interface ContextFeatures {
 
   /** Enable ToolCatalogPluginNextGen for dynamic tool loading/unloading (default: false) */
   toolCatalog?: boolean;
+
+  /** Enable SharedWorkspacePluginNextGen (default: false) */
+  sharedWorkspace?: boolean;
+
+  /** Enable MemoryPluginNextGen read tools/profile injection (default: false) */
+  memory?: boolean;
+
+  /** Enable MemoryWritePluginNextGen write tools (default: false; requires memory) */
+  memoryWrite?: boolean;
 }
 ```
 
@@ -2349,6 +2413,9 @@ console.log(DEFAULT_FEATURES);
 | `persistentInstructions` | `false` | PersistentInstructionsPluginNextGen - agent instructions persisted to disk (KVP entries) | `store_*` tools cannot target `"instructions"` store |
 | `userInfo` | `false` | UserInfoPluginNextGen - user-scoped preferences + TODO tracking auto-injected into context | `store_*` tools cannot target `"user_info"` store; `todo_*` tools not registered |
 | `toolCatalog` | `false` | ToolCatalogPluginNextGen - dynamic tool loading/unloading by category | `tool_catalog_*` tools not registered; all tools must be pre-loaded |
+| `sharedWorkspace` | `false` | SharedWorkspacePluginNextGen - versioned multi-agent coordination board | `store_*` tools cannot target `"workspace"` |
+| `memory` | `false` | MemoryPluginNextGen - profile injection and six read tools | No durable graph/vector memory content or `memory_*` read tools; requires `plugins.memory.memory` when enabled |
+| `memoryWrite` | `false` | MemoryWritePluginNextGen - six controlled write tools | Agent remains unable to mutate durable memory; requires `memory: true` when enabled |
 
 **Usage Examples:**
 
@@ -2408,7 +2475,7 @@ ctx.features.persistentInstructions;  // boolean
 ctx.features.userInfo;                // boolean
 
 // Get read-only feature configuration
-ctx.features; // { workingMemory, inContextMemory, persistentInstructions, userInfo, toolCatalog }
+ctx.features; // also includes sharedWorkspace, memory, memoryWrite, and registered external feature keys
 
 // Access nullable memory
 ctx.memory;  // WorkingMemoryPluginNextGen | null
@@ -2418,6 +2485,10 @@ ctx.getPlugin('working_memory');            // WorkingMemoryPluginNextGen | null
 ctx.getPlugin('in_context_memory');         // InContextMemoryPluginNextGen | null
 ctx.getPlugin('persistent_instructions');   // PersistentInstructionsPluginNextGen | null
 ctx.getPlugin('user_info');                 // UserInfoPluginNextGen | null
+ctx.getPlugin('tool_catalog');              // ToolCatalogPluginNextGen | null
+ctx.getPlugin('shared_workspace');          // SharedWorkspacePluginNextGen | null
+ctx.getPlugin('memory');                    // MemoryPluginNextGen | null
+ctx.getPlugin('memory_write');              // MemoryWritePluginNextGen | null
 
 // Check if plugin exists
 ctx.hasPlugin('working_memory');  // boolean
@@ -2451,6 +2522,8 @@ All plugin stores are accessed through 5 unified `store_*` tools: `store_get`, `
 - **persistentInstructions=true**: enables `"instructions"` store (e.g., `store_set("instructions", key, { content })`)
 - **userInfo=true**: enables `"user_info"` store (e.g., `store_set("user_info", key, { value })`)
 - **sharedWorkspace=true**: enables `"workspace"` store (e.g., `store_set("workspace", key, { summary, content })`)
+- **memory=true**: adds six `memory_*` read tools and injects the configured user/profile view (these are not `store_*` tools)
+- **memoryWrite=true**: adds six `memory_*` write tools and requires `memory=true`
 
 TODO tools (`todo_add`, `todo_update`, `todo_remove`) remain separate and are registered when `userInfo=true`.
 
@@ -2919,8 +2992,8 @@ const memoryComponent = {
   metadata: {
     strategy: 'evict',
     avgEntrySize: 100,                    // Average tokens per entry
-    evict: async (count) => { ... },      // Callback to evict entries
-    getUpdatedContent: async () => { ... }, // Get content after eviction
+    evict: async (count) => { await evictMemoryEntries(count); },
+    getUpdatedContent: async () => getMemoryIndex(),
   },
 };
 ```
@@ -3143,7 +3216,7 @@ const proseTokens = estimator.estimateTokens(essay, 'prose');       // ~4 chars/
 const mixedTokens = estimator.estimateTokens(readme, 'mixed');      // ~3.5 chars/token
 
 // Estimate structured data
-const dataTokens = estimator.estimateDataTokens({ users: [...], config: {...} });
+const dataTokens = estimator.estimateDataTokens({ users: [], config: {} });
 ```
 
 **Why content type matters:**
@@ -3180,48 +3253,20 @@ console.log(`  Current input: ${budget.breakdown.currentInput} tokens`);
 Use lifecycle hooks to integrate context management with your application. **Caveat:** in the current `Agent` implementation, only `beforeCompaction` is actually invoked at runtime (wired in `Agent`'s constructor via `AgentContextNextGen.setBeforeCompactionCallback`). `beforeContextPrepare`, `afterCompaction`, `beforeToolExecution`, `afterToolExecution`, and `onError` can be registered via `agent.setLifecycleHooks()`, but no code path in `Agent`/`BaseAgent` currently calls their `invoke*` helpers, so they will not fire.
 
 ```typescript
-import { AgentLifecycleHooks } from '@everworker/oneringai';
+import type { AgentConfig } from '@everworker/oneringai';
 
-const hooks: AgentLifecycleHooks = {
-  // Called before context is prepared for LLM call
-  beforeContextPrepare: async (agentId) => {
-    console.log(`[${agentId}] Preparing context...`);
-    // Could switch strategy based on task type
-  },
+type LifecycleHooks = NonNullable<AgentConfig['lifecycleHooks']>;
 
-  // Called after compaction completes
-  afterCompaction: async (log, tokensFreed) => {
-    // Log to monitoring system
+const hooks: LifecycleHooks = {
+  // This is the lifecycle hook currently wired by Agent.
+  beforeCompaction: async (context) => {
     await monitoring.record({
-      event: 'context_compaction',
-      tokensFreed,
-      logEntries: log,
+      event: 'context_compaction_starting',
+      agentId: context.agentId,
+      utilizationPercent: context.currentBudget.utilizationPercent,
+      strategy: context.strategy,
+      estimatedTokensToFree: context.estimatedTokensToFree,
     });
-
-    console.log(`Compaction freed ${tokensFreed} tokens`);
-  },
-
-  // Called before each tool execution
-  beforeToolExecution: async (context) => {
-    // ToolExecutionHookContext only exposes { toolName, args, agentId, taskId } —
-    // it has no contextManager/budget reference. Call agent.context.prepare() separately if needed.
-    console.log(`[${context.agentId}] About to run tool: ${context.toolName}`);
-  },
-
-  // Called after tool execution
-  afterToolExecution: async (result) => {
-    // Could trigger compaction if tool output was large
-    if (result.result && JSON.stringify(result.result).length > 10000) {
-      console.log('Large tool output detected');
-    }
-  },
-
-  // Error handling
-  onError: async (error, context) => {
-    if (context.phase === 'context_preparation') {
-      console.error('Context preparation failed:', error);
-      // Could adjust strategy or retry
-    }
   },
 };
 
@@ -3328,7 +3373,7 @@ The `store` parameter is a string identifying which store to target. The `data` 
 | Store | Feature Flag | Description | Data Shape for `store_set` |
 |-------|-------------|-------------|---------------------------|
 | `"notes"` | `workingMemory: true` | Tiered working memory (raw/summary/findings) | `{ description, value, tier?, priority? }` |
-| `"whiteboard"` | `inContextMemory: true` | Key-value pairs visible directly in LLM context | `{ description, value, priority?, showInUI? }` |
+| `"whiteboard"` | `inContextMemory: true` | Key-value pairs visible directly in LLM context | `{ description, value, priority? }` (`showInUI` is host-owned metadata; see below) |
 | `"instructions"` | `persistentInstructions: true` | Agent instructions persisted to disk | `{ content }` |
 | `"user_info"` | `userInfo: true` | User-scoped preferences across agents | `{ value, description? }` |
 | `"workspace"` | `sharedWorkspace: true` | Multi-agent coordination workspace | `{ summary, content?, references?, status?, tags? }` |
@@ -3352,7 +3397,7 @@ The `store` parameter is a string identifying which store to target. The `data` 
 | `memory_delete(key)` | `store_delete("notes", key)` |
 | `memory_query(...)` | `store_action("notes", "query", { pattern?, tier?, ... })` |
 | `memory_cleanup_raw()` | `store_action("notes", "cleanup_raw")` |
-| `context_set(key, desc, value, ...)` | `store_set("whiteboard", key, { description, value, priority?, showInUI? })` |
+| `context_set(key, desc, value, ...)` | `store_set("whiteboard", key, { description, value, priority? })` |
 | `context_delete(key)` | `store_delete("whiteboard", key)` |
 | `context_list()` | `store_list("whiteboard")` |
 | `instructions_set(key, content)` | `store_set("instructions", key, { content })` |
@@ -3370,7 +3415,7 @@ The `store` parameter is a string identifying which store to target. The `data` 
 
 #### Memory Store
 
-```typescript
+```jsonc
 // Store data in working memory
 // Tool call from LLM:
 {
@@ -3418,7 +3463,7 @@ The `store` parameter is a string identifying which store to target. The `data` 
 
 #### Context Store
 
-```typescript
+```jsonc
 // Store live state visible directly in context
 {
   "name": "store_set",
@@ -3428,8 +3473,7 @@ The `store` parameter is a string identifying which store to target. The `data` 
     "data": {
       "description": "Processing state for current task",
       "value": { "step": 3, "status": "active" },
-      "priority": "high",
-      "showInUI": true
+      "priority": "high"
     }
   }
 }
@@ -3454,7 +3498,7 @@ The `store` parameter is a string identifying which store to target. The `data` 
 
 #### Instructions Store
 
-```typescript
+```jsonc
 // Set a persistent instruction
 {
   "name": "store_set",
@@ -3489,7 +3533,7 @@ The `store` parameter is a string identifying which store to target. The `data` 
 
 #### User Info Store
 
-```typescript
+```jsonc
 // Store user preference
 {
   "name": "store_set",
@@ -3654,7 +3698,7 @@ interface WorkspaceEntry {
 
 ### Usage
 
-```typescript
+```jsonc
 // Store a workspace entry
 {
   "name": "store_set",
@@ -3701,7 +3745,7 @@ The workspace store supports additional actions via `store_action`:
 | `archive` | `{ key }` | Archive an entry (soft-delete) |
 | `clear` | `{ confirm: true }` | Clear all entries |
 
-```typescript
+```jsonc
 // Log a coordination message
 {
   "name": "store_action",
@@ -3771,7 +3815,7 @@ await writer.run('Write a report based on the workspace findings');
 | **Storage** | External (in-memory or file) | Directly in LLM context |
 | **Context visibility** | Index only (keys + descriptions) | Full values visible |
 | **Access pattern** | Requires `store_get("notes", key)` call | Immediate - no retrieval needed |
-| **UI display** | No | Yes — `showInUI` flag renders entries in host app sidebar |
+| **UI integration** | Host-defined | `showInUI` metadata and `onEntriesChanged` are available to hosts; core renders no UI |
 | **Best for** | Large data, rarely accessed info | Small state, frequently updated, live dashboards |
 | **Default capacity** | 25MB | 20 entries, 40000 tokens |
 
@@ -3803,7 +3847,7 @@ const ctx = AgentContextNextGen.create({ model: 'gpt-4.1' });
 // Create and configure plugin
 const plugin = new InContextMemoryPluginNextGen({
   maxEntries: 20,
-  maxTotalTokens: 4000,
+  maxTotalTokens: 40000,
   defaultPriority: 'normal',
   showTimestamps: false,
 });
@@ -3841,7 +3885,7 @@ The LLM manages in-context memory through the unified `store_*` tools with `stor
 
 Store or update a key-value pair in the live context:
 
-```typescript
+```jsonc
 // Tool call from LLM
 {
   "name": "store_set",
@@ -3851,8 +3895,7 @@ Store or update a key-value pair in the live context:
     "data": {
       "description": "Processing state for current task",
       "value": { "step": 3, "status": "active", "errors": [] },
-      "priority": "high",    // optional: low, normal, high, critical
-      "showInUI": true        // optional: display in host app sidebar (default: false)
+      "priority": "high"     // optional: low, normal, high, critical
     }
   }
 }
@@ -3862,7 +3905,7 @@ Store or update a key-value pair in the live context:
 
 Remove an entry to free space:
 
-```typescript
+```jsonc
 // Tool call from LLM
 {
   "name": "store_delete",
@@ -3878,7 +3921,7 @@ Remove an entry to free space:
 
 List all entries with metadata:
 
-```typescript
+```jsonc
 // Tool call from LLM
 {
   "name": "store_list",
@@ -3983,21 +4026,21 @@ Each entry renders as `**key** (priority): description` followed by a plain fenc
 
 ### UI Display (`showInUI`)
 
-Each InContextMemory entry has an optional `showInUI` boolean flag. When set to `true`, the host application can display the entry in a sidebar or dashboard with full rich markdown rendering — the same rendering capabilities as a chat view (code blocks, tables, LaTeX math, Mermaid diagrams, Vega-Lite charts, mindmaps, etc.).
+Each InContextMemory entry can carry optional `showInUI` metadata. OneRingAI stores, serializes, and returns the flag, but it does not render a sidebar or define pinning behavior. Those are host-application responsibilities.
 
-This enables agents to create **live dashboards**, **progress displays**, and **structured results** that the user can see at a glance without scrolling through chat history.
+The built-in whiteboard schema intentionally does **not** advertise `showInUI` to the LLM. The `store_set` handler still accepts it for compatibility, but an agent will only know to send the field when a host plugin or application instruction explicitly teaches that extension (for example, a UI integration layer). The direct `set()` API always supports it.
 
 #### How It Works
 
-1. **Agent sets `showInUI: true`** via `store_set("whiteboard", key, { ..., showInUI: true })` (or the direct `set()` API)
-2. **Host app receives updates** via the `onEntriesChanged` callback (debounced at 100ms)
-3. **Entries render as cards** in the sidebar with markdown-rendered values
-4. **Users can pin entries** to always show them, overriding the agent's `showInUI` setting
+1. **Host code sets `showInUI: true`** through the direct `set()` API, or explicitly extends the LLM's instructions/schema to permit the field.
+2. **Host app receives updates** via the `onEntriesChanged` callback (debounced at 100ms).
+3. **Host code chooses rendering, sanitization, pinning, and persistence behavior.**
 
-#### Via Tool (LLM)
+#### Via `store_set` in a host-enabled UI integration
 
-```typescript
-// Agent creates a visible dashboard entry
+```jsonc
+// This field is accepted by the handler, but the default LLM-facing store
+// schema does not advertise it. Expose it deliberately in host instructions.
 {
   "name": "store_set",
   "arguments": {
@@ -4056,7 +4099,7 @@ The callback fires on: `set()`, `delete()`, `clear()`, `restoreState()`, and `co
 
 #### User Pinning
 
-Users can **pin** specific entries to always show them in the UI, regardless of the agent's `showInUI` setting. This is useful when:
+Host applications can let users **pin** specific entries regardless of the entry's `showInUI` value. This is useful when:
 
 - An agent stores useful state but doesn't mark it as `showInUI`
 - The user wants to monitor a specific key during a session
@@ -4066,7 +4109,8 @@ Pin persistence belongs to the host application. A host can store the selected k
 
 #### Rendering
 
-Displayed entries support the **same rich markdown** as the chat window:
+Rendering is not part of OneRingAI. A host may pass string values through its
+normal Markdown renderer and support features such as:
 
 - **Code blocks** with syntax highlighting
 - **Tables** with alignment
@@ -4076,7 +4120,7 @@ Displayed entries support the **same rich markdown** as the chat window:
 - **Markmap mindmaps**
 - **Checklists**, **blockquotes**, **images**, and more
 
-Values that are objects or arrays are automatically rendered as formatted JSON code blocks. Primitive values (numbers, booleans) are rendered as plain text.
+Within the LLM context, objects and arrays are serialized as formatted JSON code blocks. A host UI decides independently how to render every value and must apply its own sanitization policy.
 
 ### Session Persistence
 
@@ -4276,7 +4320,7 @@ The LLM manages persistent instructions through the unified `store_*` tools with
 
 Add or update a single instruction by key:
 
-```typescript
+```jsonc
 // Tool call from LLM
 {
   "name": "store_set",
@@ -4295,7 +4339,7 @@ Add or update a single instruction by key:
 
 Remove a single instruction by key:
 
-```typescript
+```jsonc
 // Tool call from LLM
 {
   "name": "store_delete",
@@ -4311,7 +4355,7 @@ Remove a single instruction by key:
 
 List all instructions with their keys and content:
 
-```typescript
+```jsonc
 // Tool call from LLM
 {
   "name": "store_list",
@@ -4332,7 +4376,7 @@ List all instructions with their keys and content:
 
 Remove all instructions (requires confirmation):
 
-```typescript
+```jsonc
 // Tool call from LLM
 {
   "name": "store_action",
@@ -4554,6 +4598,9 @@ interface DirectCallOptions {
   /** Maximum output tokens */
   maxOutputTokens?: number;
 
+  /** Continue a provider-stored response/interaction */
+  previousResponseId?: string;
+
   /** Vendor-agnostic structured (JSON) output */
   responseFormat?:
     | { type: 'json_object' }
@@ -4562,8 +4609,8 @@ interface DirectCallOptions {
   /** Vendor-agnostic thinking/reasoning configuration */
   thinking?: {
     enabled: boolean;
-    budgetTokens?: number;   // Anthropic & Google
-    effort?: 'low' | 'medium' | 'high';  // OpenAI
+    budgetTokens?: number;   // Fixed-budget models
+    effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   };
 
   /** Vendor-specific options */
@@ -4577,6 +4624,9 @@ interface DirectCallOptions {
 
   /** Explicit permission for retention-sensitive provider features */
   dataHandling?: DataHandlingPolicy;
+
+  /** Skip the provider pre-flight context limit check (default: false) */
+  skipContextLimitCheck?: boolean;
 }
 ```
 
@@ -4646,8 +4696,8 @@ interface RunOptions {
   /** Vendor-agnostic thinking/reasoning configuration */
   thinking?: {
     enabled: boolean;
-    budgetTokens?: number;         // Anthropic & Google
-    effort?: 'low' | 'medium' | 'high';  // OpenAI
+    budgetTokens?: number;         // Fixed-budget models
+    effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   };
 
   /** Temperature override */
@@ -4703,7 +4753,7 @@ Vendor-agnostic reasoning configuration that maps to each provider's native API:
 |----------|-----------------|----------------------|
 | OpenAI | `reasoning.effort` | N/A |
 | Anthropic | `output_config.effort` | `thinking.budget_tokens` on fixed-budget models |
-| Google | N/A | `thinkingConfig.thinkingBudget` |
+| Google | Gemini thinking level (the exact supported subset is model-dependent) | `thinkingConfig.thinkingBudget` on fixed-budget models |
 
 ```typescript
 // Agent-level (applies to all calls)
@@ -4899,6 +4949,13 @@ interface UserInfoPluginConfig {
 
 The Self-Learning Memory system is a brain-like, queryable knowledge store that lets agents *learn from observation* — the user's profile and any user-given behavior rules are injected into the system message on every turn, and the agent can read or mutate the knowledge graph mid-conversation through 12 dedicated tools. It supersedes both `PersistentInstructionsPluginNextGen` and `UserInfoPluginNextGen`.
 
+The underlying `MemorySystem` is a first-class standalone module: it has no
+dependency on `Agent` or the context plugins. Server code can use its entity and
+fact model, vector embeddings, document search, graph traversal, bitemporal
+queries, signal ingestion, profile generation, storage adapters, and permission
+model directly. The context plugins are adapters that expose that same system
+to an LLM safely; they are not the memory implementation itself.
+
 This section is the user-guide-level walkthrough. For the full conceptual model, adapter setup, signal ingestion pipeline, predicate vocabulary, and resolution tiers, see:
 - [docs/MEMORY_GUIDE.md](./docs/MEMORY_GUIDE.md) — the canonical memory layer guide.
 - [docs/MEMORY_API.md](./docs/MEMORY_API.md) — full `MemorySystem` API reference.
@@ -4913,7 +4970,11 @@ Two first-class concepts:
 - **Entities** are pure identity. People, organizations, projects, tasks, events, topics — each carries a `displayName`, `aliases`, strong `identifiers` (email, domain, slack_id, github, custom canonical id), and type-specific `metadata` (e.g. task `state` / `dueAt`, event `startTime` / `attendeeIds`).
 - **Facts** are knowledge. Triples like `(John, works_at, Microsoft)` or document facts (long-form prose). Facts carry `confidence`, `importance`, `sourceSignalId`, temporal validity (`validFrom` / `validUntil`), supersession links, and can bind to additional entities via `contextIds` ("this fact is about John but also relates to the Acme deal").
 
-Everything is append-only with supersession (state changes archive predecessors), scope-aware (global / group / user-private), three-principal permissioned (owner / group / world), and retrievable as profile + ranked facts + related tasks + related events in one query.
+Facts preserve history through supersession; task entities are mutable through
+the state-machine API and keep a bounded `stateHistory`. Every record has an
+owner, can be tenant-scoped by group, supports owner/group/world permissions
+plus explicit principal ACLs, and is retrievable as profile + ranked facts +
+related tasks + related events in one query.
 
 **Self-learning loop:**
 1. The user tells the agent something ("I prefer concise answers"), or a background ingestor extracts facts from the conversation.
@@ -4939,7 +5000,17 @@ import {
   Agent,
   createMemorySystemWithConnectors,
   InMemoryAdapter,
+  PredicateRegistry,
 } from '@everworker/oneringai';
+
+const predicates = PredicateRegistry.standard().register({
+  name: 'prefers',
+  description: 'A durable user preference.',
+  category: 'preference',
+  payloadKind: 'attribute',
+  subjectTypes: ['person'],
+  lifecycle: 'stable',
+});
 
 // 1. Build the MemorySystem. Embedder + profile-generator are optional but
 //    recommended (without them: no semantic search, no profile auto-regen).
@@ -4949,6 +5020,9 @@ const memory = createMemorySystemWithConnectors({
     embedding: { connector: 'openai', model: 'text-embedding-3-small', dimensions: 1536 },
     profile:   { connector: 'anthropic', model: 'claude-sonnet-4-6' },
   },
+  predicates,
+  predicateMode: 'strict',
+  visibilityPolicy: () => ({ group: 'read', world: 'none' }),
 });
 
 // 2. Agent with feature flags + plugin config (under `context.features` /
@@ -4977,8 +5051,8 @@ const agent = Agent.create({
 
 await agent.run('Remember that I prefer concise answers');
 await agent.run('What are my preferences?');
-// → The reply references the stored preference because it's already in the
-//   user profile injected into context on every turn — no tool call needed.
+// → The fact is available to retrieval immediately and appears in injected
+//   top facts; the synthesized profile refreshes after the configured threshold.
 ```
 
 > The `context.features.memory` and `context.features.memoryWrite` flags are independent. `memoryWrite: true` requires `memory: true`. Enable just `memory` for a retrieval-only agent (and pair with `SessionIngestorPluginNextGen` to keep memory growing passively).
@@ -5004,14 +5078,18 @@ const client = await new MongoClient(url).connect();
 const db = client.db('myapp');
 const entitiesColl = new RawMongoCollection(db.collection('memory_entities'), client);
 const factsColl   = new RawMongoCollection(db.collection('memory_facts'), client);
+const memoryAdapter = new MongoMemoryAdapter({
+  entities: entitiesColl,
+  facts: factsColl,
+  factsCollectionName: 'memory_facts',     // required for native $graphLookup
+  useNativeGraphLookup: true,
+  vectorIndexName: 'memory_facts_vector',
+  entityVectorIndexName: 'memory_entities_identity_vector',
+  entityContentVectorIndexName: 'memory_entities_content_vector',
+});
 
 const memory = createMemorySystemWithConnectors({
-  store: new MongoMemoryAdapter({
-    entities: entitiesColl,
-    facts: factsColl,
-    factsCollectionName: 'memory_facts',     // required for native $graphLookup
-    useNativeGraphLookup: true,
-  }),
+  store: memoryAdapter,
   connectors: {
     embedding: { connector: 'openai', model: 'text-embedding-3-small', dimensions: 1536 },
     profile:   { connector: 'anthropic', model: 'claude-sonnet-4-6' },
@@ -5023,10 +5101,17 @@ await memory.ensureAdapterIndexes();
 
 // For semantic search at scale, also create Atlas Vector Search indexes
 // programmatically (UI creation is a security footgun — see MEMORY_GUIDE.md).
-await (memory['store'] as MongoMemoryAdapter).ensureVectorSearchIndexes({ dimensions: 1536 });
+await memoryAdapter.ensureVectorSearchIndexes({ dimensions: 1536 });
 ```
 
-> Mongo deployments must additionally create a unique partial index on `{identifiers.kind: 1, identifiers.value: 1}` for the entities collection. This guards against cross-process bootstrap races where two containers upsert the same user/agent entity simultaneously. `ensureAdapterIndexes()` does NOT create it (adding a unique index over existing duplicates fails); add it explicitly in a migration.
+> Mongo deployments need two host-managed uniqueness migrations in addition to
+> `ensureAdapterIndexes()`: a unique partial index on
+> `{identifiers.kind: 1, identifiers.value: 1}` to prevent connector/bootstrap
+> identity races, and `ensureNormalizedNameUniqueIndex(entitiesColl)` to make
+> normalized-name find-or-create atomic across processes. For an existing
+> database, backfill normalized fields and deduplicate before installing either
+> index; the library intentionally cannot make that destructive migration for
+> you. See the Memory Guide's Mongo deployment checklist.
 
 ### What gets injected into the system message
 
@@ -5068,6 +5153,11 @@ interface MemoryPluginConfig {
   agentId: string;                       // auto-filled from context.agentId
   userId: string;                        // auto-filled from agent.userId
   groupId?: string;                      // TRUSTED — from your auth layer
+  principals?: string[];                 // TRUSTED host-resolved ACL principal set
+  timezone?: string;                     // Viewer IANA timezone for rendered instants
+
+  // Optional shared persona subject for multiple agent variants.
+  personaEntityId?: string;
 
   // Permissions stamped on the bootstrapped user / agent / group entities.
   userEntityPermissions?:  { group?: 'none'|'read'|'write'; world?: 'none'|'read'|'write' };
@@ -5088,8 +5178,8 @@ interface MemoryPluginConfig {
   userProfileInjection?:  ProfileInjection;
   groupProfileInjection?: ProfileInjection;
 
-  // Default visibility for memory_remember / memory_link when the LLM omits it.
-  // Defaults: forUser='private', forAgent='group', forOther='private'.
+  // Legacy compatibility field. The 1.0 write tools do not consult it when
+  // the LLM omits visibility; configure MemorySystem.visibilityPolicy instead.
   defaultVisibility?: {
     forUser?:  'private' | 'group' | 'public';
     forAgent?: 'private' | 'group' | 'public';
@@ -5121,10 +5211,12 @@ interface MemoryWritePluginConfig {
   agentId: string;                       // auto-filled
   userId: string;                        // auto-filled
   groupId?: string;
+  predicates?: PredicateRegistry;       // Usually inherited from MemorySystem.
   defaultVisibility?: { /* same shape as above */ };
   autoResolveThreshold?: number;
   forgetRateLimit?: { maxCallsPerWindow?: number; windowMs?: number };       // default 10/60s/user; also fallback for setAgentRuleRateLimit
   setAgentRuleRateLimit?: { maxCallsPerWindow?: number; windowMs?: number }; // default: falls back to forgetRateLimit, then 10/60s/user
+  forbiddenEntityTypes?: readonly string[]; // Reject host-managed entity types.
 }
 ```
 
@@ -5162,13 +5254,13 @@ type SubjectRef =
 | `memory_restore` | Un-archive a previously forgotten fact (undo). Rejects when superseded by a live successor. | `{"factId":"fact_xyz"}` |
 | `memory_set_agent_rule` | Record a user-specific behavior rule for THIS agent. Rendered back into the system-message rules block. | `{"rule":"Be terse in replies."}` · `{"rule":"Reply in Russian.","replaces":"fact_abc123"}` |
 
-**Visibility mapping** (on `memory_remember` / `memory_link` / `memory_upsert_entity`):
-
-| Tool arg | Permissions stamped | Effect |
-|---|---|---|
-| `"private"` | `{group:'none', world:'none'}` | Owner-only |
-| `"group"` | `{group:'read', world:'none'}` | Group-readable |
-| `"public"` | `undefined` (library defaults: `group:'read'`, `world:'read'`) | Visible to anyone with scope access |
+**Write visibility:** the LLM-facing schemas for `memory_remember`,
+`memory_link`, and `memory_upsert_entity` deliberately do not expose a
+`visibility` argument. When those tools write a record, they pass no explicit
+permissions and `MemorySystem.visibilityPolicy` decides what to stamp. Configure
+that policy at the memory-system boundary; do not rely on prompt instructions
+for authorization. Programmatic callers using `MemorySystem` directly can pass
+explicit `permissions`.
 
 **Multi-ID enrichment** — `memory_upsert_entity` auto-merges identifiers when any one matches an existing entity. Useful when the LLM observes a person via Slack today and via email tomorrow:
 
@@ -5211,7 +5303,7 @@ agent.context.registerPlugin(new SessionIngestorPluginNextGen({
 }));
 ```
 
-Pair `memory: true` with the ingestor (and **without** `memoryWrite`) for an agent that reads memory but never mutates it directly — useful when the agent operator wants ambient learning without trusting the LLM to write. See [docs/MEMORY_GUIDE.md § Learning from agent runs](./docs/MEMORY_GUIDE.md#learning-from-agent-runs--sessioningestorpluginnextgen) for batching, watermark, dedup-merge, and graceful-shutdown details.
+Pair `memory: true` with the ingestor (and **without** `memoryWrite`) for an agent that reads memory but never mutates it directly — useful when the agent operator wants ambient learning without trusting the LLM to write. See [docs/MEMORY_GUIDE.md § Learning from agent runs](./docs/MEMORY_GUIDE.md#learning-from-agent-runs-with-sessioningestorpluginnextgen) for batching, watermark, dedup-merge, and graceful-shutdown details.
 
 > On graceful shutdown the host MUST `await ingestor.flush()` before destroying the agent — `flush()` ignores the batch threshold and awaits completion, so the trailing batch is captured.
 
@@ -5226,15 +5318,13 @@ Every entity and fact carries:
 
 Reads are filtered at the storage adapter (defence-in-depth); writes are checked at the `MemorySystem` layer (`assertCanAccess(..., 'write')` throws `PermissionDeniedError`). Scope visibility cuts orthogonal: a record with `groupId: 'A'` is invisible to callers in group `'B'` regardless of permissions.
 
-The plugin's `defaultVisibility` config decides what stamping happens when the LLM doesn't pass an explicit `visibility`:
-
-| Subject role | Default | Why |
-|---|---|---|
-| `forUser` (subject is the calling user) | `'private'` | Personal facts default to owner-only |
-| `forAgent` (subject is `this_agent`) | `'group'` | Agent-side learnings shared with the org |
-| `forOther` (any other entity) | `'private'` | Conservative — prevents accidental cross-user info leakage via shared entities |
-
-Override per-deployment via `defaultVisibility` config or per-call via the LLM's `visibility` arg. Full model: [docs/MEMORY_PERMISSIONS.md](./docs/MEMORY_PERMISSIONS.md).
+The plugin config still accepts `defaultVisibility` for compatibility, but the
+current write-tool implementations do not apply it when the LLM omits
+visibility. Use `MemorySystem.visibilityPolicy` for deployment-wide defaults.
+`memory_set_agent_rule` is a special case: it always writes the user-specific
+agent rule as private. Writes whose `contextIds` include foreign or
+unverifiable entities are fail-safe restricted to owner-only visibility.
+Full model: [docs/MEMORY_PERMISSIONS.md](./docs/MEMORY_PERMISSIONS.md).
 
 ### Principal-based ACLs (explicit grants)
 
@@ -5304,7 +5394,7 @@ The library trusts scope (`{userId, groupId}`) because the host authenticates th
 
 - **`userId` and `groupId` come from plugin config, NEVER from tool arguments.** Tools silently ignore any `groupId` passed by the LLM. (Otherwise a user in group A could ask the agent to call `memory_remember({..., groupId: "B"})` and escalate.)
 - **No ghost-writes.** `memory_remember` and `memory_link` reject writes whose subject is owned by another user — the memory layer enforces `fact.ownerId == subject.ownerId`, so without this guard a write against someone else's entity would silently attribute the fact to *them*. The tools return a structured error; the LLM should `memory_upsert_entity` its own entity instead.
-- **`contextIds` auto-downgrade.** A write specifying `contextIds` that include foreign-owned entities AND a non-private visibility is silently downgraded to `private` (with a `warnings` entry on the response). Prevents planting cross-owner facts that surface in a victim's graph walks.
+- **`contextIds` fail-safe restriction.** A write specifying `contextIds` that include foreign-owned or unverifiable entities is forced to owner-only whenever the host policy could otherwise choose wider visibility. The response includes a warning. This prevents planting cross-owner facts that surface in another owner's graph walks.
 - **Numeric clamping.** All LLM-controllable numeric limits are capped (`maxDepth ≤ 5`, `topK ≤ 100`, `limit ≤ 200/500`, `topFactsLimit ≤ 100`, `neighborDepth ≤ 5`, `confidence`/`importance` ∈ [0, 1]). DoS and ranking-pollution mitigated.
 - **`kind` is a strict enum.** Every fact is `'atomic'` or `'document'`. Anything else is rejected at both the tool and `MemorySystem.addFact` boundary.
 - **`value` and `objectId` are mutually exclusive.** Either relational or attribute, never both.
@@ -5325,9 +5415,9 @@ const readTools = createMemoryReadTools({
   agentId: 'my-agent',
   defaultUserId: 'alice',                   // fallback when ToolContext.userId is unset
   defaultGroupId: 'team-A',                 // TRUSTED — from your auth layer
+  defaultPrincipals: ['user:alice', 'group:team-A', 'world'],
   // Optional: wire "me" / "this_agent" token resolution via your own bootstrap.
   getOwnSubjectIds: () => ({ userEntityId, agentEntityId }),
-  defaultVisibility: { forUser: 'private', forAgent: 'group', forOther: 'private' },
   autoResolveThreshold: 0.9,
 });
 
@@ -5335,7 +5425,7 @@ agent.tools.registerMany(readTools);
 
 // Or full read+write:
 const writeTools = createMemoryWriteTools({ memory, agentId: 'my-agent', defaultUserId: 'alice' });
-agent.tools.registerMany([...readTools, ...writeTools]);
+agent.tools.registerMany(writeTools);
 ```
 
 Without `getOwnSubjectIds`, the `"me"` / `"this_agent"` `SubjectRef` tokens return a structured error; callers must reference entities by id, identifier, or surface.
@@ -5450,7 +5540,7 @@ const agent = Agent.create({
 
 **Scoping syntax for `toolCategories`:**
 
-```typescript
+```text
 // Allowlist (string[] shorthand)
 toolCategories: ['web', 'knowledge']
 
@@ -5468,7 +5558,7 @@ toolCategories: { exclude: ['desktop', 'shell'] }
 Pinned categories are always loaded and the LLM cannot unload them. Use this for tools the agent must always have access to:
 
 ```typescript
-context: {
+const contextConfig = {
   features: { toolCatalog: true },
   toolCategories: ['filesystem', 'web', 'code'],
   plugins: {
@@ -5476,7 +5566,7 @@ context: {
       pinned: ['filesystem'],  // always loaded, can't unload
     },
   },
-}
+};
 ```
 
 **Pinned vs always-on tools (`tools` array):**
@@ -5494,13 +5584,15 @@ context: {
 Pre-load categories so the agent doesn't need an extra turn. Unlike pinned, auto-loaded categories **can** be unloaded by the LLM:
 
 ```typescript
-plugins: {
+const pluginConfigs = {
+  plugins: {
   toolCatalog: {
     pinned: ['filesystem'],                     // always loaded
     autoLoadCategories: ['web', 'knowledge'],   // pre-loaded, can be unloaded
     maxLoadedCategories: 10,                    // limit (excludes pinned)
   },
-}
+  },
+};
 ```
 
 ### Dynamic Instructions
@@ -5515,10 +5607,10 @@ Additional tool categories can be loaded on demand from the catalog below.
 
 **Available categories:**
 - filesystem (6 tools) [PINNED]: Read, write, edit, search, and list files
-- web (2 tools): Fetch and process web content
-- code (1 tools): Execute JavaScript code in sandboxed VM
-- connector:github (2 tools): API tools for github
-- connector:slack (3 tools): API tools for slack
+- web (1 tool): Fetch and process web content
+- code (1 tool): Execute JavaScript code in sandboxed VM
+- connector:github (9 tools): Authenticated API + 8 GitHub tools
+- connector:slack (11 tools): Authenticated API + 10 Slack tools
 
 **Best practices:**
 - Search first to find the right category before loading.
@@ -5718,7 +5810,7 @@ Tasks can use control flow to iterate over data. Three flow types are available:
 All three support an optional `iterationTimeoutMs` to prevent infinite hangs:
 
 ```typescript
-{
+const mapTask = {
   name: 'Process Items',
   description: 'Process each item from the list',
   controlFlow: {
@@ -5731,7 +5823,7 @@ All three support an optional `iterationTimeoutMs` to prevent infinite hangs:
       { name: 'Process', description: 'Process the current item' },
     ],
   },
-}
+};
 ```
 
 When `iterationTimeoutMs` is set, each sub-execution is wrapped with `Promise.race`. If an iteration exceeds the timeout (or its sub-execution otherwise fails), the entire `map`/`fold`/`until` task fails immediately — there is no per-iteration failure mode or skip-and-continue; the loop does not proceed to remaining iterations.
@@ -5810,7 +5902,7 @@ After each task completes, the runner validates the output:
 5. Task passes if `completionScore >= minCompletionScore` (default 80)
 
 ```typescript
-{
+const validation = {
   validation: {
     completionCriteria: [
       'All API endpoints were documented',
@@ -5819,7 +5911,7 @@ After each task completes, the runner validates the output:
     ],
     minCompletionScore: 85,  // Strict: require 85+ score
   },
-}
+};
 ```
 
 ### Retry Logic
@@ -5843,7 +5935,7 @@ const routine = createRoutineDefinition({
     failureMode: 'fail-fast',  // Default: stop on first failure
     // failureMode: 'continue', // Skip failed tasks, continue with independents
   },
-  tasks: [...],
+  tasks: [],
 });
 ```
 
@@ -6471,7 +6563,19 @@ const myTool: ToolFunction = {
 
 ### Built-in Tools Overview
 
-The library ships with 70+ built-in tools across 14 categories:
+Tool counts are deliberately not presented as one fixed headline number: 39
+connector-free tools live in the generated registry, while context plugins,
+configured connectors, MCP servers, and the orchestrator add tools at runtime.
+
+| Source | Registration model |
+|--------|--------------------|
+| Generated built-ins | `ToolRegistry.getBuiltInTools()`; stable connector-free registry |
+| Context plugins | Enabled by `context.features` (`store_*`, `memory_*`, catalog, TODO tools) |
+| Connector tools | Created from live connectors by `ConnectorTools.for()` / `discoverAll()` |
+| Application and MCP tools | Supplied by the host or discovered from connected MCP servers |
+
+The complete source-of-truth inventory is in the
+[Connector & Tool Catalog](./docs/CONNECTOR_TOOL_CATALOG.md).
 
 | Category | Tools | Description |
 |----------|-------|-------------|
@@ -6482,15 +6586,19 @@ The library ships with 70+ built-in tools across 14 categories:
 | **Desktop** | `desktop_screenshot`, `desktop_mouse_*`, `desktop_keyboard_*`, `desktop_window_*`, `desktop_get_*` | OS-level desktop automation (11 tools, requires `@nut-tree-fork/nut-js`) |
 | **Code** | `execute_javascript` | Sandboxed JavaScript execution |
 | **JSON** | `json_manipulate` | JSON object manipulation (add, delete, replace fields) |
-| **GitHub** | `search_files`, `search_code`, `read_file`, `get_pr`, `pr_files`, `pr_comments`, `create_pr` | GitHub API operations (7 tools, auto-registered for GitHub connectors) |
+| **Custom tools** | `custom_tool_draft`, `custom_tool_test`, `custom_tool_save`, `custom_tool_load`, `custom_tool_list`, `custom_tool_delete` | Let agents create, test, persist, and reuse sandboxed tools |
+| **Routines** | `generate_routine`, `routine_get/list/update/delete`, task-step tools, execution listing | Build and manage persisted multi-step routines (8 tools) |
+| **GitHub** | `search_files`, `search_code`, `read_file`, `list_branches`, `get_pr`, `pr_files`, `pr_comments`, `create_pr` | GitHub API operations (8 tools, auto-registered for GitHub connectors) |
+| **Slack** | Channel, message, thread, search, mention, reaction, and user tools | Slack API operations (10 tools, auto-registered) |
 | **Microsoft** | `create_draft_email`, `send_email`, `create_meeting`, `edit_meeting`, `get_meeting`, `list_meetings`, `find_meeting_slots`, `get_meeting_transcript`, `read_file`, `list_files`, `search_files` | Microsoft Graph tools (11 tools, auto-registered) |
 | **Google** | `create_draft_email`, `send_email`, `create_meeting`, `edit_meeting`, `get_meeting`, `list_meetings`, `find_meeting_slots`, `get_meeting_transcript`, `read_file`, `list_files`, `search_files` | Google Workspace tools (11 tools, auto-registered) |
 | **Zoom** | `zoom_create_meeting`, `zoom_update_meeting`, `zoom_get_transcript` | Zoom meeting tools (3 tools, auto-registered) |
 | **Telegram** | `telegram_send_message`, `telegram_send_photo`, `telegram_get_updates`, `telegram_set_webhook`, `telegram_get_me`, `telegram_get_chat` | Telegram Bot API tools (6 tools, auto-registered) |
 | **Twilio** | `send_sms`, `send_whatsapp`, `list_messages`, `get_message` | SMS and WhatsApp tools (4 tools, auto-registered) |
-| **Multimedia** | `generate_image`, `generate_video`, `text_to_speech`, `speech_to_text` | Media generation (auto-registered for AI vendor connectors) |
+| **Multimedia** | `generate_image`, `generate_video`, `video_status`, `text_to_speech`, `speech_to_text` | Vendor-dependent subset auto-registered for OpenAI, Google, and xAI connectors |
+| **Self-learning memory** | Six read + six write `memory_*` tools | Graph, vector, document, profile, and controlled mutation tools supplied by memory plugins |
 
-Memory, In-Context Memory, and Persistent Instructions tools are documented in their respective sections above. Multimedia tools are documented in the Audio, Image, and Video sections. Desktop tools are documented in the Desktop Automation Tools section below. The rest are documented below.
+Memory, In-Context Memory, and Persistent Instructions tools are documented in their respective sections above. Multimedia tools are documented in the Audio, Image, and Video sections. Desktop tools are documented in the Desktop Automation Tools section below. Connector-generated names are always prefixed with the actual connector name.
 
 #### Store Tools (Memory, Context, Instructions, User Info, Workspace)
 
@@ -6521,7 +6629,7 @@ const agent = Agent.create({
 // Examples:
 // store_set("notes", "user.profile", { description: "User profile", value: { name: "Alice" }, priority: "high" })
 // store_get("notes", "user.profile")
-// store_set("whiteboard", "state", { description: "Current state", value: { step: 1 }, showInUI: true })
+// store_set("whiteboard", "state", { description: "Current state", value: { step: 1 } })
 // store_set("instructions", "tone", { content: "Be concise" })
 // store_action("notes", "query", { tier: "findings" })
 
@@ -7260,12 +7368,12 @@ The `read_file` tool automatically detects binary document formats (PDF, DOCX, X
 The `web_fetch` tool auto-detects document Content-Types and URL extensions:
 
 ```typescript
-import { Agent, webFetch } from '@everworker/oneringai';
+import { Agent, tools } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4.1',
-  tools: [webFetch],
+  tools: [tools.webFetch],
 });
 
 // web_fetch detects PDF content-type and converts to markdown
@@ -7475,7 +7583,7 @@ const customPDFHandler: IFormatHandler = {
   supportedFormats: ['pdf'],
   async handle(buffer, filename, format, options) {
     // Custom PDF parsing logic
-    return [{ type: 'text', content: '...', metadata: { ... } }];
+    return [{ type: 'text', content: '...', metadata: {} }];
   },
 };
 
@@ -7513,16 +7621,15 @@ const content = documentToContent(result, {
 #### Error Handling
 
 ```typescript
-import { DocumentReadError, UnsupportedFormatError } from '@everworker/oneringai';
+import { AIError } from '@everworker/oneringai';
 
 try {
   const result = await reader.read('/path/to/file.xyz');
 } catch (error) {
-  if (error instanceof UnsupportedFormatError) {
-    console.log(`Format not supported: ${error.format}`);
-  } else if (error instanceof DocumentReadError) {
+  if (error instanceof AIError && error.code === 'UNSUPPORTED_FORMAT') {
+    console.log(`Format not supported: ${error.message}`);
+  } else if (error instanceof AIError && error.code === 'DOCUMENT_READ_ERROR') {
     console.log(`Read failed: ${error.message}`);
-    console.log(`Source: ${error.source}`);
   }
 }
 ```
@@ -7548,19 +7655,19 @@ All defaults are defined in `DOCUMENT_DEFAULTS` and can be overridden:
 
 ### Web Tools
 
-Tools for fetching web content, searching the web, and scraping pages. `webFetch` is a standalone tool; `web_search` and `web_scrape` are connector-dependent (via ConnectorTools pattern).
+Tools for fetching web content, searching the web, and scraping pages. `tools.webFetch` is a connector-free tool; `web_search` and `web_scrape` are connector-dependent (via the `ConnectorTools` pattern).
 
-#### webFetch
+#### tools.webFetch
 
 Fetch and process web content. Converts HTML to markdown for easy consumption by LLMs. Also auto-detects document formats (PDF, DOCX, XLSX, etc.) by Content-Type or URL extension and converts them to markdown via [Document Reader](#document-reader).
 
 ```typescript
-import { webFetch } from '@everworker/oneringai';
+import { Agent, tools } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4.1',
-  tools: [webFetch],
+  tools: [tools.webFetch],
 });
 
 await agent.run('Fetch https://example.com and summarize it');
@@ -7635,17 +7742,17 @@ const scrapeTools = ConnectorTools.for('zenrows');
 
 ### JSON Tool
 
-#### jsonManipulator
+#### tools.jsonManipulator
 
 Manipulate JSON objects — add, delete, or replace fields.
 
 ```typescript
-import { jsonManipulator } from '@everworker/oneringai';
+import { Agent, tools } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4.1',
-  tools: [jsonManipulator],
+  tools: [tools.jsonManipulator],
 });
 
 await agent.run('Add a "version" field set to "2.0" to this JSON: {"name": "app"}');
@@ -7706,7 +7813,7 @@ This means you can configure a default repo once on the connector and all tools 
 
 Search for files by glob pattern in a repository. Mirrors the local `glob` tool.
 
-```typescript
+```jsonc
 // Find TypeScript files
 { "pattern": "**/*.ts" }
 
@@ -7728,7 +7835,7 @@ Search for files by glob pattern in a repository. Mirrors the local `glob` tool.
 
 Search code content across a repository. Mirrors the local `grep` tool.
 
-```typescript
+```jsonc
 // Find function usage
 { "query": "handleAuth", "language": "typescript" }
 
@@ -7752,7 +7859,7 @@ Search code content across a repository. Mirrors the local `grep` tool.
 
 Read file content from a repository with line range support. Mirrors the local `read_file` tool.
 
-```typescript
+```jsonc
 // Read entire file
 { "path": "src/index.ts" }
 
@@ -7778,7 +7885,7 @@ Output is formatted with line numbers matching the local `read_file` format. Fil
 
 Get full details of a pull request.
 
-```typescript
+```jsonc
 { "pull_number": 42 }
 { "pull_number": 42, "repository": "owner/repo" }
 ```
@@ -7793,7 +7900,7 @@ Get full details of a pull request.
 
 Get files changed in a PR with diffs.
 
-```typescript
+```jsonc
 { "pull_number": 42 }
 ```
 
@@ -7809,7 +7916,7 @@ The `status` field is one of: `added`, `modified`, `removed`, `renamed`. The `pa
 
 Get all comments and reviews on a PR, merged from three GitHub API endpoints into a unified format.
 
-```typescript
+```jsonc
 { "pull_number": 42 }
 ```
 
@@ -7830,7 +7937,7 @@ All entries are sorted by creation date (oldest first).
 
 Create a pull request.
 
-```typescript
+```jsonc
 // Basic PR
 { "title": "Add feature", "head": "feature-branch", "base": "main" }
 
@@ -7882,6 +7989,58 @@ const readFile = createGitHubReadFileTool(connector);
 const { owner, repo } = parseRepository('https://github.com/facebook/react');
 ```
 
+### Slack Connector Tools
+
+When a Slack connector is configured, `ConnectorTools.for('slack')` adds ten
+purpose-built tools alongside the generic authenticated API tool.
+
+```typescript
+import {
+  Agent,
+  ConnectorTools,
+  createConnectorFromTemplate,
+} from '@everworker/oneringai';
+
+createConnectorFromTemplate(
+  'work-slack',
+  'slack',
+  'bot-token',
+  { apiKey: process.env.SLACK_BOT_TOKEN! },
+);
+
+const slackTools = ConnectorTools.for('work-slack');
+
+const agent = Agent.create({
+  connector: 'openai-main',
+  model: 'gpt-5.6-terra',
+  identities: [{ connector: 'work-slack' }],
+  tools: slackTools,
+});
+```
+
+The names visible to the model are prefixed with the connector name—for
+example `work_slack_post_message`—so multiple Slack workspaces can be attached
+without collisions.
+
+| Base tool | Purpose |
+|-----------|---------|
+| `list_channels` | List channels visible to the connector identity |
+| `get_channel_info` | Fetch channel metadata |
+| `set_channel_topic` | Change a channel topic |
+| `get_messages` | Read recent channel messages |
+| `get_thread` | Read a message thread and replies |
+| `post_message` | Post a message to a channel or thread |
+| `search_messages` | Search Slack messages |
+| `get_mentions` | Retrieve messages mentioning the authenticated user/bot |
+| `add_reaction` | Add an emoji reaction to a message |
+| `get_users` | List workspace users |
+
+All operations still pass through `ToolManager` permissions and the connector's
+retry, circuit-breaker, metrics, multi-user OAuth, and account-binding logic.
+Use the generic `{connectorName}_api` tool for Slack methods not covered by this
+pack. See the [Connector & Tool Catalog](./docs/CONNECTOR_TOOL_CATALOG.md) for
+the complete specialized-service matrix.
+
 ### Microsoft Graph Connector Tools
 
 When a Microsoft connector is configured, `ConnectorTools.for('microsoft')` automatically includes 11 dedicated tools alongside the generic API tool. These enable email, calendar, meetings, Teams transcript, and OneDrive/SharePoint file workflows.
@@ -7929,7 +8088,7 @@ All 11 tools accept an optional `targetUser` parameter (email or user ID). When 
 
 Create a draft email or draft reply in the user's Outlook mailbox.
 
-```typescript
+```jsonc
 // New draft
 { "to": ["alice@example.com"], "subject": "Project Update", "body": "<p>Here's the latest...</p>" }
 
@@ -7951,7 +8110,7 @@ Create a draft email or draft reply in the user's Outlook mailbox.
 
 Send an email immediately or reply to an existing message.
 
-```typescript
+```jsonc
 // Send new email
 { "to": ["bob@example.com"], "subject": "Meeting Notes", "body": "<p>Attached are the notes.</p>" }
 
@@ -7974,7 +8133,7 @@ Send an email immediately or reply to an existing message.
 
 Create a calendar event on the user's Outlook calendar, optionally with a Teams online meeting link.
 
-```typescript
+```jsonc
 // Simple meeting
 {
   "subject": "Sprint Review",
@@ -8003,7 +8162,7 @@ Create a calendar event on the user's Outlook calendar, optionally with a Teams 
 
 Update an existing Outlook calendar event. Only the fields you provide are changed.
 
-```typescript
+```json
 { "eventId": "AAMkAG...", "subject": "Updated Sprint Review", "attendees": ["alice@example.com", "bob@example.com", "charlie@example.com"] }
 ```
 
@@ -8027,7 +8186,7 @@ Update an existing Outlook calendar event. Only the fields you provide are chang
 
 Find available meeting time slots when all attendees are free.
 
-```typescript
+```json
 {
   "attendees": ["alice@example.com", "bob@example.com"],
   "startDateTime": "2026-03-01T08:00:00",
@@ -8053,7 +8212,7 @@ Find available meeting time slots when all attendees are free.
 
 Retrieve the transcript from a Teams online meeting as plain text with speaker labels.
 
-```typescript
+```jsonc
 // By meeting ID
 { "meetingId": "MSoxMjM0NTY3..." }
 
@@ -8245,18 +8404,14 @@ createConnectorFromTemplate('zoom-s2s', 'zoom', 'server-to-server', {
 Cross-provider meeting slot finder that aggregates busy intervals from multiple calendar backends (Google, Microsoft):
 
 ```typescript
-import {
-  createUnifiedFindMeetingSlotsTool,
-  createGoogleCalendarSlotsProvider,
-  createMicrosoftCalendarSlotsProvider,
-} from '@everworker/oneringai';
+import { tools } from '@everworker/oneringai';
 
 // Create providers from existing connectors
-const googleProvider = createGoogleCalendarSlotsProvider(googleConnector);
-const msftProvider = createMicrosoftCalendarSlotsProvider(msftConnector);
+const googleProvider = tools.createGoogleCalendarSlotsProvider(googleConnector);
+const msftProvider = tools.createMicrosoftCalendarSlotsProvider(msftConnector);
 
 // Unified tool checks all providers in parallel
-const tool = createUnifiedFindMeetingSlotsTool([googleProvider, msftProvider]);
+const tool = tools.createUnifiedFindMeetingSlotsTool([googleProvider, msftProvider]);
 
 const result = await tool.execute({
   attendees: ['alice@gmail.com', 'bob@outlook.com'],
@@ -8973,7 +9128,7 @@ Set `blocking: false` on individual tool definitions:
 const tool: ToolFunction = {
   definition: {
     type: 'function',
-    function: { name: 'slow_tool', description: '...', parameters: {...} },
+    function: { name: 'slow_tool', description: '...', parameters: {} },
     blocking: false, // <-- async
   },
   execute: async (args) => { /* ... */ },
@@ -9018,7 +9173,7 @@ agent.on('async:continuation:start', (e) => {
 
 ### Public API
 
-```typescript
+```text
 // Check if any async tools are still running
 agent.hasPendingAsyncTools(): boolean;
 
@@ -9169,7 +9324,7 @@ if (response.status === 'suspended') {
 The `AgentResponse.suspension` field contains:
 
 ```typescript
-{
+interface SuspensionInfo {
   correlationId: string;    // 'email:msg_123'
   sessionId: string;        // Auto-generated or existing session ID
   agentId: string;          // Agent ID for reconstruction
@@ -9205,7 +9360,7 @@ app.post('/webhooks/email-reply', async (req, res) => {
 
   // 3. Customize — add tools, hooks, etc.
   agent.tools.register(sendResultsEmail);
-  agent.lifecycleHooks = { onError: myErrorHandler };
+  agent.setLifecycleHooks({ onError: myErrorHandler });
 
   // 4. Continue with the user's reply
   const result = await agent.run(body);
@@ -9223,7 +9378,7 @@ app.post('/webhooks/email-reply', async (req, res) => {
 
 ### `Agent.hydrate()` API
 
-```typescript
+```text
 static async hydrate(
   sessionId: string,
   options: {
@@ -9502,15 +9657,15 @@ agent.tools.executionPipeline.use(analyticsPlugin);
 #### Caching Plugin Example
 
 ```typescript
+const cache = new Map<string, { result: unknown; expiry: number }>();
+
 const cachePlugin: IToolExecutionPlugin = {
   name: 'cache',
   priority: 10, // Run very early to short-circuit
 
-  private cache = new Map<string, { result: unknown; expiry: number }>();
-
   async beforeExecute(ctx) {
     const key = `${ctx.toolName}:${JSON.stringify(ctx.args)}`;
-    const cached = this.cache.get(key);
+    const cached = cache.get(key);
 
     if (cached && cached.expiry > Date.now()) {
       console.log(`[Cache] HIT for ${ctx.toolName}`);
@@ -9524,7 +9679,7 @@ const cachePlugin: IToolExecutionPlugin = {
   async afterExecute(ctx, result) {
     const key = ctx.metadata.get('cache:key') as string;
     if (key) {
-      this.cache.set(key, {
+      cache.set(key, {
         result,
         expiry: Date.now() + 60000, // 1 minute TTL
       });
@@ -9748,14 +9903,14 @@ Key design principles:
 
 - **User rules are supreme** — when a user rule matches, no policy can override it. This guarantees users always have final say.
 - **Deny short-circuits** — in the policy chain, a deny verdict stops evaluation immediately. No later policy can override a deny.
-- **Allow does NOT short-circuit** — an allow verdict is remembered, but evaluation continues. This ensures argument-level restrictions (e.g., BashFilterPolicy blocking `rm -rf /`) always run even if AllowlistPolicy already allowed `bash`.
-- **All abstain = deny** — if no policy has an opinion, the default is to deny (configurable to `'allow'` for backward compatibility).
+- **Allow does NOT short-circuit** — an allow verdict is remembered, but evaluation continues so a later custom policy can still reject the arguments.
+- **All abstain depends on construction path** — a directly constructed `PolicyChain` defaults to deny. `Agent.create()` currently builds its chain through `fromConfig()`, which defaults to deny when an approval callback exists and allow otherwise. Its `permissions.policyChain` field is not applied in 1.0.
 
 ### Quick Start
 
 #### Zero-Config (Backward Compatible)
 
-The permission system is always active but backward compatible. Without any configuration, tools auto-execute using the default allowlist:
+The permission system is always active. Without configuration, default-allowlisted tools execute immediately. A tool declaring `scope: 'session'` or `scope: 'once'` requires approval; because no callback exists in this example, that call is rejected with “Approval required but no approval handler configured.” Use `autoApproveAll: true` only for trusted non-interactive automation.
 
 ```typescript
 import { Agent, Connector, Vendor } from '@everworker/oneringai';
@@ -9766,27 +9921,23 @@ Connector.create({
   auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
 });
 
-// No permissions config — uses default allowlist, all other tools auto-execute
+// No permissions config — uses DEFAULT_ALLOWLIST.
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4.1',
   tools: [readFile, writeFile, bash],
 });
 // read_file: auto-allowed (in DEFAULT_ALLOWLIST)
-// write_file: follows tool self-declaration (scope: 'session')
-// bash: follows tool self-declaration (scope: 'once')
+// write_file: approval required; rejected because no callback is configured
+// bash: approval required on every call; rejected for the same reason
 ```
 
 #### Simple Policy Configuration
 
-Add path restrictions and bash command filtering:
+Configure public allow/block lists and an approval callback:
 
 ```typescript
-import {
-  Agent,
-  PathRestrictionPolicy,
-  BashFilterPolicy,
-} from '@everworker/oneringai';
+import { Agent } from '@everworker/oneringai';
 
 const agent = Agent.create({
   connector: 'openai',
@@ -9803,19 +9954,16 @@ const agent = Agent.create({
       return { approved: true, scope: 'session' };
     },
 
-    // Custom policies
-    policies: [
-      new PathRestrictionPolicy({
-        allowedPaths: ['/workspace', '/tmp'],
-      }),
-      new BashFilterPolicy({
-        denyPatterns: [/rm\s+-rf/, /sudo/],
-        allowCommands: ['ls', 'cat', 'echo', 'npm'],
-      }),
-    ],
   },
 });
 ```
+
+For argument-aware path, command, URL, role, or rate-limit rules, pass your own
+public `IPermissionPolicy` implementation through `permissions.policies`. The
+source tree contains policies with names such as `PathRestrictionPolicy` and
+`BashFilterPolicy`, but those concrete classes are not exported from the
+published package root in 1.0.0; examples importing them from
+`@everworker/oneringai` do not compile.
 
 ### Per-User Permission Rules
 
@@ -9899,7 +10047,7 @@ type ConditionOperator =
 
 Examples of each operator:
 
-```typescript
+```jsonc
 // Allow bash only for npm commands
 { argName: 'command', operator: 'starts_with', value: 'npm' }
 
@@ -9960,7 +10108,7 @@ Use special `__` prefixed argument names to match against tool registration meta
 | `__toolSource` | Tool's source (e.g., `built-in`, `connector:github`, `mcp`, `custom`) |
 | `__toolNamespace` | Tool's registered namespace |
 
-```typescript
+```jsonc
 // Deny all MCP tools
 {
   id: '1', toolName: '*', action: 'deny',
@@ -10187,23 +10335,30 @@ Rule persisted to IUserPermissionRulesStorage
 Next call: user rule matches → immediate allow (no policy chain, no dialog)
 ```
 
-### Built-in Policies
+### Policy Implementations and the Public 1.0 Surface
 
-The library ships 8 composable policies. Each can be used independently or combined in a chain. Policies are sorted by priority (lower number = runs first).
+The policy engine contains eight implementations, sorted by priority (lower
+number runs first). The published 1.0 package exposes allowlist, blocklist, and
+session-approval behavior through `Agent.create({ permissions })` and manager
+shortcuts. It exports `IPermissionPolicy`, so applications can add custom
+policies. It does **not** export the eight concrete policy classes from the
+package root. The five advanced class descriptions below document current
+engine behavior and source-level configuration, but their constructors are not
+a supported npm import in 1.0.0.
 
 #### AllowlistPolicy
 
 Auto-allows tools by name. Returns `allow` for listed tools, `abstain` for others. Note: allow does NOT short-circuit, so later policies (e.g., BashFilterPolicy) can still deny based on arguments.
 
 ```typescript
-import { AllowlistPolicy, DEFAULT_ALLOWLIST } from '@everworker/oneringai';
-
-// Merge custom tools with defaults
-const policy = new AllowlistPolicy([
-  ...DEFAULT_ALLOWLIST,    // read_file, glob, grep, store_*, etc.
-  'my_safe_tool',
-  'another_safe_tool',
-]);
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4.1',
+  permissions: {
+    // Merged with DEFAULT_ALLOWLIST by PermissionPolicyManager.fromConfig().
+    allowlist: ['my_safe_tool', 'another_safe_tool'],
+  },
+});
 ```
 
 | Property | Value |
@@ -10217,12 +10372,6 @@ Default allowlisted tools: `read_file`, `glob`, `grep`, `list_directory`, `store
 Runtime modification:
 
 ```typescript
-policy.add('new_safe_tool');
-policy.remove('store_delete');
-policy.has('read_file');     // true
-policy.getAll();             // string[]
-
-// Via PermissionPolicyManager shortcuts
 agent.policyManager.allowlistAdd('my_tool');
 agent.policyManager.allowlistRemove('my_tool');
 ```
@@ -10232,12 +10381,11 @@ agent.policyManager.allowlistRemove('my_tool');
 Permanently blocks tools by name. Returns `deny` without `needsApproval` — no user approval can override a blocklisted tool. Runs at the highest policy priority to block before any other policy can allow.
 
 ```typescript
-import { BlocklistPolicy } from '@everworker/oneringai';
-
-const policy = new BlocklistPolicy([
-  'dangerous_tool',
-  'deprecated_tool',
-]);
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4.1',
+  permissions: { blocklist: ['dangerous_tool', 'deprecated_tool'] },
+});
 ```
 
 | Property | Value |
@@ -10249,10 +10397,6 @@ const policy = new BlocklistPolicy([
 Runtime modification:
 
 ```typescript
-policy.add('newly_dangerous_tool');
-policy.remove('dangerous_tool');
-
-// Via PermissionPolicyManager shortcuts (auto-removes from opposite list)
 agent.policyManager.blocklistAdd('bad_tool');   // also removes from allowlist
 agent.policyManager.blocklistRemove('bad_tool');
 ```
@@ -10268,9 +10412,14 @@ Manages session-level approval caching based on tool self-declarations. Reads `P
 - No config — `abstain` (tool has no permission declaration)
 
 ```typescript
-import { SessionApprovalPolicy } from '@everworker/oneringai';
-
-const policy = new SessionApprovalPolicy('once'); // constructor arg is currently unused — tools without a self-declared scope always abstain
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4.1',
+  permissions: {
+    defaultScope: 'once',
+    onApprovalRequired: async (request) => showApprovalDialog(request),
+  },
+});
 ```
 
 | Property | Value |
@@ -10308,9 +10457,8 @@ agent.policyManager.clearSession();
 
 Restricts file operations to allowed directory roots. Canonicalizes paths (resolves `..`, normalizes separators, best-effort symlink resolution for existing files).
 
-```typescript
-import { PathRestrictionPolicy } from '@everworker/oneringai';
-
+```text
+// Source-level illustration; PathRestrictionPolicy is not a package-root export in 1.0.0.
 const policy = new PathRestrictionPolicy({
   // Required: allowed path prefixes (canonicalized at construction)
   allowedPaths: ['/workspace', '/tmp', process.cwd()],
@@ -10345,9 +10493,8 @@ Best-effort command filtering for the `bash` tool. Checks deny patterns first (a
 
 **Important**: This is a guardrail, NOT a sandbox. Shell command obfuscation can bypass string-based filtering. For strong isolation, combine with blocklisting bash by default, path restrictions, or container/sandbox execution.
 
-```typescript
-import { BashFilterPolicy } from '@everworker/oneringai';
-
+```text
+// Source-level illustration; BashFilterPolicy is not a package-root export in 1.0.0.
 const policy = new BashFilterPolicy({
   // Deny patterns (checked first, any match → deny with needsApproval)
   denyPatterns: [
@@ -10379,9 +10526,8 @@ Only applies to the `bash` tool — all other tools get `abstain`. If neither de
 
 Restricts URL-based tools to allowed domains. Uses proper `URL` parsing (not regex over raw strings). Validates both protocol and hostname.
 
-```typescript
-import { UrlAllowlistPolicy } from '@everworker/oneringai';
-
+```text
+// Source-level illustration; UrlAllowlistPolicy is not a package-root export in 1.0.0.
 const policy = new UrlAllowlistPolicy({
   allowedDomains: [
     'api.github.com',       // exact match (also matches www.api.github.com)
@@ -10412,9 +10558,8 @@ Domain matching rules:
 
 Role-based access control. Users can have multiple roles. Deny beats allow across all matched rules.
 
-```typescript
-import { RolePolicy } from '@everworker/oneringai';
-
+```text
+// Source-level illustration; RolePolicy is not a package-root export in 1.0.0.
 const policy = new RolePolicy([
   {
     role: 'admin',
@@ -10459,9 +10604,8 @@ If a user has roles `['developer', 'restricted']`, deny from `restricted` beats 
 
 Per-tool rate limiting with a sliding window. In-memory only — counters reset on process restart.
 
-```typescript
-import { RateLimitPolicy } from '@everworker/oneringai';
-
+```text
+// Source-level illustration; RateLimitPolicy is not a package-root export in 1.0.0.
 const policy = new RateLimitPolicy({
   limits: {
     'web_fetch': { maxCalls: 10, windowMs: 60_000 },   // 10 per minute
@@ -10636,7 +10780,13 @@ agent.policyManager.on('permission:audit', async (entry: PermissionAuditEntry) =
 
 #### IPermissionPolicyStorage
 
-There is no built-in `IPermissionPolicyStorage` interface or `PolicyFactoryRegistry` in the current implementation — policies cannot be persisted/reloaded out of the box. Each built-in policy module internally exports a `StoredPolicyDefinition`-shaped factory object (e.g. `AllowlistPolicyFactory`, `PathRestrictionPolicyFactory`) implementing `IPermissionPolicyFactory`, but neither these factories nor the `StoredPolicyDefinition`/`IPermissionPolicyFactory` types are exported from the package's public entry point. To persist policy configuration yourself, store your own serializable config and reconstruct `new XPolicy(config)` instances directly at startup.
+There is no public `IPermissionPolicyStorage` or `PolicyFactoryRegistry` in the
+current implementation. Internal policy modules contain factory objects, but
+neither those factories nor their definition types are exported from the npm
+entry point. Persist your application's own serializable policy configuration
+and reconstruct your own `IPermissionPolicy` implementations at startup. The
+public allowlist/blocklist/session settings can be persisted as ordinary
+`AgentPolicyConfig` data.
 
 #### StorageRegistry Integration
 
@@ -10669,7 +10819,7 @@ When using the orchestrator pattern, worker agents cannot exceed the permissions
 #### setParentEvaluator
 
 ```typescript
-import { createOrchestrator, PathRestrictionPolicy, BashFilterPolicy } from '@everworker/oneringai';
+import { createOrchestrator } from '@everworker/oneringai';
 
 // Orchestrator with strict permissions
 const orchestrator = await createOrchestrator({
@@ -10683,19 +10833,14 @@ const orchestrator = await createOrchestrator({
   },
 });
 
-// Add policies to orchestrator — workers inherit these restrictions
-orchestrator.policyManager.addPolicy(
-  new PathRestrictionPolicy({ allowedPaths: ['/workspace'] })
-);
-orchestrator.policyManager.addPolicy(
-  new BashFilterPolicy({ denyPatterns: [/rm\s+-rf/, /sudo/] })
-);
-// All workers are now restricted to /workspace and cannot run rm -rf or sudo
+// Public manager shortcut: workers inherit this hard restriction.
+orchestrator.policyManager.blocklistAdd('bash');
+// For argument-aware restrictions, add your own IPermissionPolicy implementation.
 ```
 
 Delegation rules:
 - **Parent deny is FINAL** — worker cannot override a parent deny, even with its own user rules.
-- **Parent allow does NOT skip worker restrictions** — if the parent allows `bash`, the worker's BashFilterPolicy still runs.
+- **Parent allow does NOT skip worker restrictions** — a worker's own custom policies still run.
 - **Parent approval callback is NOT invoked** during delegation check — only the worker's approval callback triggers.
 
 Programmatic delegation for custom agent hierarchies:
@@ -10804,8 +10949,20 @@ The legacy config is automatically translated when passed to `Agent.create()`:
 `Agent.create()` always routes permission config through `PermissionPolicyManager.fromConfig()` — there is no separate "legacy" vs "policy" code path. `fromConfig()` first applies the legacy translation (blocklist/allowlist/defaultScope/onApprovalRequired) unconditionally, then layers on any explicitly supplied `policies`.
 
 ```typescript
+import { FileUserPermissionRulesStorage } from '@everworker/oneringai';
+import type { IPermissionPolicy } from '@everworker/oneringai';
+
+const noSudoPolicy: IPermissionPolicy = {
+  name: 'app:no-sudo',
+  priority: 50,
+  evaluate: (ctx) =>
+    ctx.toolName === 'bash' && String(ctx.args.command ?? '').includes('sudo')
+      ? { verdict: 'deny', reason: 'sudo is disabled', policyName: 'app:no-sudo' }
+      : { verdict: 'abstain', reason: 'not applicable', policyName: 'app:no-sudo' },
+};
+
 // Legacy config — still works, auto-translated to policies
-const agent = Agent.create({
+const legacyAgent = Agent.create({
   connector: 'openai',
   model: 'gpt-4.1',
   permissions: {
@@ -10815,25 +10972,21 @@ const agent = Agent.create({
     onApprovalRequired: async (ctx) => ({ approved: true }),
   },
 });
-agent.permissions.approve('tool');  // ToolPermissionManager (deprecated)
+legacyAgent.permissions.approve('tool');  // ToolPermissionManager (deprecated)
 
 // New policy config — explicitly uses policies
-const agent = Agent.create({
+const policyAgent = Agent.create({
   connector: 'openai',
   model: 'gpt-4.1',
   permissions: {
     allowlist: ['my_tool'],
     blocklist: ['bad_tool'],
-    policies: [
-      new PathRestrictionPolicy({ allowedPaths: ['/workspace'] }),
-      new BashFilterPolicy({ denyPatterns: [/rm\s+-rf/] }),
-    ],
-    policyChain: { defaultVerdict: 'deny' },
+    policies: [noSudoPolicy],
     onApprovalRequired: async (ctx) => ({ approved: true }),
     userRulesStorage: new FileUserPermissionRulesStorage(),
   },
 });
-agent.policyManager.userRules.addRule(rule);  // PermissionPolicyManager
+policyAgent.policyManager.userRules.addRule(rule);  // PermissionPolicyManager
 ```
 
 #### Programmatic Translation
@@ -10851,7 +11004,7 @@ const manager = PermissionPolicyManager.fromLegacyConfig({
 // From new config with policies
 const manager = PermissionPolicyManager.fromConfig({
   allowlist: ['my_tool'],
-  policies: [new PathRestrictionPolicy({ allowedPaths: ['/workspace'] })],
+  policies: [noSudoPolicy],
   userRulesStorage: new FileUserPermissionRulesStorage(),
   // NOTE: policyChain and auditStorage are not read by fromConfig() — see notes above.
 });
@@ -10902,23 +11055,58 @@ The plugin builds `PolicyContext` automatically from:
 
 ### Complete Example
 
-A full example combining user rules, multiple policies, approval dialog, storage, and audit logging:
+A complete example combining a public custom policy, user rules, an approval
+callback, persistent rule storage, and audit events:
 
 ```typescript
 import {
   Agent, Connector, Vendor,
-  PathRestrictionPolicy,
-  BashFilterPolicy,
-  UrlAllowlistPolicy,
-  RateLimitPolicy,
-  RolePolicy,
   FileUserPermissionRulesStorage,
 } from '@everworker/oneringai';
 import type {
   ApprovalRequestContext,
   ApprovalDecision,
+  IPermissionPolicy,
   PermissionAuditEntry,
 } from '@everworker/oneringai';
+
+declare function promptUser(question: string): Promise<'y' | 'n' | 'always'>;
+
+// The package root exposes the policy interface, so applications can encode
+// restrictions without importing source-internal policy implementations.
+const workspaceSafetyPolicy: IPermissionPolicy = {
+  name: 'app:workspace-safety',
+  priority: 50,
+  evaluate(ctx) {
+    if (ctx.toolName === 'bash') {
+      const command = String(ctx.args.command ?? '');
+      if (/\b(?:sudo|rm\s+-rf)\b/.test(command)) {
+        return {
+          verdict: 'deny',
+          reason: 'Privileged and recursive-delete commands are blocked',
+          policyName: 'app:workspace-safety',
+        };
+      }
+    }
+
+    if (['read_file', 'write_file', 'edit_file'].includes(ctx.toolName)) {
+      const path = String(ctx.args.path ?? '');
+      if (!path.startsWith('/workspace/')) {
+        return {
+          verdict: 'deny',
+          reason: 'File access is restricted to /workspace',
+          policyName: 'app:workspace-safety',
+        };
+      }
+    }
+
+    return {
+      verdict: 'abstain',
+      reason: 'No workspace restriction matched',
+      policyName: 'app:workspace-safety',
+    };
+  },
+};
 
 // Setup connector
 Connector.create({
@@ -10939,42 +11127,7 @@ const agent = Agent.create({
     allowlist: ['my_custom_tool'],
     blocklist: ['legacy_dangerous_tool'],
 
-    // Composable policies
-    policies: [
-      // Restrict file access to project directory
-      new PathRestrictionPolicy({
-        allowedPaths: ['/workspace', '/tmp'],
-      }),
-
-      // Filter bash commands
-      new BashFilterPolicy({
-        denyPatterns: [/rm\s+-rf/, /sudo/, /curl.*\|.*sh/],
-        allowCommands: ['npm', 'node', 'git', 'tsc', 'ls', 'cat'],
-      }),
-
-      // Restrict web access to known APIs
-      new UrlAllowlistPolicy({
-        allowedDomains: ['api.github.com', '.npmjs.org', '.googleapis.com'],
-      }),
-
-      // Rate limiting
-      new RateLimitPolicy({
-        limits: {
-          'web_fetch': { maxCalls: 30, windowMs: 60_000 },
-          'bash': { maxCalls: 10, windowMs: 60_000 },
-        },
-      }),
-
-      // Role-based access
-      new RolePolicy([
-        { role: 'developer', allowTools: ['*'], denyTools: ['desktop_mouse_click'] },
-        { role: 'viewer', allowTools: ['read_file', 'glob', 'grep'] },
-      ]),
-    ],
-
-    // NOTE: `policyChain` is currently a no-op — PermissionPolicyManager.fromConfig() never reads it.
-    // The chain's default verdict is 'deny' automatically because onApprovalRequired is set below.
-    policyChain: { defaultVerdict: 'deny' },
+    policies: [workspaceSafetyPolicy],
 
     // Per-user rules storage (persistent)
     userRulesStorage: new FileUserPermissionRulesStorage(),
@@ -11053,7 +11206,7 @@ MCP allows you to:
 - **Manage multiple servers** simultaneously
 - **Auto-reconnect** with exponential backoff
 - **Namespace tools** to prevent conflicts
-- **Session persistence** for stateful connections
+- **Serializable client metadata** for diagnostics and host-managed restart flows
 
 ### Quick Start
 
@@ -11166,15 +11319,12 @@ Create `oneringai.config.json` to declare MCP servers:
 Load and use the configuration:
 
 ```typescript
-import { Config, MCPRegistry, Agent } from '@everworker/oneringai';
+import { MCPRegistry, Agent } from '@everworker/oneringai';
 
-// Load configuration
-await Config.load('./oneringai.config.json');
+// Reads JSON, interpolates ${ENV_VAR} values, and creates all declared clients.
+const clients = await MCPRegistry.loadFromConfigFile('./oneringai.config.json');
 
-// Create all MCP clients from config
-const clients = MCPRegistry.createFromConfig(Config.getSection('mcp')!);
-
-// Connect all servers with autoConnect enabled
+// Connect every currently disconnected client in the registry.
 await MCPRegistry.connectAll();
 
 // Create agent and register tools
@@ -11185,6 +11335,13 @@ for (const client of clients) {
   }
 }
 ```
+
+`loadFromConfigFile()` creates clients but does not connect them. In 1.0,
+`MCPRegistry.connectAll()` connects **all** disconnected clients; it does not
+filter on the declared `autoConnect` flag. Connect selected clients individually
+if your application needs that distinction. Also use
+`transportConfig.timeoutMs` for the HTTP abort timeout—the top-level
+`requestTimeoutMs` field is currently not applied by `MCPClient`.
 
 ### MCPRegistry API
 
@@ -11275,18 +11432,14 @@ const resources = await client.listResources();
 const content = await client.readResource('file:///path/to/file');
 console.log(content.text);
 
-// Subscribe to resource updates (if supported)
-if (client.capabilities?.resources?.subscribe) {
-  client.on('resource:updated', (uri) => {
-    console.log(`Resource updated: ${uri}`);
-  });
-
-  await client.subscribeResource('file:///watch/this/file');
-}
-
-// Unsubscribe
-await client.unsubscribeResource('file:///watch/this/file');
 ```
+
+**1.0 limitation:** the client currently initializes negotiated capabilities as
+an empty object and does not register an SDK notification handler for resource
+updates. As a result, `subscribeResource()` cannot pass its capability check and
+no `resource:updated` event is emitted. Treat resource subscriptions as
+unavailable until that wiring is implemented; `listResources()` and
+`readResource()` remain usable.
 
 #### Prompt Operations
 
@@ -11334,11 +11487,6 @@ client.on('tool:called', (name, args) => {
 
 client.on('tool:result', (name, result) => {
   console.log(`Tool result: ${name}`, result);
-});
-
-// Resource events
-client.on('resource:updated', (uri) => {
-  console.log(`Resource updated: ${uri}`);
 });
 
 // Error events
@@ -11493,24 +11641,16 @@ console.log(`Total tools: ${agent.listTools().length}`);
 await agent.run('Query the database, analyze files, and create a GitHub issue with the results');
 ```
 
-### Available MCP Servers
+### Finding MCP Servers
 
-Official MCP servers from [@modelcontextprotocol](https://github.com/modelcontextprotocol/servers):
-
-- **@modelcontextprotocol/server-filesystem** - File system operations
-- **@modelcontextprotocol/server-github** - GitHub API integration
-- **@modelcontextprotocol/server-google-drive** - Google Drive access
-- **@modelcontextprotocol/server-slack** - Slack workspace integration
-- **@modelcontextprotocol/server-postgres** - PostgreSQL database access
-- **@modelcontextprotocol/server-sqlite** - SQLite database access
-- **@modelcontextprotocol/server-memory** - Simple in-memory key-value store
-- **@modelcontextprotocol/server-brave-search** - Brave Search API
-- **@modelcontextprotocol/server-fetch** - HTTP requests and web scraping
-
-Community servers:
-- Browse at [mcpservers.org](https://mcpservers.org/)
-- [Awesome MCP Servers](https://github.com/wong2/awesome-mcp-servers)
-- [Awesome MCP Servers (punkpeye)](https://github.com/punkpeye/awesome-mcp-servers)
+The MCP steering group's [reference-server repository](https://github.com/modelcontextprotocol/servers)
+currently maintains a small educational set: Everything, Fetch, Filesystem,
+Git, Memory, Sequential Thinking, and Time. These demonstrate protocol and SDK
+features and are not presented as production-ready services. Browse published
+packages in the [official MCP Registry](https://registry.modelcontextprotocol.io/)
+and evaluate each server's permissions, maintenance, and threat model. Older
+GitHub, Google Drive, Slack, PostgreSQL, SQLite, and Brave Search reference
+servers should not be described as current official packages.
 
 ### Error Handling
 
@@ -11518,10 +11658,7 @@ Community servers:
 import {
   MCPError,
   MCPConnectionError,
-  MCPTimeoutError,
-  MCPProtocolError,
   MCPToolError,
-  MCPResourceError,
 } from '@everworker/oneringai';
 
 try {
@@ -11530,11 +11667,9 @@ try {
   if (error instanceof MCPConnectionError) {
     console.error('Failed to connect:', error.message);
     // Retry or use fallback
-  } else if (error instanceof MCPTimeoutError) {
-    console.error('Connection timed out:', error.timeoutMs);
   } else if (error instanceof MCPToolError) {
     console.error('Tool execution failed:', error.toolName);
-  } else if (error instanceof MCPProtocolError) {
+  } else if (error instanceof MCPError) {
     console.error('Protocol error:', error.message);
   }
 }
@@ -11551,8 +11686,8 @@ console.log(state);
 // {
 //   name: 'filesystem',
 //   state: 'connected',
-//   capabilities: {...},
-//   subscribedResources: ['file:///watch'],
+//   capabilities: {},
+//   subscribedResources: [],
 //   lastConnectedAt: 1234567890,
 //   connectionAttempts: 0
 // }
@@ -11560,16 +11695,22 @@ console.log(state);
 // Save to storage
 await storage.save('mcp-state', state);
 
-// Load and restore
+// Load diagnostic/subscription metadata
 const savedState = await storage.load('mcp-state');
 const newClient = MCPRegistry.create(config);
 newClient.loadState(savedState);
-await newClient.connect(); // Resumes with saved subscriptions
+await newClient.connect();
 ```
+
+`loadState()` restores only the local subscription URI set and reconnect-attempt
+counter. It does not restore a live transport, capabilities, tools, or server
+session, and `connect()` does not replay `resources/subscribe` requests. If a
+future client version exposes working subscriptions, the host must still
+re-subscribe explicitly after connecting.
 
 ### Best Practices
 
-1. **Use Configuration Files** - Declare servers in `oneringai.config.json` for easier management
+1. **Use Configuration Files** - Declare servers in `oneringai.config.json` for easier management; remember that `autoConnect` is not currently enforced by `connectAll()`
 2. **Handle Reconnection** - Enable `autoReconnect` for production deployments
 3. **Monitor Events** - Listen to connection events for observability
 4. **Use Namespaces** - Set custom `toolNamespace` to organize tools clearly
@@ -11577,6 +11718,7 @@ await newClient.connect(); // Resumes with saved subscriptions
 6. **Clean Up** - Call `client.disconnect()` when done
 7. **Health Checks** - Use `client.ping()` for monitoring
 8. **Permission Control** - Set appropriate `defaultScope` for security
+9. **Set HTTP Timeouts at the transport** - Use `transportConfig.timeoutMs`; `requestTimeoutMs` is not currently wired into requests
 
 ### Troubleshooting
 
@@ -11629,32 +11771,13 @@ client.on('tool:result', (name, result) => {
 });
 ```
 
-### Advanced: Custom Transports
+### Transport Extension Boundary
 
-While stdio and HTTP/HTTPS cover most use cases, you can implement custom transports by creating a class that implements the SDK's `Transport` interface:
-
-```typescript
-import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
-
-class CustomTransport implements Transport {
-  onclose?: () => void;
-  onerror?: (error: Error) => void;
-  onmessage?: (message: JSONRPCMessage) => void;
-
-  async start(): Promise<void> {
-    // Initialize your custom transport
-  }
-
-  async close(): Promise<void> {
-    // Clean up resources
-  }
-
-  async send(message: JSONRPCMessage): Promise<void> {
-    // Send message to server
-  }
-}
-```
+The public `MCPServerConfig` currently accepts only `stdio`, `http`, and
+`https`; `MCPClient` constructs the corresponding SDK transport internally.
+Implementing the SDK's `Transport` interface alone is therefore not enough to
+inject a custom transport into OneRingAI 1.0. Add an adapter in the library or
+use the MCP SDK client directly when another transport is required.
 
 ---
 
@@ -12197,6 +12320,7 @@ const granularities = stt.getTimestampGranularities();  // model-specific
 | Model | Provider | Features | Price/minute |
 |-------|----------|----------|--------------|
 | `gpt-transcribe` | OpenAI | Current accurate file transcription | $0.0045 |
+| `gpt-4o-mini-transcribe` | OpenAI | Economical file transcription | $0.003 |
 | `gpt-live-transcribe` | OpenAI | Recommended realtime streaming transcription, latency control, vocabulary/language hints | $0.017 |
 | `gpt-realtime-whisper` | OpenAI | Low-latency realtime streaming transcription | $0.017 |
 | `gpt-4o-transcribe` | OpenAI | Superior accuracy | $0.006 |
@@ -13174,7 +13298,12 @@ const result = await grokImages.generate({
 // Responses may include b64_json/url plus xAI file_id/public_url metadata.
 ```
 
-### Available Models
+### Current Image Models
+
+The table highlights current non-retired choices. The image registry contains
+19 records in total, including callable migration entries and retired records;
+use `getActiveImageModels()` and `getDeprecatedImageModels()` rather than
+hard-coding this table in a model picker.
 
 | Vendor | Model | Lifecycle | Main use | Pricing representation |
 |--------|-------|-----------|----------|------------------------|
@@ -13416,6 +13545,10 @@ const nomic = await local.embed('query', {
 | 24+ GB | `qwen3-embedding` | ~5 GB | 4096 | Best (MTEB #1) |
 
 ### Available Models
+
+The table lists the ten active embedding models. The 12-record registry also
+retains inactive `text-embedding-ada-002` and retired `text-embedding-004` for
+lookup and migration metadata.
 
 | Vendor | Model | Default Dims | Max Dims | MRL | Max Tokens | Price/1M Tokens |
 |--------|-------|-------------|----------|-----|------------|-----------------|
@@ -13876,6 +14009,9 @@ const hd = await videoGen.generate({
 ```
 
 ### Available Models
+
+The video registry contains nine records: the eight callable entries below and
+the retired `veo-2.0-generate-001` migration record.
 
 #### OpenAI Sora Models
 
@@ -14454,7 +14590,7 @@ ZenRows provides enterprise-grade scraping with:
 - Screenshot capture
 
 ```typescript
-import { ScrapeProvider, ZenRowsOptions } from '@everworker/oneringai';
+import { ScrapeProvider } from '@everworker/oneringai';
 
 const scraper = ScrapeProvider.create({ connector: 'zenrows' });
 
@@ -14470,7 +14606,7 @@ const result = await scraper.scrape('https://protected-site.com', {
     device: 'mobile',         // Mobile user agent
     proxyCountry: 'us',       // Use US proxies
     autoparse: true,          // Auto-structure data
-  } as ZenRowsOptions,
+  },
 });
 ```
 
@@ -14612,6 +14748,11 @@ for await (const event of agent.stream('What is the weather in Paris?')) {
 ## External API Integration
 
 Connect your AI agents to 50 external services with enterprise-grade resilience. The library provides both connector-based tools and direct fetch capabilities.
+
+> **Need the inventory rather than a tutorial?** The
+> [Connector & Tool Catalog](./docs/CONNECTOR_TOOL_CATALOG.md) lists every
+> template, the generic tool each connector receives, all specialized packs,
+> connector-free built-ins, plugin tools, and the runtime discovery APIs.
 
 ### Overview
 
@@ -14826,7 +14967,7 @@ This ensures that tools from different vendors (e.g., `google_generate_image` vs
 
 Every connector with a `baseURL` gets a generic API tool that allows the agent to make any API call:
 
-```typescript
+```jsonc
 // Tool schema:
 {
   name: 'github_api',  // {connectorName}_api
@@ -14843,7 +14984,7 @@ Every connector with a `baseURL` gets a generic API tool that allows the agent t
 
 **Important:** For `POST`/`PUT`/`PATCH` requests, data must be passed in the `body` parameter as a JSON object — **not** as query string parameters in the endpoint URL. The body is sent as `application/json`. For example, to post a Slack message:
 
-```typescript
+```jsonc
 // Correct: data in body
 { method: 'POST', endpoint: '/chat.postMessage', body: { channel: 'C123', text: 'Hello!' } }
 
@@ -14866,7 +15007,7 @@ ConnectorTools.registerService('slack', (connector) => {
     definition: {
       type: 'function',
       function: {
-        name: 'slack_list_channels',
+        name: 'list_channels',
         description: 'List all Slack channels',
         parameters: {
           type: 'object',
@@ -14893,7 +15034,7 @@ ConnectorTools.registerService('slack', (connector) => {
     definition: {
       type: 'function',
       function: {
-        name: 'slack_post_message',
+        name: 'post_message',
         description: 'Post a message to a Slack channel',
         parameters: {
           type: 'object',
@@ -14918,7 +15059,8 @@ ConnectorTools.registerService('slack', (connector) => {
   return [listChannels, postMessage];
 });
 
-// Now ConnectorTools.for('slack-connector') returns both generic + custom tools
+// Now ConnectorTools.for('slack-connector') returns:
+// slack-connector_api, slack-connector_list_channels, slack-connector_post_message
 ```
 
 #### Discover All Connectors
@@ -15160,7 +15302,7 @@ import { listVendors, getVendorTemplate, getVendorInfo } from '@everworker/oneri
 
 // List all available vendors
 const vendors = listVendors();
-console.log(vendors.length);  // 45
+console.log(vendors.length);  // 50
 
 // Get specific vendor info
 const github = getVendorInfo('github');
@@ -15220,7 +15362,7 @@ const whiteSvg = getVendorLogoSvg('github', 'FFFFFF');
 const stripeColor = getVendorColor('stripe');  // "635BFF"
 
 // List all vendors with logos
-const vendorsWithLogos = listVendorsWithLogos();  // 49 vendors
+const vendorsWithLogos = listVendorsWithLogos();  // 54 known logo IDs
 
 // Get all logos at once
 const allLogos = getAllVendorLogos();  // Map<vendorId, VendorLogo>
@@ -15397,7 +15539,14 @@ createConnectorFromTemplate(
 
 ### Complete Vendor Reference
 
-#### Communication (5 vendors)
+#### Major Vendors (2 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| Microsoft | `microsoft` | `oauth-user`, `client-credentials` | [Azure app registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade) |
+| Google Workspace | `google-api` | `oauth-user`, `service-account` | [Google Cloud credentials](https://console.cloud.google.com/apis/credentials) |
+
+#### Communication (6 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
@@ -15406,6 +15555,7 @@ createConnectorFromTemplate(
 | Telegram | `telegram` | `bot-token` | [t.me/BotFather](https://t.me/BotFather) |
 | X (Twitter) | `twitter` | `oauth-user`, `bearer-token` | [developer.x.com](https://developer.x.com/en/portal/dashboard) |
 | Zoom | `zoom` | `oauth-user`, `server-to-server` | [marketplace.zoom.us](https://marketplace.zoom.us/develop/create) |
+| HeyReach | `heyreach` | `api-key` | [app.heyreach.io](https://app.heyreach.io/) |
 
 #### Development (7 vendors)
 
@@ -15419,15 +15569,19 @@ createConnectorFromTemplate(
 | Asana | `asana` | `pat`, `oauth-user` | [app.asana.com/0/developer-console](https://app.asana.com/0/developer-console) |
 | Trello | `trello` | `api-key`, `oauth-user` | [trello.com/power-ups/admin](https://trello.com/power-ups/admin) |
 
-#### Productivity (3 vendors)
+#### Productivity (5 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
 | Notion | `notion` | `internal-token`, `oauth-user` | [notion.so/my-integrations](https://www.notion.so/my-integrations) |
 | Airtable | `airtable` | `pat`, `oauth-user` | [airtable.com/create/tokens](https://airtable.com/create/tokens) |
 | Confluence | `confluence` | `api-token`, `oauth-3lo` | [Atlassian API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens) |
+| Cal.com | `cal-com` | `api-key` | [Cal.com API keys](https://app.cal.com/settings/developer/api-keys) |
+| Calendly | `calendly` | `personal-token`, `oauth-user` | [Calendly integrations](https://calendly.com/integrations/api_webhooks) |
 
-(Google Workspace / Microsoft 365 access is provided by the unified `google-api` / `microsoft` vendor templates, not separate ids.)
+Google Workspace and Microsoft 365 use the unified `google-api` and `microsoft`
+templates listed under Major Vendors; there are no separate product-specific
+template IDs.
 
 #### CRM (3 vendors)
 
@@ -15460,7 +15614,7 @@ createConnectorFromTemplate(
 | Dropbox | `dropbox` | `oauth-user` | [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps) |
 | Box | `box` | `oauth-user`, `client-credentials` | [developer.box.com/console](https://developer.box.com/console) |
 
-#### Email (4 vendors)
+#### Email (5 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
@@ -15468,6 +15622,7 @@ createConnectorFromTemplate(
 | Mailchimp | `mailchimp` | `api-key`, `oauth-user` | [admin.mailchimp.com/account/api](https://admin.mailchimp.com/account/api/) |
 | Mailgun | `mailgun` | `api-key` | [app.mailgun.com/settings/api_security](https://app.mailgun.com/settings/api_security) |
 | Postmark | `postmark` | `server-token`, `account-token` | [account.postmarkapp.com/api_tokens](https://account.postmarkapp.com/api_tokens) |
+| EmailBison | `emailbison` | `api-token` | [EmailBison authentication](https://docs.emailbison.com/get-started/authentication) |
 
 #### Monitoring (3 vendors)
 
@@ -15492,7 +15647,7 @@ createConnectorFromTemplate(
 |--------|-----|-------------|-----------------|
 | ZenRows | `zenrows` | `api-key` | [zenrows.com/register](https://www.zenrows.com/register) |
 
-#### Other (5 vendors)
+#### Other (6 vendors)
 
 | Vendor | ID | Auth Methods | Credentials URL |
 |--------|-----|-------------|-----------------|
@@ -15501,6 +15656,7 @@ createConnectorFromTemplate(
 | Intercom | `intercom` | `access-token`, `oauth-user` | [developers.intercom.com](https://developers.intercom.com/docs/build-an-integration) |
 | Shopify | `shopify` | `access-token`, `oauth-user` | [partners.shopify.com](https://partners.shopify.com/) |
 | ipinfo | `ipinfo` | `api-key` | [ipinfo.io/signup](https://ipinfo.io/signup) |
+| Clay | `clay` | `api-key` | [Clay API key guide](https://university.clay.com/docs/guide-find-clay-api-key) |
 
 ### Template vs Manual Configuration
 
@@ -16877,8 +17033,10 @@ try {
 
 ```typescript
 // Good: Named connectors
-Connector.create({ name: 'openai-main', vendor: Vendor.OpenAI, auth: { ... } });
-Connector.create({ name: 'openai-backup', vendor: Vendor.OpenAI, auth: { ... } });
+Connector.create({ name: 'openai-main', vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! } });
+Connector.create({ name: 'openai-backup', vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_BACKUP_API_KEY! } });
 
 const agent = Agent.create({ connector: 'openai-main', model: 'gpt-4.1' });
 
@@ -16955,7 +17113,7 @@ The library uses the **IDisposable pattern** for proper resource cleanup. All ma
 
 ```typescript
 // Agent - cascades to AgentContextNextGen → ToolManager → CircuitBreakers
-const agent = Agent.create({ ... });
+const agent = Agent.create({ connector: 'openai-main', model: 'gpt-4.1' });
 agent.onCleanup(() => {
   console.log('Cleaning up...');
 });
@@ -17034,9 +17192,12 @@ npm run example:oauth-registry     # OAuth registry
 
 ```typescript
 // Configure all providers
-Connector.create({ name: 'openai', vendor: Vendor.OpenAI, auth: { ... } });
-Connector.create({ name: 'anthropic', vendor: Vendor.Anthropic, auth: { ... } });
-Connector.create({ name: 'google', vendor: Vendor.Google, auth: { ... } });
+Connector.create({ name: 'openai', vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! } });
+Connector.create({ name: 'anthropic', vendor: Vendor.Anthropic,
+  auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! } });
+Connector.create({ name: 'google', vendor: Vendor.Google,
+  auth: { type: 'api_key', apiKey: process.env.GOOGLE_API_KEY! } });
 
 // Create agents for each
 const openaiAgent = Agent.create({ connector: 'openai', model: 'gpt-5.6-terra' });

@@ -9,8 +9,8 @@
 
 import 'dotenv/config';
 import * as readline from 'readline';
-import { Connector, Vendor } from '../src/index.js';
-import { ProviderConfigAgent } from '../src/agents/index.js';
+import { Connector, Vendor, ProviderConfigAgent } from '../src/index.js';
+import type { ConnectorConfigResult } from '../src/index.js';
 import * as fs from 'fs';
 
 const rl = readline.createInterface({
@@ -77,6 +77,7 @@ async function main() {
       // Handle exit commands
       if (['exit', 'quit', 'q'].includes(answer.toLowerCase().trim())) {
         console.log('\n👋 Goodbye!');
+        configAgent.destroy();
         rl.close();
         process.exit(0);
       }
@@ -84,7 +85,7 @@ async function main() {
       console.log('');
 
       try {
-        let response: string | any;
+        let response: string | ConnectorConfigResult;
 
         if (isFirstMessage) {
           // First run - start the conversation
@@ -96,7 +97,7 @@ async function main() {
         }
 
         // Check if we got a final config (object) or conversational response (string)
-        if (typeof response === 'object' && response.providerName) {
+        if (typeof response !== 'string') {
           // We got the final config!
           console.log('\n✅ Configuration generated successfully!\n');
           displayConfig(response);
@@ -109,6 +110,7 @@ async function main() {
 
             console.log('\n✨ Done! You can now use this config with Connector.create()');
             console.log('\n👋 Goodbye!');
+            configAgent.destroy();
             rl.close();
             process.exit(0);
           });
@@ -134,14 +136,17 @@ async function main() {
 /**
  * Display generated configuration
  */
-function displayConfig(result: any) {
+function displayConfig(result: ConnectorConfigResult) {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('📋 Provider Configuration');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
   console.log(`Provider Name: ${result.name}`);
   console.log(`Display Name: ${result.config.displayName}`);
-  console.log(`OAuth Flow: ${result.config.oauth.flow}`);
+  console.log(`Auth Type: ${result.config.auth.type}`);
+  if (result.config.auth.type === 'oauth') {
+    console.log(`OAuth Flow: ${result.config.auth.flow}`);
+  }
   console.log('');
 
   console.log('📝 Setup Instructions:');
@@ -169,7 +174,7 @@ function displayConfig(result: any) {
 /**
  * Save configuration to file
  */
-function saveConfig(result: any) {
+function saveConfig(result: ConnectorConfigResult) {
   const filename = `oauth-${result.name}-config.json`;
   fs.writeFileSync(filename, JSON.stringify(result, null, 2));
   console.log(`\n✅ Saved to: ${filename}`);

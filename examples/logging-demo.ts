@@ -24,7 +24,8 @@
  */
 
 import 'dotenv/config';
-import { Connector, Agent, Vendor, ToolFunction, logger } from '../src/index.js';
+import { Connector, Agent, Vendor, logger } from '../src/index.js';
+import type { ToolFunction } from '../src/index.js';
 
 // Simple calculation tool
 const calculatorTool: ToolFunction = {
@@ -44,13 +45,27 @@ const calculatorTool: ToolFunction = {
   },
   execute: async (args: { expression: string }) => {
     logger.info({ tool: 'calculate', expression: args.expression }, 'Calculating expression');
-    const result = eval(args.expression);
+    const match = args.expression.match(/^\s*(-?\d+(?:\.\d+)?)\s*([+\-*/])\s*(-?\d+(?:\.\d+)?)\s*$/);
+    if (!match) throw new Error('Use a two-number expression such as "42 * 99".');
+    const left = Number(match[1]);
+    const operator = match[2]!;
+    const right = Number(match[3]);
+    if (operator === '/' && right === 0) throw new Error('Division by zero is not allowed.');
+    const result = operator === '+' ? left + right
+      : operator === '-' ? left - right
+      : operator === '*' ? left * right
+      : left / right;
     logger.debug({ result }, 'Calculation complete');
     return { expression: args.expression, result };
   },
 };
 
 async function main() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required. Add it to .env before running this example.');
+  }
+
   console.log('=== Logging Configuration Demo ===\n');
   console.log(`LOG_LEVEL: ${process.env.LOG_LEVEL || 'info'}`);
   console.log(`LOG_FILE: ${process.env.LOG_FILE || 'console'}`);
@@ -61,15 +76,15 @@ async function main() {
   Connector.create({
     name: 'openai',
     vendor: Vendor.OpenAI,
-    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
+    auth: { type: 'api_key', apiKey },
   });
 
   // Create agent
   const agent = Agent.create({
     connector: 'openai',
-    model: 'gpt-4',
+    model: 'gpt-4.1-mini',
     tools: [calculatorTool],
-    instructions: 'You are a helpful math assistant.',
+    instructions: 'You are a math assistant. Always use the calculate tool for arithmetic.',
   });
 
   // Log at different levels
@@ -98,7 +113,11 @@ async function main() {
   if (process.env.LOG_FILE) {
     console.log(`\n✅ Logs written to: ${process.env.LOG_FILE}`);
   }
+  agent.destroy();
 }
 
 // Run example
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

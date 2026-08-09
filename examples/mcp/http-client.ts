@@ -4,14 +4,25 @@
  * Demonstrates connecting to a remote MCP server over HTTP/HTTPS.
  */
 
+import 'dotenv/config';
 import { Connector, Agent, Vendor, MCPRegistry } from '../../src/index.js';
 
 async function main() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const serverURL = process.env.MCP_SERVER_URL;
+  if (!serverURL) {
+    console.log('Set MCP_SERVER_URL to a Streamable HTTP MCP endpoint to run this example.');
+    return;
+  }
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required. Add it to .env before running this example.');
+  }
+
   // Create connector for LLM
   Connector.create({
     name: 'openai',
     vendor: Vendor.OpenAI,
-    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+    auth: { type: 'api_key', apiKey },
   });
 
   // Create HTTP MCP client
@@ -19,7 +30,7 @@ async function main() {
     name: 'remote-server',
     transport: 'http',
     transportConfig: {
-      url: 'http://localhost:3000/mcp',
+      url: serverURL,
       // Optional: Add authentication token
       token: process.env.MCP_SERVER_TOKEN,
       // Optional: Custom headers
@@ -36,8 +47,7 @@ async function main() {
         maxRetries: 5,                    // Max 5 retry attempts
       },
     },
-    autoConnect: true,
-    autoReconnect: true,
+    autoReconnect: false,
   });
 
   // Listen to connection events
@@ -68,7 +78,7 @@ async function main() {
   // Create agent
   const agent = Agent.create({
     connector: 'openai',
-    model: 'gpt-4',
+    model: 'gpt-4.1-mini',
   });
 
   // Register MCP tools with agent
@@ -81,7 +91,11 @@ async function main() {
   console.log('\nAgent response:', response.output_text);
 
   // Cleanup
+  agent.destroy();
   await client.disconnect();
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

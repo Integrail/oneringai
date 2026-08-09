@@ -39,7 +39,9 @@ Every record is subject to three evaluations in order:
 2. **Group**: if `record.groupId === caller.groupId` → use `permissions.group`.
 3. **World**: otherwise → use `permissions.world`.
 
-No admin scope, no role system, no per-user ACLs. If you need those, build them on top — we've stayed minimal so the model composes.
+There is no built-in role or admin hierarchy. Narrow grants are available
+through the optional principal-based `acl` layer described below; your host
+still decides which authenticated callers may create or change those grants.
 
 ---
 
@@ -130,7 +132,7 @@ Facts inherit ownership from their subject entity when `input.ownerId` is absent
 
 ### Profile regeneration inherits permissions
 
-Auto- and manual profile regeneration (`MemorySystem.regenerateProfile`) inherits the prior profile fact's `permissions` block when one exists. A profile that was explicitly set to `{ world: 'none' }` stays private across every regeneration — the library never silently widens visibility. When no prior profile exists (first generation), the new profile uses library defaults (public-read). If you want private profiles from the start, make the first write explicit:
+Auto- and manual profile regeneration (`MemorySystem.regenerateProfile`) inherits the prior profile fact's `permissions` block when one exists. A profile that was explicitly set to `{ world: 'none' }` stays private across every regeneration—the library never silently widens visibility. When no prior profile exists, the first profile goes through `MemorySystem.visibilityPolicy`; only hosts without a policy fall back to the public-read library default. Configure the policy centrally, or make the first write explicit:
 
 ```ts
 await mem.addFact(

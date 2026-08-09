@@ -9,11 +9,16 @@ import 'dotenv/config';
 import { Connector, Agent, Vendor } from '../src/index.js';
 
 async function main() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required. Add it to .env before running this example.');
+  }
+
   // Create connector with credentials
   Connector.create({
     name: 'openai',
     vendor: Vendor.OpenAI,
-    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
+    auth: { type: 'api_key', apiKey },
   });
 
   console.log('🤖 Simple Text Generation Examples\n');
@@ -25,7 +30,7 @@ async function main() {
 
   const agent1 = Agent.create({
     connector: 'openai',
-    model: 'gpt-4',
+    model: 'gpt-4.1-mini',
   });
 
   const response1 = await agent1.run('What is the capital of France?');
@@ -37,7 +42,7 @@ async function main() {
 
   const agent2 = Agent.create({
     connector: 'openai',
-    model: 'gpt-4',
+    model: 'gpt-4.1-mini',
     instructions: 'You are a teacher explaining concepts to a 10-year-old. Use simple language and analogies.',
     temperature: 0.7,
   });
@@ -45,7 +50,7 @@ async function main() {
   const response2 = await agent2.run('Explain quantum computing');
   console.log('Response:', response2.output_text);
 
-  // Example 3: JSON output (using response_format)
+  // Example 3: Vendor-neutral schema-constrained JSON output
   console.log('\n\nExample 3: Structured JSON Output');
   console.log('─────────────────────────\n');
 
@@ -56,30 +61,40 @@ async function main() {
     prep_time_minutes: number;
   }
 
-  // Note: For JSON output, use the provider's native JSON mode
-  // The response will be JSON that you can parse
   const agent3 = Agent.create({
     connector: 'openai',
-    model: 'gpt-4',
-    instructions: `You are a helpful assistant. Always respond with valid JSON matching this schema:
-{
-  "name": "string",
-  "ingredients": ["string"],
-  "steps": ["string"],
-  "prep_time_minutes": number
-}`,
+    model: 'gpt-4.1-mini',
+    instructions: 'You are a helpful cooking assistant.',
   });
 
-  const response3 = await agent3.run('Give me a simple pasta recipe. Respond with JSON only.');
+  const response3 = await agent3.run('Give me a simple pasta recipe.', {
+    responseFormat: {
+      type: 'json_schema',
+      name: 'recipe',
+      schema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          ingredients: { type: 'array', items: { type: 'string' } },
+          steps: { type: 'array', items: { type: 'string' } },
+          prep_time_minutes: { type: 'number' },
+        },
+        required: ['name', 'ingredients', 'steps', 'prep_time_minutes'],
+        additionalProperties: false,
+      },
+    },
+  });
 
-  try {
-    const recipe = JSON.parse(response3.output_text || '{}') as RecipeOutput;
-    console.log('Recipe:', JSON.stringify(recipe, null, 2));
-  } catch {
-    console.log('Raw response:', response3.output_text);
-  }
+  const recipe = response3.output_parsed as RecipeOutput;
+  console.log('Recipe:', JSON.stringify(recipe, null, 2));
 
+  agent1.destroy();
+  agent2.destroy();
+  agent3.destroy();
   console.log('\n\n✅ All examples completed!');
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

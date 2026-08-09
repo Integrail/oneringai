@@ -10,28 +10,40 @@
  */
 
 import 'dotenv/config';
-import { Connector, Agent, Vendor, tools, ConnectorTools, ToolFunction } from '../src/index.js';
+import { Connector, Agent, Vendor, tools, ConnectorTools, Services } from '../src/index.js';
+import type { ToolFunction } from '../src/index.js';
 
 async function main() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required. Add it to .env before running this example.');
+  }
+
   // Create LLM connector
   Connector.create({
     name: 'openai',
     vendor: Vendor.OpenAI,
-    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
+    auth: { type: 'api_key', apiKey },
   });
 
   console.log('Web Research Agent Demo\n');
   console.log('---\n');
 
   // Set up search connector (if API key available)
-  const hasSearchKey = !!process.env.SERPER_API_KEY;
+  const searchKey = process.env.SERPER_API_KEY || process.env.SERPER_KEY;
+  const hasSearchKey = !!searchKey;
 
   if (hasSearchKey) {
     // Create a search connector using the Connector + ConnectorTools pattern
     Connector.create({
       name: 'serper',
-      serviceType: 'serper',
-      auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+      serviceType: Services.Serper,
+      auth: {
+        type: 'api_key',
+        apiKey: searchKey!,
+        headerName: 'X-API-KEY',
+        headerPrefix: '',
+      },
       baseURL: 'https://google.serper.dev',
     });
     console.log('Search connector configured (serper)\n');
@@ -57,10 +69,12 @@ async function main() {
 
   const agent = Agent.create({
     connector: 'openai',
-    model: 'gpt-4',
+    model: 'gpt-4.1-mini',
     tools: agentTools,
     instructions:
       'You are a web research assistant. Use the search tool to find information, then use web_fetch to get full content from relevant pages.',
+    // This non-interactive demo only exposes the three tools listed above.
+    permissions: { autoApproveAll: true },
   });
 
   // Example 1: Simple web fetch
@@ -133,6 +147,11 @@ Return the JSON object.
     console.log('   3. Run this example again');
     console.log('');
   }
+
+  agent.destroy();
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

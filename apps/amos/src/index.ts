@@ -9,7 +9,7 @@
  * - Runtime vendor/model switching
  * - Dynamic connector management
  * - Extensible tool system
- * - Planning and task execution
+ * - Conversational planning guidance and tool execution
  * - Session persistence
  */
 
@@ -40,14 +40,14 @@ async function main(): Promise<void> {
   const app = new AmosApp(dataDir);
 
   // Handle interrupt signals
-  process.on('SIGINT', async () => {
+  process.once('SIGINT', () => {
     console.log('\nReceived SIGINT, shutting down...');
-    process.exit(0);
+    app.stop();
   });
 
-  process.on('SIGTERM', async () => {
+  process.once('SIGTERM', () => {
     console.log('\nReceived SIGTERM, shutting down...');
-    process.exit(0);
+    app.stop();
   });
 
   try {

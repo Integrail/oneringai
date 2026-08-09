@@ -13,8 +13,7 @@ import {
   Connector,
   Agent,
   Vendor,
-  authenticatedFetch,
-  generateWebAPITool,
+  ConnectorTools,
 } from '../src/index.js';
 
 async function main() {
@@ -39,7 +38,7 @@ async function main() {
       authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
       tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
       redirectUri: 'http://localhost:3000/callback',
-      scope: 'User.Read Mail.Read Files.ReadWrite',
+      scope: 'User.Read Mail.Read Files.ReadWrite offline_access',
     },
   });
 
@@ -60,6 +59,7 @@ async function main() {
       tokenUrl: 'https://oauth2.googleapis.com/token',
       redirectUri: 'http://localhost:3000/callback',
       scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/gmail.readonly',
+      authorizationParams: { access_type: 'offline' },
     },
   });
 
@@ -120,16 +120,15 @@ async function main() {
   console.log(Connector.getDescriptionsForTools());
   console.log('');
 
-  // ==================== Step 4: Generate API Tool ====================
+  // ==================== Step 4: Generate Connector Tools ====================
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-  console.log('Step 4: Auto-Generated API Tool');
+  console.log('Step 4: Auto-Generated Connector Tools');
   console.log('─────────────────────────────────\n');
 
-  const apiTool = generateWebAPITool();
+  const apiTools = [...ConnectorTools.discoverAll().values()].flat();
 
-  console.log('Tool name:', apiTool.definition.function.name);
-  console.log('Supported connectors:', apiTool.definition.function.parameters?.properties?.authProvider?.enum);
-  console.log('\nThe AI agent can now call ANY registered OAuth API!\n');
+  console.log('Tool names:', apiTools.map((tool) => tool.definition.function.name).join(', '));
+  console.log('\nEach tool is bound to one connector and its authentication context.\n');
 
   // ==================== Step 5: Example with AI Agent ====================
   if (process.env.OPENAI_API_KEY) {
@@ -145,16 +144,17 @@ async function main() {
 
     const agent = Agent.create({
       connector: 'openai',
-      model: 'gpt-4',
-      tools: [apiTool],
+      model: 'gpt-4.1-mini',
+      tools: apiTools,
       instructions:
         'You have access to multiple OAuth-authenticated APIs. When the user asks to access data from a service, choose the appropriate connector and make the request.',
     });
 
-    console.log('Agent created with api_request tool');
+    console.log(`Agent created with ${agent.listTools().length} connector tools`);
     console.log('Available connectors:', Connector.list());
     console.log('\nThe agent can intelligently choose which connector to use based on the user request!');
     console.log('');
+    agent.destroy();
     console.log('Examples:');
     console.log('  "Get my GitHub repos" → Uses github connector');
     console.log('  "Read my emails" → Uses microsoft connector');
@@ -205,11 +205,14 @@ const emails = await msftFetch('https://graph.microsoft.com/v1.0/me/messages');
   console.log('  1. Set up OAuth apps with Microsoft, Google, GitHub, etc.');
   console.log('  2. Add credentials to .env');
   console.log('  3. Complete OAuth flows (authorization, callbacks)');
-  console.log('  4. Use authenticatedFetch or api_request tool');
+  console.log('  4. Use authenticatedFetch or connector-bound tools');
   console.log('');
 
   // Cleanup
   Connector.clear();
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

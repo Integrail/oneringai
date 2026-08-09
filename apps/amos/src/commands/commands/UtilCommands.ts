@@ -1,8 +1,7 @@
 /**
  * Utility Commands - clear, exit, status, history
  *
- * Phase 2 Improvements:
- * - StatusCommand now shows context metrics from UniversalAgent
+ * Status and history commands use AgentContextNextGen.
  * - HistoryCommand now shows actual conversation history
  */
 
@@ -51,8 +50,11 @@ export class ExitCommand extends BaseCommand {
     const agent = app.getAgent();
     if (config.session.autoSave && agent) {
       try {
-        await agent.saveSession();
-        app.print('Session saved.');
+        const metrics = await agent.getContextMetrics();
+        if ((metrics?.historyMessageCount ?? 0) > 0) {
+          await agent.saveSession();
+          app.print('Session saved.');
+        }
       } catch {
         // Ignore save errors on exit
       }
@@ -68,7 +70,7 @@ export class ExitCommand extends BaseCommand {
 /**
  * StatusCommand - Show current status
  *
- * Phase 2: Now shows context metrics from UniversalAgent including:
+ * Shows current Agent context metrics including:
  * - History message count
  * - Memory statistics
  * - Current mode and plan status
@@ -139,13 +141,14 @@ Planning:
   Enabled: ${config.planning.enabled ? 'Yes' : 'No'}
   Auto-detect: ${config.planning.autoDetect ? 'Yes' : 'No'}
   Require Approval: ${config.planning.requireApproval ? 'Yes' : 'No'}
+  Mode: Conversational guidance
 
 Tools:
   Enabled: ${enabledTools.length} tools
   ${enabledTools.slice(0, 5).map((t) => t.definition.function.name).join(', ')}${enabledTools.length > 5 ? '...' : ''}
 
 Session:
-  ID: ${config.session.activeSessionId || '(none)'}
+  ID: ${agent?.getSessionId() || config.session.activeSessionId || '(none)'}
   Auto-save: ${config.session.autoSave ? 'Yes' : 'No'}
 ${contextSection}
 Type /help for available commands
@@ -173,7 +176,7 @@ Context:
 /**
  * HistoryCommand - Show conversation history
  *
- * Phase 2: Now shows actual conversation history from UniversalAgent context
+ * Shows actual conversation history from the current Agent context.
  */
 export class HistoryCommand extends BaseCommand {
   readonly name = 'history';
@@ -210,7 +213,10 @@ ALIASES:
       return this.error('Agent not initialized. Start a conversation first.');
     }
 
-    const count = args[0] ? parseInt(args[0]) : 10;
+    const count = args[0] ? parseInt(args[0], 10) : 10;
+    if (!Number.isInteger(count) || count < 1 || count > 1000) {
+      return this.error('History count must be an integer between 1 and 1000.');
+    }
     const history = await agent.getConversationHistory(count);
 
     if (history.length === 0) {
@@ -260,9 +266,9 @@ export class PlanCommand extends BaseCommand {
     return `
 /plan - Control Planning Mode Settings
 
-Quick control over automatic planning behavior. When auto-detect is ON,
-the agent will automatically create multi-step plans for complex requests.
-When OFF, it will execute requests directly without planning.
+Quick control over conversational planning guidance. When ON, the agent is
+instructed to propose a plan for complex requests and, when configured, wait
+for approval before state-changing work. Simple requests remain direct.
 
 USAGE:
   /plan           Show current planning settings
@@ -320,8 +326,8 @@ ALIASES:
 
     const status = enabled ? 'ON' : 'OFF';
     const description = enabled
-      ? 'Agent will automatically create plans for complex tasks.'
-      : 'Agent will execute requests directly without planning.';
+      ? 'Agent will propose plans conversationally for complex tasks.'
+      : 'Agent will execute requests directly without planning guidance.';
 
     return this.success(`Auto-planning: ${status}\n${description}`);
   }
@@ -340,6 +346,7 @@ ALIASES:
       `  Auto-detect: ${autoStatus}`,
       `  Planning enabled: ${enabledStatus}`,
       `  Require approval: ${approvalStatus}`,
+      '  Implementation: conversational guidance (OneRingAI 1.0 Agent)',
       '',
       'Commands:',
       '  /plan on      Enable auto-planning',

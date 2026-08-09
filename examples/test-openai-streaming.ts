@@ -2,21 +2,22 @@
  * Test OpenAI streaming usage tracking
  */
 
+import 'dotenv/config';
 import { Connector, Agent, Vendor, StreamEventType } from '../src/index.js';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
 
 async function main() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY is required. Add it to .env.');
+
   Connector.create({
     name: 'openai',
     vendor: Vendor.OpenAI,
-    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+    auth: { type: 'api_key', apiKey },
   });
 
   const agent = Agent.create({
     connector: 'openai',
-    model: 'gpt-4o-mini',
+    model: 'gpt-4.1-mini',
     instructions: 'Be concise.',
   });
 
@@ -47,6 +48,11 @@ async function main() {
   console.log('\n\n=== SUMMARY ===');
   console.log('Total events:', eventCount);
   console.log('Usage events:', usageEvents);
+  if (usageEvents !== 1) throw new Error(`Expected one response-complete usage event, received ${usageEvents}.`);
+  agent.destroy();
 }
 
-main();
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

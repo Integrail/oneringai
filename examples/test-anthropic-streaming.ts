@@ -2,21 +2,22 @@
  * Test Anthropic streaming usage tracking
  */
 
-import { Connector, Agent, Vendor, StreamEventType, StreamHelpers } from '../src/index.js';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
+import 'dotenv/config';
+import { Connector, Agent, Vendor, StreamEventType } from '../src/index.js';
 
 async function main() {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is required. Add it to .env.');
+
   Connector.create({
     name: 'anthropic',
     vendor: Vendor.Anthropic,
-    auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! },
+    auth: { type: 'api_key', apiKey },
   });
 
   const agent = Agent.create({
     connector: 'anthropic',
-    model: 'claude-sonnet-4-5-20250929',
+    model: 'claude-haiku-4-5-20251001',
     instructions: 'Be concise.',
   });
 
@@ -47,6 +48,13 @@ async function main() {
   console.log('Total events:', eventCount);
   console.log('Usage events:', usageEvents);
   console.log('Final usage:', finalUsage);
+  if (usageEvents !== 1 || !finalUsage) {
+    throw new Error('The stream did not include exactly one final usage event.');
+  }
+  agent.destroy();
 }
 
-main();
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

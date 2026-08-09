@@ -37,7 +37,8 @@ function formatNumber(n: number): string {
  * Create a progress bar
  */
 function createProgressBar(percent: number, width: number = 10): string {
-  const filled = Math.round((percent / 100) * width);
+  const clamped = Math.max(0, Math.min(100, percent));
+  const filled = Math.round((clamped / 100) * width);
   const empty = width - filled;
   return '█'.repeat(filled) + '░'.repeat(empty);
 }
@@ -216,19 +217,15 @@ EXAMPLES:
     const cacheStats = await agent.getCacheStats();
 
     if (!cacheStats) {
-      // UniversalAgent doesn't expose cache
       const lines = [
         'Cache Statistics',
         '────────────────────────────────────',
-        'Cache statistics are not available for this agent type.',
-        '',
-        'Note: Tool result caching is available in TaskAgent but not',
-        'exposed through UniversalAgent\'s context interface.',
+        'The OneRingAI Agent API does not expose tool-cache statistics.',
       ];
       return this.success(lines.join('\n'));
     }
 
-    const hitRatePercent = cacheStats.hitRate * 100;
+    const hitRatePercent = cacheStats.hitRate;
     const effectiveness = hitRatePercent >= 50 ? 'high effectiveness' :
                           hitRatePercent >= 20 ? 'moderate effectiveness' : 'low effectiveness';
 
@@ -292,7 +289,10 @@ EXAMPLES:
 
     // Parse count from args (skip 'history' subcommand)
     const countArg = args[1];
-    const count = countArg ? parseInt(countArg) : 10;
+    const count = countArg ? parseInt(countArg, 10) : 10;
+    if (!Number.isInteger(count) || count < 1 || count > 1000) {
+      return this.error('History count must be an integer between 1 and 1000.');
+    }
 
     const history = await agent.getConversationHistory(count);
 

@@ -12,40 +12,27 @@
 
 import 'dotenv/config';
 import {
-  // Domain Interfaces (contracts)
-  ITextProvider,
-  IToolExecutor,
-  IDisposable,
-  ITokenStorage,
-
-  // Base Classes (reusable infrastructure)
-  BaseProvider,
   BaseTextProvider,
   ProviderErrorMapper,
-
-  // Domain Types
+  ContentType,
+  MessageRole,
+  Connector,
+  Agent,
+  Vendor,
+} from '../src/index.js';
+import type {
+  ITextProvider,
+  IToolExecutor,
+  ITokenStorage,
   TextGenerateOptions,
   ModelCapabilities,
   LLMResponse,
   StreamEvent,
-  ToolCall,
-  ToolResult,
   ProviderCapabilities,
-  ToolExecutionContext,
   ToolFunction,
   Tool,
-  ToolCallState,
-  ContentType,
-  MessageRole,
-
-  // For registration
-  Connector,
-  Agent,
-  Vendor,
-  OAuthManager,
+  StoredToken,
 } from '../src/index.js';
-
-import type { StoredToken } from '../src/connectors/index.js';
 
 // ==================== Example 1: Custom LLM Provider ====================
 console.log('Example 1: Custom LLM Provider');
@@ -55,7 +42,7 @@ console.log('━━━━━━━━━━━━━━━━━━━━━━�
  * Custom provider for a hypothetical "MyAI" service
  * Extends BaseTextProvider to get common functionality
  */
-class MyAIProvider extends BaseTextProvider {
+export class MyAIProvider extends BaseTextProvider {
   readonly name = 'myai';
   readonly capabilities: ProviderCapabilities = {
     text: true,
@@ -99,7 +86,12 @@ class MyAIProvider extends BaseTextProvider {
         throw ProviderErrorMapper.mapError(error, { providerName: this.name });
       }
 
-      const data = await response.json();
+      const data = await response.json() as {
+        id?: string;
+        model?: string;
+        choices: Array<{ message: { content: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      };
 
       // Convert response to our standard LLMResponse format
       return this.convertFromMyAIFormat(data);
@@ -111,7 +103,7 @@ class MyAIProvider extends BaseTextProvider {
   /**
    * Implement streamGenerate() - required by ITextProvider
    */
-  async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent> {
+  async *streamGenerate(_options: TextGenerateOptions): AsyncIterableIterator<StreamEvent> {
     // Implementation depends on your provider's streaming API
     // For now, throw not implemented
     throw new Error('Streaming not yet implemented for MyAI provider');
@@ -120,7 +112,7 @@ class MyAIProvider extends BaseTextProvider {
   /**
    * Implement getModelCapabilities() - required by ITextProvider
    */
-  getModelCapabilities(model: string): ModelCapabilities {
+  getModelCapabilities(_model: string): ModelCapabilities {
     // Define capabilities for your models
     return {
       maxTokens: 128000,
@@ -166,12 +158,12 @@ class MyAIProvider extends BaseTextProvider {
           content: [
             {
               type: ContentType.OUTPUT_TEXT,
-              text: data.choices[0].message.content,
+              text: data.choices[0]?.message.content || '',
             },
           ],
         },
       ],
-      output_text: data.choices[0].message.content,
+      output_text: data.choices[0]?.message.content || '',
       usage: {
         input_tokens: data.usage?.prompt_tokens || 0,
         output_tokens: data.usage?.completion_tokens || 0,
@@ -185,6 +177,18 @@ console.log('✅ Custom LLM provider implemented: MyAIProvider');
 console.log('   Extends: BaseTextProvider');
 console.log('   Implements: ITextProvider');
 console.log('   Features: API key validation, error mapping, format conversion');
+
+const myAIProvider: ITextProvider = new MyAIProvider({ apiKey: 'local-demo-key' });
+Connector.create({
+  name: 'myai-demo',
+  vendor: Vendor.Custom,
+  auth: { type: 'api_key', apiKey: 'local-demo-key' },
+  options: { provider: myAIProvider },
+});
+const customAgent = Agent.create({ connector: 'myai-demo', model: 'myai-chat' });
+console.log(`   Injected provider accepted: ${await myAIProvider.validateConfig()}`);
+console.log(`   Agent model: ${customAgent.model}`);
+customAgent.destroy();
 console.log('');
 
 // ==================== Example 2: Custom OAuth Storage Backend ====================
@@ -195,7 +199,7 @@ console.log('━━━━━━━━━━━━━━━━━━━━━━�
  * Custom MongoDB storage for OAuth tokens
  * Implements ITokenStorage interface
  */
-class MongoTokenStorage implements ITokenStorage {
+export class MongoTokenStorage implements ITokenStorage {
   private collection: any; // MongoDB collection
 
   constructor(mongoClient: any) {
@@ -287,7 +291,7 @@ console.log('━━━━━━━━━━━━━━━━━━━━━━�
  * Redis storage for OAuth tokens
  * High-performance caching with built-in TTL
  */
-class RedisTokenStorage implements ITokenStorage {
+export class RedisTokenStorage implements ITokenStorage {
   private redis: any; // Redis client
 
   constructor(redisClient: any) {
@@ -348,7 +352,7 @@ console.log('━━━━━━━━━━━━━━━━━━━━━━�
  * Custom tool executor with rate limiting
  * Implements IToolExecutor interface
  */
-class RateLimitedToolExecutor implements IToolExecutor {
+export class RateLimitedToolExecutor implements IToolExecutor {
   private tools: Map<string, ToolFunction> = new Map();
   private callCounts: Map<string, number> = new Map();
   private windowStart: number = Date.now();
@@ -423,6 +427,24 @@ class RateLimitedToolExecutor implements IToolExecutor {
 console.log('✅ Custom tool executor implemented: RateLimitedToolExecutor');
 console.log('   Implements: IToolExecutor');
 console.log('   Features: Rate limiting (10 calls/min per tool)');
+
+const executor: IToolExecutor = new RateLimitedToolExecutor();
+executor.registerTool({
+  definition: {
+    type: 'function',
+    function: {
+      name: 'echo',
+      description: 'Return the supplied text',
+      parameters: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+      },
+    },
+  },
+  execute: async (args: { text: string }) => ({ text: args.text }),
+});
+console.log('   Smoke test:', await executor.execute('echo', { text: 'hello' }));
 console.log('');
 
 // ==================== Summary ====================
@@ -461,7 +483,7 @@ console.log('  1. Extend BaseTextProvider (or implement ITextProvider)');
 console.log('  2. Implement generate(), streamGenerate(), getModelCapabilities()');
 console.log('  3. Convert between your API format and our standard format');
 console.log('  4. Use ProviderErrorMapper for consistent errors');
-console.log('  5. Register with ProviderRegistry (TODO: make this public API)');
+console.log('  5. Inject it with Connector.create({ options: { provider } })');
 console.log('');
 
 console.log('For Custom OAuth Storage:');
@@ -474,7 +496,7 @@ console.log('');
 
 console.log('For Custom Tool Executor:');
 console.log('  1. Implement IToolExecutor interface');
-console.log('  2. Implement executeTool(toolCall, context)');
+console.log('  2. Implement execute(), registration, lookup, and listing methods');
 console.log('  3. Add custom logic (rate limiting, caching, logging, etc.)');
 console.log('  4. Pass to ToolRegistry (advanced usage)');
 console.log('');

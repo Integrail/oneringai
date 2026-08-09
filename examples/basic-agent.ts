@@ -8,7 +8,8 @@
  */
 
 import 'dotenv/config';
-import { Connector, Agent, Vendor, ToolFunction } from '../src/index.js';
+import { Connector, Agent, Vendor } from '../src/index.js';
+import type { ToolFunction } from '../src/index.js';
 
 // Create a weather tool
 const weatherTool: ToolFunction = {
@@ -79,24 +80,33 @@ const calculatorTool: ToolFunction = {
   execute: async (args: { expression: string }) => {
     console.log(`\n🔢 Calculating: ${args.expression}`);
 
-    try {
-      // Simple eval - in production, use a safe math parser!
-      const result = eval(args.expression);
-      console.log(`✅ Result: ${result}`);
-      return { expression: args.expression, result };
-    } catch (error) {
-      console.log(`❌ Calculation error`);
-      throw new Error(`Invalid expression: ${args.expression}`);
-    }
+    const match = args.expression.match(/^\s*(-?\d+(?:\.\d+)?)\s*([+\-*/])\s*(-?\d+(?:\.\d+)?)\s*$/);
+    if (!match) throw new Error('Use a two-number expression such as "123 * 456".');
+    const left = Number(match[1]);
+    const operator = match[2]!;
+    const right = Number(match[3]);
+    if (operator === '/' && right === 0) throw new Error('Division by zero is not allowed.');
+
+    const result = operator === '+' ? left + right
+      : operator === '-' ? left - right
+      : operator === '*' ? left * right
+      : left / right;
+    console.log(`✅ Result: ${result}`);
+    return { expression: args.expression, result };
   },
 };
 
 async function main() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required. Add it to .env before running this example.');
+  }
+
   // Create connector with credentials
   Connector.create({
     name: 'openai',
     vendor: Vendor.OpenAI,
-    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
+    auth: { type: 'api_key', apiKey },
   });
 
   console.log('🤖 Creating agent with tools...\n');
@@ -104,7 +114,7 @@ async function main() {
   // Create agent from connector
   const agent = Agent.create({
     connector: 'openai',
-    model: 'gpt-4',
+    model: 'gpt-4.1-mini',
     tools: [weatherTool, calculatorTool],
     instructions: 'You are a helpful assistant that can check weather and perform calculations. Be concise.',
     temperature: 0.7,
@@ -140,8 +150,12 @@ async function main() {
   console.log('\n📝 Agent Response:');
   console.log(response3.output_text);
 
+  agent.destroy();
   console.log('\n\n✅ All examples completed!');
 }
 
 // Run examples
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

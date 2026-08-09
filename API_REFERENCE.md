@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-08-08
+**Generated:** 2026-08-09
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -12912,7 +12912,7 @@ predicate (camelCase/dash/alias → snake_case), applies `defaultImportance`
 predicates, and folds registry weights into ranking. Absent = free-form
 predicate strings (pre-registry behavior).
 
-Pass `PredicateRegistry.standard()` for the built-in 54-predicate starter
+Pass `PredicateRegistry.standard()` for the built-in 44-predicate starter
 set, `PredicateRegistry.empty()` plus `.registerAll(...)` for a fully
 custom vocabulary. |
 | `predicateMode?` | `predicateMode?: 'permissive' | 'strict';` | 'strict' rejects any `addFact` whose (canonicalized) predicate is not in
@@ -40884,7 +40884,7 @@ static getAll(): ReadonlyMap&lt;string, PluginRegistryEntry&gt;
 
 #### `static standard()`
 
-Returns a fresh registry seeded with the standard 45-predicate set
+Returns a fresh registry seeded with the standard 44-predicate set
 (10 categories). Called as a factory — each invocation produces an
 independent instance, so mutations never leak between MemorySystems
 or tests. The authoritative count lives in `standard.ts`'s header.
@@ -41111,7 +41111,7 @@ toRankingWeights(base?: Record&lt;string, number&gt;): Record&lt;string, number&
 
 ### ProviderConfigAgent `class`
 
-📍 [`src/agents/ProviderConfigAgent.ts:17`](src/agents/ProviderConfigAgent.ts)
+📍 [`src/agents/ProviderConfigAgent.ts:19`](src/agents/ProviderConfigAgent.ts)
 
 Built-in agent for generating OAuth provider configurations
 
@@ -41167,6 +41167,16 @@ Reset conversation
 
 ```typescript
 reset(): void
+```
+
+**Returns:** `void`
+
+#### `destroy()`
+
+Release the underlying agent and clear the current conversation.
+
+```typescript
+destroy(): void
 ```
 
 **Returns:** `void`

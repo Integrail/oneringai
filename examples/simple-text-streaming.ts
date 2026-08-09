@@ -38,12 +38,12 @@ async function main() {
 
   // Example 1: Stream with OpenAI
   if (Connector.has('openai')) {
-    console.log('1. Streaming with OpenAI (GPT-4)...\n');
+    console.log('1. Streaming with OpenAI (GPT-4.1 mini)...\n');
     console.log('Assistant: ');
 
     const agent1 = Agent.create({
       connector: 'openai',
-      model: 'gpt-4',
+      model: 'gpt-4.1-mini',
     });
 
     for await (const event of agent1.stream('Write a haiku about streaming data.')) {
@@ -51,6 +51,7 @@ async function main() {
         process.stdout.write(event.delta);
       }
     }
+    agent1.destroy();
 
     console.log('\n\n---\n');
   }
@@ -62,12 +63,13 @@ async function main() {
 
     const agent2 = Agent.create({
       connector: 'anthropic',
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5-20251001',
     });
 
     for await (const text of StreamHelpers.textOnly(agent2.stream('Write a limerick about AI agents.'))) {
       process.stdout.write(text);
     }
+    agent2.destroy();
 
     console.log('\n\n---\n');
   }
@@ -78,16 +80,24 @@ async function main() {
 
     const agent3 = Agent.create({
       connector: 'google',
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
     });
 
     const completeText = await StreamHelpers.accumulateText(
       agent3.stream('Explain quantum computing in one sentence.')
     );
     console.log('Complete response:', completeText);
+    agent3.destroy();
+  }
+
+  if (Connector.list().length === 0) {
+    throw new Error('Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY in .env.');
   }
 
   console.log('\n\n✅ Done!');
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

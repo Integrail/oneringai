@@ -21,10 +21,10 @@ This guide is task-oriented and assumes you've at least skimmed the API referenc
 11. [Entity resolution in practice](#entity-resolution-in-practice)
 12. [Profile generation](#profile-generation)
 13. [Scope and multi-tenancy](#scope-and-multi-tenancy)
-14. [Giving agents memory — the `MemoryPluginNextGen` plugin and `memory_*` tools](#giving-agents-memory--the-memorypluginnextgen-plugin-and-memory_-tools)
-15. [Common patterns](#common-patterns)
-16. [Scaling](#scaling)
-17. [Troubleshooting](#troubleshooting)
+14. [Giving agents memory with plugins and tools](#giving-agents-memory-with-plugins-and-tools)
+15. [Scaling](#scaling)
+16. [Troubleshooting](#troubleshooting)
+17. [What's next](#whats-next)
 
 ---
 
@@ -52,9 +52,10 @@ Everything is append-only with supersession (state changes create new facts that
 The minimum to get a working memory system in-process:
 
 ```ts
-import { MemorySystem, InMemoryAdapter } from '@everworker/oneringai/memory';
+import { MemorySystem, InMemoryAdapter } from '@everworker/oneringai';
 
 const memory = new MemorySystem({ store: new InMemoryAdapter() });
+const scope = { userId: 'user-123' };
 
 // Upsert an entity
 const { entity: john } = await memory.upsertEntity(
@@ -63,7 +64,16 @@ const { entity: john } = await memory.upsertEntity(
     displayName: 'John Doe',
     identifiers: [{ kind: 'email', value: 'john@acme.com' }],
   },
-  {},
+  scope,
+);
+
+const { entity: acme } = await memory.upsertEntity(
+  {
+    type: 'organization',
+    displayName: 'Acme',
+    identifiers: [{ kind: 'domain', value: 'acme.com' }],
+  },
+  scope,
 );
 
 // Write a fact about them
@@ -72,13 +82,13 @@ await memory.addFact(
     subjectId: john.id,
     predicate: 'works_at',
     kind: 'atomic',
-    objectId: /* some org entity id */,
+    objectId: acme.id,
   },
-  {},
+  scope,
 );
 
 // Retrieve context
-const view = await memory.getContext(john.id, {}, {});
+const view = await memory.getContext(john.id, {}, scope);
 console.log(view.profile);        // null (no profile yet — requires a generator)
 console.log(view.topFacts);       // ranked facts about John
 console.log(view.relatedTasks);   // his active tasks
@@ -145,19 +155,22 @@ const prompt = defaultExtractionPrompt({
 const response = await extractionAgent.runDirect(prompt, {
   responseFormat: { type: 'json_object' },
 });
-const parsed = JSON.parse(response.output_text);
+const parsed = JSON.parse(response.output_text ?? '{}');
 
 // Memory's responsibility — one call resolves entities + writes facts:
-await extractor.resolveAndIngest(parsed, signalId, scope);
+await extractor.resolveAndIngest(parsed, signalId, scope, {
+  sourceObservedAt: signalObservedAt,
+});
 ```
 
 The resolver handles entity deduplication/creation (via surface-form resolution), mention-label → entity-id translation, all the `addFact` calls, and `sourceSignalId` attachment.
 
 ### Semantic facts are automatic
 
-A fact is "semantic" (eligible for embedding + vector search) if **either**:
-- `kind: 'document'`, OR
-- `kind: 'atomic'` AND `details.length ≥ 80` (narrative text).
+A fact is eligible for embedding by default (`isSemantic` defaults to `true`).
+The fact-content composer produces the text: relational and scalar facts can
+therefore participate even when they have no long `details` field, while a
+custom composer can return `''` to skip a fact.
 
 You don't do anything special. Just fill in `details`:
 
@@ -168,10 +181,12 @@ await memory.addFact({
   kind: 'atomic',
   details: 'Pushed back on Oracle renewal during the Q3 review meeting, mentioned budget constraints and timeline pressure from leadership.',
 }, scope);
-// → isSemantic auto-computed to true → embedding queue picks it up in background
+// → eligible by default; the fact composer queues an embedding in the background
 ```
 
-Short attribute facts (`value: 'VP Engineering'`, no `details`) aren't embedded. That's intentional — vector search over short attribute strings is noise. Override explicitly with `isSemantic: false` if you want to skip embedding a long fact.
+Set `isSemantic: false` to opt a specific fact out. Override
+`factContentComposer` when your domain needs a different composition or wants
+to suppress whole classes of facts.
 
 ### Who does what
 
@@ -198,7 +213,7 @@ For structured data, call `upsertEntity` + `addFact` yourself. For unstructured 
 ### In-memory — for tests and small-scale
 
 ```ts
-import { InMemoryAdapter } from '@everworker/oneringai/memory';
+import { InMemoryAdapter } from '@everworker/oneringai';
 const store = new InMemoryAdapter();
 ```
 
@@ -221,8 +236,9 @@ import {
   MongoMemoryAdapter,
   RawMongoCollection,
   ensureIndexes,
-} from '@everworker/oneringai/memory';
-import type { IEntity, IFact } from '@everworker/oneringai/memory';
+  ensureNormalizedNameUniqueIndex,
+} from '@everworker/oneringai';
+import type { IEntity, IFact } from '@everworker/oneringai';
 
 const client = await new MongoClient(url).connect();
 const db = client.db('myapp');
@@ -240,9 +256,33 @@ const store = new MongoMemoryAdapter({
   facts: factsColl,
   factsCollectionName: 'memory_facts',   // required for native $graphLookup
   useNativeGraphLookup: true,            // enables fast graph traversal
-  vectorIndexName: 'memory_facts_vector', // optional — Atlas Vector Search
+  vectorIndexName: 'memory_facts_vector',
+  entityVectorIndexName: 'memory_entities_identity_vector',
+  entityContentVectorIndexName: 'memory_entities_content_vector',
 });
+
+// New/empty collections can install normalized-name uniqueness immediately.
+// Existing data must be backfilled and deduplicated first (see checklist below).
+await ensureNormalizedNameUniqueIndex(entitiesColl);
+
+// Atlas builds these asynchronously. The content index is created because its
+// name is configured on the adapter; omit it if you do not search documents.
+await store.ensureVectorSearchIndexes({ dimensions: 1536 });
 ```
+
+`ensureIndexes` creates the recommended b-tree indexes but intentionally does
+not install uniqueness constraints over existing data. Production migrations
+must also:
+
+1. Backfill normalized names with `memory.backfillNormalizedFields(scope)`,
+   deduplicate, then call `ensureNormalizedNameUniqueIndex(entitiesColl)`.
+2. Create a unique partial index on
+   `{ 'identifiers.kind': 1, 'identifiers.value': 1 }` after checking for
+   duplicate identifiers. This prevents cross-process user/agent bootstrap
+   races.
+3. Create Atlas indexes through `store.ensureVectorSearchIndexes(...)`, never a
+   hand-written UI definition. The helper includes every scope, ACL, principal,
+   and archive filter path required to prevent cross-tenant vector-search leaks.
 
 ### Mongo (Meteor) — for Meteor apps
 
@@ -254,7 +294,7 @@ import {
   MongoMemoryAdapter,
   MeteorMongoCollection,
   ensureIndexes,
-} from '@everworker/oneringai/memory';
+} from '@everworker/oneringai';
 
 const EntitiesCollection = new Mongo.Collection<IEntity>('memory_entities');
 const FactsCollection = new Mongo.Collection<IFact>('memory_facts');
@@ -281,7 +321,13 @@ Meteor.startup(async () => {
 
 ### Custom backends
 
-Implement `IMemoryStore` with the six required methods (plus optional `traverse` and `semanticSearch`). Scope filtering, optimistic concurrency, and archived hiding are your responsibility. The `InMemoryAdapter` is a ~600-line reference implementation.
+Implement the full `IMemoryStore` contract: entity create/batch-create/update,
+indexed identity and normalized-name lookup, atomic normalized-name upsert,
+search/list/archive/delete; fact create/batch-create/get/query/update/count; and
+lifecycle methods. Graph traversal and fact/entity vector search are optional
+capabilities. Scope/permission filtering, optimistic concurrency, and archived
+record handling are adapter responsibilities; use `InMemoryAdapter` as the
+reference implementation.
 
 ---
 
@@ -319,7 +365,9 @@ import {
   createMemorySystemWithConnectors,
   ExtractionResolver,
   defaultExtractionPrompt,
-} from '@everworker/oneringai/memory';
+  InMemoryAdapter,
+  PredicateRegistry,
+} from '@everworker/oneringai';
 
 // 1. Register connectors at app startup.
 Connector.create({
@@ -335,7 +383,7 @@ Connector.create({
 
 // 2. Build the memory system.
 const memory = createMemorySystemWithConnectors({
-  store: /* your adapter — see Choosing a storage backend */,
+  store: new InMemoryAdapter(), // use MongoMemoryAdapter in production
 
   // Embedder: semantic search + entity identity embedding.
   connectors: {
@@ -351,13 +399,16 @@ const memory = createMemorySystemWithConnectors({
       connector: 'anthropic-prod',
       model: 'claude-sonnet-4-6',
       temperature: 0.3,                         // default; lower = more factual
-      maxOutputTokens: 1200,                    // default
+      // maxOutputTokens: 2000,                 // OPTIONAL cap; omitted uses provider ceiling
       // promptTemplate: myCustomPrompt,        // OPTIONAL: override default
     },
   },
 
   // Memory-level config.
-  profileRegenerationThreshold: 10,              // regen after N new atomic facts
+  predicates: PredicateRegistry.standard(),
+  predicateMode: 'permissive',                 // extend app vocabulary, then prefer strict
+  visibilityPolicy: () => ({ group: 'read', world: 'none' }),
+  profileRegenerationThreshold: 3,               // explicit current default
   entityResolution: {
     autoResolveThreshold: 0.9,                   // conservative; see resolution section
     enableIdentityEmbedding: true,               // default; disables identity-embed if false
@@ -379,7 +430,9 @@ Under the hood:
 
 ### Embedder setup in detail
 
-**Supported vendors** (via `createEmbeddingProvider`): OpenAI, Google, Ollama, Groq, Together, Mistral, DeepSeek, Grok — anything OpenAI-compatible.
+**Supported vendors** (via `createEmbeddingProvider`): OpenAI, Google, Ollama,
+Groq, Together, Mistral, DeepSeek, Grok, plus `Vendor.Custom` for an
+OpenAI-compatible endpoint with an explicit `baseURL`.
 
 **Choosing a model:**
 
@@ -391,8 +444,11 @@ Under the hood:
 
 **What gets embedded:**
 
-- Atomic facts with `details.length ≥ 80` (auto-computed `isSemantic: true`) OR `kind: 'document'` facts → full `details` (or `summaryForEmbedding` if set).
+- Facts with `isSemantic !== false` → text composed by the configured fact composer; unchanged text is not re-embedded.
 - Entity identity strings (`<type>: <displayName> | aliases: ... | ids: ...`) → stored as `entity.identityEmbedding`.
+- Entity content for types with content composers (tasks, events, people,
+  organizations, topics, projects, documents, clusters) → stored as
+  `entity.contentEmbedding` when the composed text is non-empty.
 
 Writes return immediately; embedding happens in a background queue. Call `await memory.flushEmbeddings()` to wait for pending work (useful in tests or before shutdown).
 
@@ -400,7 +456,13 @@ Writes return immediately; embedding happens in a background queue. Call `await 
 
 ```ts
 await memory.addFact(
-  { /* ... */, isSemantic: false },   // explicit opt-out
+  {
+    subjectId: john.id,
+    predicate: 'memo',
+    kind: 'document',
+    details: longNarrative,
+    isSemantic: false,
+  },
   scope,
 );
 ```
@@ -408,7 +470,7 @@ await memory.addFact(
 **BYO embedder** (bypass connectors):
 
 ```ts
-import { MemorySystem, type IEmbedder } from '@everworker/oneringai/memory';
+import { MemorySystem, type IEmbedder } from '@everworker/oneringai';
 
 const myEmbedder: IEmbedder = {
   dimensions: 1536,
@@ -420,7 +482,7 @@ const myEmbedder: IEmbedder = {
     return (await res.json()).vector;
   },
   // Optional batch path — used if supplied.
-  embedBatch: async (texts) => /* ... */,
+  embedBatch: async (texts) => Promise.all(texts.map((text) => myEmbedder.embed(text))),
 };
 
 const memory = new MemorySystem({ store, embedder: myEmbedder });
@@ -438,31 +500,37 @@ const memory = new MemorySystem({ store, embedder: myEmbedder });
 
 **When regen fires:**
 
-Every `addFact` with `kind: 'atomic'` checks a background threshold. If the count of atomic facts for the subject entity reaches `profileRegenerationThreshold` (default 10, configurable), a background regen fires:
-- Scope of regen = scope of the triggering fact (so group-wide facts regen the group-wide profile).
+Every `addFact` with `kind: 'atomic'` checks a background threshold. If the count of atomic facts for the subject entity reaches `profileRegenerationThreshold` (default 3, configurable), a background regen fires:
+- Scope of regen = group + owner of the triggering fact, so each writer's
+  profile evolves independently on a shared entity.
 - Debounced per `(entityId, scopeKey)` — concurrent triggers are collapsed.
 - Failure is swallowed — a broken generator never blocks fact writes.
 
 **Manual trigger** (force regen now):
 
 ```ts
-await memory.regenerateProfile(entityId, { groupId: 'acme' }, 'manual');
+await memory.regenerateProfile(
+  entityId,
+  { groupId: 'acme', ownerId: 'alice' },
+  'manual',
+);
 ```
 
 Target-scope options:
-- `{}` — global profile visible to all.
-- `{ groupId: 'X' }` — group-wide profile for members of X.
-- `{ ownerId: 'U' }` — user-private profile.
-- `{ groupId: 'X', ownerId: 'U' }` — private within X.
+- `{ ownerId: 'U' }` — profile owned by U without a group boundary.
+- `{ groupId: 'X', ownerId: 'U' }` — profile owned by U inside X.
 
-Different callers can see different profiles of the same entity — `getContext` picks the most-specific visible one.
+Always supply `ownerId` for new profiles. Ownerless global/group variants may
+exist in legacy stores, but current writes enforce the owner invariant.
+Different owners can maintain different profiles of the same shared entity;
+permissions and ACLs govern who else can read them.
 
 **Custom prompts** — the default prompt is general-purpose (identity + relationships + recent activity). For domain-specific profiles:
 
 ```ts
-import type { PromptContext } from '@everworker/oneringai/memory';
+import type { ProfileGeneratorInput } from '@everworker/oneringai';
 
-function salesProfilePrompt(ctx: PromptContext): string {
+function salesProfilePrompt(ctx: ProfileGeneratorInput): string {
   return `You are maintaining a living sales profile for a prospect.
 
 Entity: ${ctx.entity.displayName} (${ctx.entity.type})
@@ -500,7 +568,7 @@ const memory = createMemorySystemWithConnectors({
 **BYO profile generator:**
 
 ```ts
-import type { IProfileGenerator } from '@everworker/oneringai/memory';
+import type { IProfileGenerator } from '@everworker/oneringai';
 
 const myGen: IProfileGenerator = {
   async generate(entity, atomicFacts, priorProfile, targetScope) {
@@ -562,7 +630,7 @@ Connector.create({ name: 'anthropic-profile', vendor: Vendor.Anthropic, auth: { 
 
 All LLM-related config at a glance:
 
-```ts
+```text
 createMemorySystemWithConnectors({
   store,
 
@@ -578,12 +646,12 @@ createMemorySystemWithConnectors({
       model: string,                         // REQUIRED
       promptTemplate?: (ctx) => string,
       temperature?: number,                  // default 0.3
-      maxOutputTokens?: number,              // default 1200
+      maxOutputTokens?: number,              // default undefined (provider ceiling)
     },
   },
 
   // Profile regen behavior
-  profileRegenerationThreshold?: number,     // default 10
+  profileRegenerationThreshold?: number,     // default 3
 
   // Embedding queue behavior
   embeddingQueue?: {
@@ -758,7 +826,7 @@ Tasks have no natural external strong key — the same task re-surfaced across e
 Use `canonicalIdentifier()` to build a `{ kind: 'canonical', value: ... }` identifier from the task's structural invariants:
 
 ```ts
-import { canonicalIdentifier } from '@everworker/oneringai/memory';
+import { canonicalIdentifier } from '@everworker/oneringai';
 
 const id = canonicalIdentifier('task', {
   assignee: john.id,
@@ -929,7 +997,7 @@ import {
   SignalIngestor,
   CalendarSignalAdapter,
   ConnectorExtractor,
-} from '@everworker/oneringai/memory';
+} from '@everworker/oneringai';
 
 const ingestor = new SignalIngestor({
   memory,
@@ -1014,35 +1082,39 @@ await memory.upsertEntity(
 
 ```ts
 // Relational
-{ subjectId: john.id, predicate: 'works_at', kind: 'atomic', objectId: acme.id }
+const relationship = {
+  subjectId: john.id, predicate: 'works_at', kind: 'atomic', objectId: acme.id,
+};
 
 // Attribute
-{ subjectId: john.id, predicate: 'current_title', kind: 'atomic', value: 'VP Engineering' }
+const attribute = {
+  subjectId: john.id, predicate: 'current_title', kind: 'atomic', value: 'VP Engineering',
+};
 
 // Narrative observation (still atomic — `details` is the narrative payload)
-{
+const observation = {
   subjectId: john.id,
   predicate: 'expressed_concern',
   kind: 'atomic',
   details: 'Pushed back on Oracle renewal timeline during Q3 review',
   confidence: 0.8,
   importance: 0.6,
-}
+};
 ```
 
 **Document** facts are long-form:
 
 ```ts
-{
+const profileDocument = {
   subjectId: john.id,
   predicate: 'profile',              // canonical profile, always returned by getContext
   kind: 'document',
   details: '# John Doe\n\nSenior engineer at Acme...',
   summaryForEmbedding: 'John Doe: VP Engineering at Acme, Oracle-skeptic',
-}
+};
 ```
 
-Other document kinds: `predicate: 'meeting_notes'`, `'research_memo'`, `'biography'`. These are retrieved via `getContext(entity, { include: ['documents'] })`.
+Other standard document kinds: `predicate: 'meeting_notes'`, `'research_note'`, `'memo'`, and `'biography'`. These are retrieved via `getContext(entity, { include: ['documents'] })`.
 
 ### Confidence vs importance
 
@@ -1131,7 +1203,7 @@ const view = await memory.getContext(
   entityId,
   {
     include: ['documents', 'semantic', 'neighbors'],
-    documentPredicates: ['meeting_notes', 'research_memo'],
+    documentPredicates: ['meeting_notes', 'research_note'],
     semanticQuery: 'thoughts on Oracle licensing',
     semanticTopK: 5,
     neighborPredicates: ['works_at', 'reports_to'],
@@ -1241,7 +1313,7 @@ Facts have predicates — strings like `works_at`, `committed_to`, `prepares_for
 ```ts
 import { PredicateRegistry, MemorySystem } from '@everworker/oneringai';
 
-// Pattern 1: ship with the 51-predicate starter set.
+// Pattern 1: ship with the 44-predicate starter set (10 categories).
 const memory = new MemorySystem({
   store,
   predicates: PredicateRegistry.standard(),
@@ -1328,6 +1400,11 @@ The library offers **two levels of abstraction** — pick the one that fits your
 
 Both write through the same `addFact` path — same scope semantics, same `sourceSignalId` flow, same `IngestionResult` shape. The high-level ingestor is built on the low-level primitives; it just adds the seed phase + locked-label prompt rendering.
 
+The built-in extraction prompt is versioned. This release exports
+`DEFAULT_EXTRACTION_PROMPT_VERSION === 13` and
+`DEFAULT_EXTRACTABLE_ENTITY_TYPES`; use those constants for snapshot pinning
+and host-side compatibility checks rather than copying a stale prompt string.
+
 **Rule of thumb.**
 - Email, Slack, calendar, tickets, anything with deterministic sender/recipient metadata → `SignalIngestor`.
 - Plain text with no metadata → either works; `SignalIngestor` via `PlainTextAdapter` for uniformity.
@@ -1343,14 +1420,23 @@ import {
   SignalIngestor,
   ConnectorExtractor,
   EmailSignalAdapter,
-} from '@everworker/oneringai/memory';
+  PredicateRegistry,
+} from '@everworker/oneringai';
 
-const memory = createMemorySystemWithConnectors({ store, connectors: { /* ... */ } });
+const predicates = PredicateRegistry.standard();
+const memory = createMemorySystemWithConnectors({
+  store,
+  connectors: { /* embedding/profile connectors */ },
+  predicates,
+  predicateMode: 'strict',
+  visibilityPolicy: () => ({ group: 'read', world: 'none' }),
+});
 
 const ingestor = new SignalIngestor({
   memory,
   extractor: new ConnectorExtractor({ connector: 'anthropic-prod', model: 'claude-sonnet-4-6' }),
   adapters: [new EmailSignalAdapter()],
+  predicateRegistry: predicates,
 });
 
 const result = await ingestor.ingest({
@@ -1363,7 +1449,8 @@ const result = await ingestor.ingest({
     body:    'Let us lock in priorities next week.',
   },
   sourceSignalId: 'gmail_msg_abc123',
-  scope: { groupId: 'workspace-1' },
+  scope: { userId: 'user-123', groupId: 'workspace-1' },
+  sourceObservedAt: new Date('2026-08-08T09:00:00Z'),
 });
 // result.entities — participants (seeded via headers) + anything the LLM discovered in the body
 // result.facts    — written with sourceSignalId attached
@@ -1394,7 +1481,9 @@ import {
   createMemorySystemWithConnectors,
   ExtractionResolver,
   defaultExtractionPrompt,
-} from '@everworker/oneringai/memory';
+  InMemoryAdapter,
+  PredicateRegistry,
+} from '@everworker/oneringai';
 import { Connector, Vendor, Agent } from '@everworker/oneringai';
 
 // Setup — once at startup.
@@ -1409,8 +1498,9 @@ Connector.create({
   auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! },
 });
 
+const predicates = PredicateRegistry.standard();
 const memory = createMemorySystemWithConnectors({
-  store: /* your MongoMemoryAdapter */,
+  store: new InMemoryAdapter(), // replace with MongoMemoryAdapter in production
   connectors: {
     embedding: {
       connector: 'openai-main',
@@ -1422,7 +1512,9 @@ const memory = createMemorySystemWithConnectors({
       model: 'claude-sonnet-4-6',
     },
   },
-  profileRegenerationThreshold: 10,
+  predicates,
+  predicateMode: 'strict',
+  visibilityPolicy: () => ({ group: 'read', world: 'none' }),
 });
 
 const extractor = new ExtractionResolver(memory);
@@ -1434,12 +1526,18 @@ const extractionAgent = Agent.create({
 });
 
 // Per-signal processing:
-async function ingestSignal(signal: { id: string; body: string; source: string }) {
+async function ingestSignal(signal: {
+  id: string;
+  body: string;
+  source: string;
+  observedAt: Date;
+}) {
   const prompt = defaultExtractionPrompt({
     signalText: signal.body,
     signalSourceDescription: signal.source,
-    targetScope: { groupId: currentGroup },
-    referenceDate: new Date(),
+    targetScope: { ownerId: currentUser, groupId: currentGroup },
+    referenceDate: signal.observedAt,
+    predicateRegistry: predicates,
   });
 
   const response = await extractionAgent.runDirect(prompt, {
@@ -1447,12 +1545,13 @@ async function ingestSignal(signal: { id: string; body: string; source: string }
     temperature: 0.2,
   });
 
-  const rawExtraction = JSON.parse(response.output_text);
+  const rawExtraction = JSON.parse(response.output_text ?? '{}');
 
   const result = await extractor.resolveAndIngest(
     rawExtraction,
     signal.id,                    // becomes sourceSignalId on every fact
-    { groupId: currentGroup },
+    { userId: currentUser, groupId: currentGroup },
+    { sourceObservedAt: signal.observedAt },
   );
 
   // Handle any merge candidates — log for human review.
@@ -1498,7 +1597,22 @@ Well-prompted, the LLM produces:
       "type": "person",
       "identifiers": [{ "kind": "email", "value": "john@acme.com" }]
     },
-    "m3": { "surface": "prep the PowerPoint for the Acme deal review", "type": "task" },
+    "m3": {
+      "surface": "Prepare the Acme deal review deck with Microsoft pricing",
+      "type": "task",
+      "identifiers": [
+        { "kind": "canonical", "value": "task:prepare-acme-deal-review-2026-04-23" }
+      ],
+      "contextIds": ["m4", "m5", "m6"],
+      "metadata": {
+        "state": "proposed",
+        "dueAt": "2026-04-23T23:59:59Z",
+        "assigneeId": "m2",
+        "reporterId": "m1",
+        "priority": "high",
+        "evidenceQuote": "can you prep the PowerPoint for the Acme deal review on Friday? Due by end of Thursday"
+      }
+    },
     "m4": {
       "surface": "Acme",
       "type": "organization",
@@ -1512,66 +1626,24 @@ Well-prompted, the LLM produces:
       "aliases": ["MSFT", "Microsoft Inc."]
     }
   },
-  "facts": [
-    {
-      "subject": "m1", "predicate": "requested_task_of",
-      "object": "m2", "confidence": 0.95, "importance": 0.7,
-      "contextIds": ["m5"]
-    },
-    {
-      "subject": "m2", "predicate": "committed_to",
-      "object": "m3", "confidence": 0.95,
-      "contextIds": ["m5"]
-    },
-    {
-      "subject": "m3", "predicate": "due_date",
-      "value": "2026-04-23T23:59:59", "confidence": 0.95, "importance": 0.8
-    },
-    {
-      "subject": "m5", "predicate": "related_to",
-      "object": "m4"
-    },
-    {
-      "subject": "m2", "predicate": "needs",
-      "value": "MSFT pricing from Microsoft",
-      "confidence": 0.8, "contextIds": ["m5", "m6"]
-    }
-  ]
+  "facts": []
 }
 ```
 
 `ExtractionResolver.resolveAndIngest`:
-- Upserts 6 entities. Identifier matches hit John/Sarah/Acme/Microsoft if they exist. `m3` (task) and `m5` (project) have no identifiers — resolve via displayName/alias, or create new.
-- Writes 5 facts, translating `m1..m6` to real entity IDs. Every fact gets `sourceSignalId: signal.id`.
+- Upserts 6 entities. Identifier matches hit John, Sarah, Acme, and Microsoft if they exist. The task's canonical identifier makes repeated extraction of the same commitment converge.
+- Translates `assigneeId`, `reporterId`, and task `contextIds` from local labels to real entity IDs.
+- Writes no facts for this signal because the task entity already contains the commitment, assignment, deadline, evidence, and surrounding context. When facts are emitted, every one gets `sourceSignalId: signal.id`.
 
 ### Tasks-as-entities in the extraction
 
-Notice `m3` is a task entity. The LLM doesn't invent a state/due-date schema — it emits:
-- A task entity with just surface + type.
-- A fact `(task, due_date, "2026-04-23")` as an attribute fact.
-
-You (the caller) can post-process that fact if needed:
-
-```ts
-// After ingestion, pull task attribute facts and materialize them into entity metadata.
-for (const e of result.entities) {
-  if (e.entity.type !== 'task') continue;
-  const taskFacts = await store.findFacts(
-    { subjectId: e.entity.id, predicate: 'due_date' },
-    { limit: 1, orderBy: { field: 'createdAt', direction: 'desc' } },
-    scope,
-  );
-  if (taskFacts.items[0]?.value) {
-    await memory.updateEntityMetadata(
-      e.entity.id,
-      { dueAt: new Date(taskFacts.items[0].value as string), state: 'pending' },
-      scope,
-    );
-  }
-}
-```
-
-Or wire a rule engine (future) to do this automatically.
+Notice `m3` is a self-contained task entity. Structural fields—state, due date,
+priority, assignee, reporter, and evidence—belong in `metadata`; parent projects,
+deals, meetings, and topics belong in the mention's top-level `contextIds`.
+Do not emit parallel `committed_to`, `due_date`, assignment, or status facts for
+the same task. Later state changes go through `memory.transitionTaskState(...)`;
+re-extraction deliberately uses conservative `fillMissing` metadata merging and
+will not overwrite live task state.
 
 ---
 
@@ -1689,7 +1761,6 @@ const memory = createMemorySystemWithConnectors({
       connector: 'anthropic-prod',
       model: 'claude-sonnet-4-6',
       temperature: 0.3,         // lower = tighter, more factual
-      maxOutputTokens: 1200,
     },
   },
   profileRegenerationThreshold: 10,  // fires after 10 new atomic facts
@@ -1705,23 +1776,26 @@ A debounce guard (per `entityId + scopeKey`) prevents concurrent regenerations.
 ### Manual trigger
 
 ```ts
-await memory.regenerateProfile(entityId, { groupId: 'acme' }, 'manual');
+await memory.regenerateProfile(
+  entityId,
+  { groupId: 'acme', ownerId: 'alice' },
+  'manual',
+);
 ```
 
 The `targetScope` parameter controls which profile variant is generated:
-- `{}` — global profile (visible to all)
-- `{ groupId: 'X' }` — group-wide profile (for users in group X)
-- `{ ownerId: 'U' }` — user-private profile (only U sees it)
-- `{ groupId: 'X', ownerId: 'U' }` — private to U within group X
+- `{ ownerId: 'U' }` — owned by U without a group boundary
+- `{ groupId: 'X', ownerId: 'U' }` — owned by U inside X
 
-You can have multiple profiles for the same entity at different scopes. `getContext` picks the most-specific visible one.
+Always pass `ownerId` for current writes. Multiple owners can maintain profiles
+of the same shared entity; permissions/ACLs govern cross-owner reads.
 
 ### Custom prompts
 
 Override the default:
 
 ```ts
-import type { PromptContext } from '@everworker/oneringai/memory';
+import type { ProfileGeneratorInput } from '@everworker/oneringai';
 
 const memory = createMemorySystemWithConnectors({
   store,
@@ -1729,7 +1803,7 @@ const memory = createMemorySystemWithConnectors({
     profile: {
       connector: 'anthropic-prod',
       model: 'claude-sonnet-4-6',
-      promptTemplate: (ctx: PromptContext) => `
+      promptTemplate: (ctx: ProfileGeneratorInput) => `
 Write a concise sales-context profile for ${ctx.entity.displayName}.
 Focus on: current deal activity, last meeting, known pain points.
 Facts (most recent first):
@@ -1746,33 +1820,53 @@ Output JSON: { "details": "<markdown>", "summaryForEmbedding": "<~80 word gist>"
 
 ## Scope and multi-tenancy
 
-Scope is **who the record is for** (`groupId` + `ownerId`). Permissions are **what they can do with it** (`permissions.group` + `permissions.world`). Both must pass for a caller to read/write.
+Each persisted record carries an **owner** (`ownerId`) and optionally a tenant
+boundary (`groupId`). A caller supplies `ScopeFilter`—`userId`, `groupId`, and,
+when using explicit ACLs, `principals`. The record's `permissions` and `acl`
+then decide what that caller can read or write.
 
 > **Every record now requires an `ownerId`.** The library throws `OwnerRequiredError` when you try to create an entity or fact without one. Either set `scope.userId` (auto-defaulted to `ownerId`) or pass `input.ownerId` explicitly (admin delegation). See [MEMORY_PERMISSIONS.md](./MEMORY_PERMISSIONS.md#the-owner-invariant).
 >
-> **Records are public-read by default.** UNIX `644` semantics. If you need to prevent cross-group reads, set `permissions: { world: 'none' }` at write time. The sections below describe the four scope shapes; permissions layer on top.
+> **Records are public-read by library default.** UNIX `644` semantics. For a
+> multi-tenant host, configure `MemorySystem.visibilityPolicy` centrally—usually
+> at least `{ world: 'none' }`—instead of relying on every call site to remember
+> an explicit permission block.
 
 ### Access control at a glance
 
 ```ts
-permissions?: {
+interface RecordPermissions {
+  permissions?: {
   group?: 'none' | 'read' | 'write';   // default 'read' when groupId is set
   world?: 'none' | 'read' | 'write';   // default 'read'
+  };
+  acl?: Array<{
+    principal: string; // user:<id>, entity:<id>, group:<id>, service:<id>, world
+    actions: Array<'read' | 'write'>;
+  }>;
 }
 ```
 
-Owner always has full access. See the dedicated guide — [MEMORY_PERMISSIONS.md](./MEMORY_PERMISSIONS.md) — for model, recipes, migration, and pitfalls.
+Owner always has full access. Explicit ACLs add grants; they do not subtract
+owner/group/world grants. If `scope.principals` is present it is authoritative,
+so backfill `readPrincipals`/`writePrincipals` before enabling principal mode.
+See [MEMORY_PERMISSIONS.md](./MEMORY_PERMISSIONS.md) for the full model,
+migration sequence, and recipes.
 
-### The four scope shapes (scope-only — see MEMORY_PERMISSIONS.md for permissions interaction)
+### Common record placements
 
-- **Public** (no `groupId`, `ownerId` set) — with default `world: 'read'`, visible to every caller; writable only by the owner.
-- **Group-wide** (`groupId` set, `ownerId` set) — default group `read`, world `read`. Set `world: 'none'` for group-private.
-- **User-private cross-group** (only `ownerId` set) — private to one user when `world: 'none'`; public-read otherwise.
-- **User-private within group** (both set) — private to the owner when `group: 'none', world: 'none'`.
+- **Public-read, owner-write** — owner set, no group required,
+  `permissions.world: 'read'`.
+- **Group-shared** — owner + group set,
+  `permissions: { group: 'read', world: 'none' }`.
+- **Owner-private** — owner set,
+  `permissions: { group: 'none', world: 'none' }`.
+- **Explicitly shared** — start owner-private and add narrow `acl` entries for
+  named users, entities, agents, or services.
 
 ### When to use which
 
-- **People, organizations with domains** → usually global. Everyone benefits from shared identity data.
+- **People, organizations with domains** → usually group-shared inside a tenant.
 - **Projects, internal topics** → group-wide. Scoped to the team/company.
 - **Private notes, personal observations** → user-private within group. "My impression of this person."
 - **Personal contacts, therapist, HR case** → user-private cross-group. Cross-tenant privacy.
@@ -1780,34 +1874,44 @@ Owner always has full access. See the dedicated guide — [MEMORY_PERMISSIONS.md
 ### Worked example: private impression of a shared contact
 
 ```ts
-// Global entity — shared identity
+// Team-shared entity. It still has an owner: the directory service that wrote it.
 const { entity: john } = await memory.upsertEntity(
-  { type: 'person', displayName: 'John Doe', identifiers: [/* ... */] },
-  {},
+  {
+    type: 'person',
+    displayName: 'John Doe',
+    identifiers: [/* ... */],
+    permissions: { group: 'read', world: 'none' },
+  },
+  { userId: 'directory-service', groupId: 'myteam' },
 );
 
 // Group-wide work facts about John — all team members see them
 await memory.addFact(
-  { subjectId: john.id, predicate: 'works_at', kind: 'atomic', objectId: acme.id, groupId: 'myteam' },
-  { groupId: 'myteam' },
+  {
+    subjectId: john.id,
+    predicate: 'works_at',
+    kind: 'atomic',
+    objectId: acme.id,
+    permissions: { group: 'read', world: 'none' },
+  },
+  { userId: 'directory-service', groupId: 'myteam' },
 );
 
 // Alice's private note — only Alice sees this
 await memory.addFact(
   {
     subjectId: john.id,
-    predicate: 'observation',
-    kind: 'atomic',
-    details: 'Seemed annoyed in today\'s meeting',
-    groupId: 'myteam',
-    ownerId: 'alice',
+    predicate: 'memo',
+    kind: 'document',
+    details: 'Private account note: prefers morning calls; avoid Mondays.',
+    permissions: { group: 'none', world: 'none' },
   },
   { groupId: 'myteam', userId: 'alice' },
 );
 
 // Bob (different user, same team) queries John
 const viewForBob = await memory.getContext(john.id, {}, { groupId: 'myteam', userId: 'bob' });
-// → Bob sees the global entity + the group-wide works_at fact.
+// → Bob sees the team-shared entity + the group-wide works_at fact.
 // → Does NOT see Alice's private observation.
 
 // Alice queries John
@@ -1817,34 +1921,36 @@ const viewForAlice = await memory.getContext(john.id, {}, { groupId: 'myteam', u
 
 ### Scope invariant
 
-A fact cannot be broader than its subject entity:
+A fact cannot escape its subject entity's tenant:
 
-- Global entity → any fact scope is fine (fact can narrow).
-- Group-scoped entity → fact must have matching `groupId` (can narrow further by adding `ownerId`).
-- User-scoped entity → fact must have matching `ownerId` (and `groupId` if entity has one).
+- A fact on a group-scoped subject must use the same `groupId`.
+- The fact's owner is the explicit `input.ownerId`, otherwise the calling
+  `scope.userId`, otherwise (for system maintenance) the subject owner.
+- Owner equality with the subject is intentionally not required: several team
+  members may own their own observations about one group-shared person or
+  organization.
 
 Violations throw `ScopeInvariantError`.
 
 ### Profile precedence
 
-`getContext(entityId, {}, { groupId: 'g1', userId: 'u1' })` returns the profile as follows:
-1. User-private profile (ownerId=u1) — if exists, wins.
-2. Group profile (groupId=g1, no ownerId) — if exists and no user profile.
-3. Global profile (no groupId, no ownerId) — fallback.
-
-This lets you have layered profiles: everyone sees the global "John is CEO of Acme"; team members see the group-wide "Works on our account, typically responsive"; Alice sees her user-private "Prefers morning calls, avoid Mondays."
+`getContext(entityId, {}, { groupId: 'g1', userId: 'u1' })` prefers a live
+profile owned by `u1`. Group-only and global ownerless profiles remain fallback
+paths for legacy data, but new writes cannot create them because the owner
+invariant is enforced. For current deployments, think of generated profiles as
+per-writer views whose read visibility is controlled by permissions/ACLs.
 
 ---
 
-## Giving agents memory — the `MemoryPluginNextGen` / `MemoryWritePluginNextGen` plugins and `memory_*` tools
+## Giving agents memory with plugins and tools
 
 Up to this point the guide has been about the memory *library* — you call `memory.addFact`, `memory.getContext`, etc. from your application. But the whole point of memory is to make agents smarter, so we ship **two complementary context plugins** and a set of **LLM-callable tools** that let the agent read and (optionally) write memory during its own thinking loop.
 
 There are three moving parts:
 
-1. **`MemoryPluginNextGen`** — a [NextGen context plugin](./MEMORY_API.md) that bootstraps a user + agent entity in memory and injects two blocks into the system message: **`## User-specific instructions for this agent`** (directives the current user has given, rendered verbatim from facts on the agent entity scoped to this user) and **`## Your User Profile`** (synthesized from user-entity facts). Ships the **5 read** `memory_*` tools. Enabled via `features.memory: true`. Note: global agent personality / base instructions are admin-controlled via `Agent.create({ instructions })` — **no auto-synthesized agent profile** is injected any more. The `agentProfileInjection` config is kept for backward-compat but is a no-op.
+1. **`MemoryPluginNextGen`** — a [NextGen context plugin](./MEMORY_API.md) that bootstraps user + agent entities and injects visible memory into the system message: the assistant's per-user persona rules, an **About the User** profile with facts and recent activity, active priorities when present, and an optional organization profile. Ships the **6 read** `memory_*` tools. Enabled via `features.memory: true`. Global base instructions remain admin-controlled through `Agent.create({ instructions })`; `agentProfileInjection` is retained for compatibility but is a no-op.
 2. **`MemoryWritePluginNextGen`** — a lightweight sidecar plugin that adds the **6 write** `memory_*` tools (`memory_remember`, `memory_link`, `memory_upsert_entity`, `memory_forget`, `memory_restore`, `memory_set_agent_rule`). No system-message content of its own. Enabled via `features.memoryWrite: true` — requires `features.memory: true` (the read plugin owns entity bootstrap + the rules-block render).
-3. **The `memory_*` tools** (11 total, split 5/6) — high-signal LLM tools for everything the plugin doesn't inject: looking up entities, walking the graph, semantic search (reads); writing facts, linking entities, upserting entities, forgetting/superseding facts, setting user-specific behavior rules (writes).
+3. **The `memory_*` tools** (12 total, split 6/6) — high-signal LLM tools for everything the plugin doesn't inject: looking up entities, walking the graph, semantic fact search, and document search (reads); writing facts, linking entities, upserting entities, forgetting/superseding/restoring facts, and setting user-specific behavior rules (writes).
 
 **Two common wiring choices:**
 
@@ -1856,8 +1962,21 @@ The plugin pair is how **self-learning** works end-to-end: observations flow in 
 ### Quick start
 
 ```ts
-import { Agent, AgentContextNextGen, MemoryPluginNextGen } from '@everworker/oneringai';
-import { createMemorySystemWithConnectors, InMemoryAdapter } from '@everworker/oneringai';
+import {
+  Agent,
+  createMemorySystemWithConnectors,
+  InMemoryAdapter,
+  PredicateRegistry,
+} from '@everworker/oneringai';
+
+const predicates = PredicateRegistry.standard().register({
+  name: 'prefers',
+  description: 'A durable user preference.',
+  category: 'preference',
+  payloadKind: 'attribute',
+  subjectTypes: ['person'],
+  lifecycle: 'stable',
+});
 
 // 1. Build a memory system (see "Choosing a storage backend" above).
 const memory = createMemorySystemWithConnectors({
@@ -1866,30 +1985,35 @@ const memory = createMemorySystemWithConnectors({
     embedding: { connector: 'openai', model: 'text-embedding-3-small', dimensions: 1536 },
     profile:   { connector: 'anthropic', model: 'claude-sonnet-4-6' },
   },
+  predicates,
+  predicateMode: 'strict',
+  visibilityPolicy: () => ({ group: 'read', world: 'none' }),
 });
 
 // 2. Create an agent with both memory features enabled (read + write).
 const agent = Agent.create({
   connector: 'anthropic',
   model: 'claude-sonnet-4-6',
-  agentId: 'my-assistant',
+  name: 'my-assistant',
   userId: 'alice',             // REQUIRED — memory enforces owner on every record
-  contextFeatures: {
-    memory: true,               // reads: user profile + rules block + 5 retrieval tools
-    memoryWrite: true,          // writes: 6 mutation tools (omit for retrieval-only)
-  },
-  pluginConfigs: {
-    memory: {
-      memory,                  // the MemorySystem instance (shared by both plugins)
-      // groupId: 'team-A',    // optional: trusted group from your auth layer
-      // userProfileInjection: { topFacts: 20, relatedTasks: true },
+  context: {
+    features: {
+      memory: true,             // profile/context + 6 read tools
+      memoryWrite: true,        // 6 write tools (omit for retrieval-only)
     },
-    // memoryWrite inherits `memory` from plugins.memory.memory unless overridden.
+    plugins: {
+      memory: {
+        memory,                 // shared MemorySystem instance
+        // groupId: 'team-A',   // trusted group from your auth layer
+        // userProfileInjection: { topFacts: 20, relatedTasks: true },
+      },
+      // memoryWrite inherits the MemorySystem and identity from memory.
+    },
   },
 });
 
 // On every agent turn the system message now includes:
-//   ## User-specific instructions for this agent
+//   ## Your persona — how YOU (the assistant) present yourself
 //   _Each line begins with `[ruleId=<id>]` — pass that to memory_set_agent_rule.replaces to supersede, or to memory_forget.factId to drop..._
 //   - [ruleId=fact_abc123_...] Be terse in replies.
 //   - [ruleId=fact_def456_...] Reply in Russian.
@@ -1897,14 +2021,15 @@ const agent = Agent.create({
 //   ## About the User (user:alice)
 //   ...profile.details (regenerates automatically from new user-subject facts)...
 //   ### Recent top facts (up to 20)
+//   ### Recent activity (last 7d, newest first)
 //
 // The rules block is omitted entirely when the user hasn't set any rules.
 // Global agent personality / base instructions flow through `Agent.create({ instructions })`.
 
 await agent.run("Remember that I prefer concise responses");
 // Agent calls memory_remember({subject:"me", predicate:"prefers", value:"concise responses"})
-// Fact is stored, threshold check triggers profile regen in the background,
-// next turn the user profile reflects the new preference.
+// The fact is available to recall immediately. Profile regeneration runs after
+// the configured new-facts threshold (3 by default).
 ```
 
 ### Plugin configuration
@@ -1915,25 +2040,39 @@ interface MemoryPluginConfig {
   agentId: string;                         // REQUIRED — unique per agent definition
   userId: string;                          // REQUIRED — memory's owner invariant
 
+  // Trusted identity from your auth layer. Plumbed into memory reads/writes;
+  // none of these values are accepted from LLM tool arguments.
+  principals?: string[];                   // optional host-resolved ACL principals
+  timezone?: string;                       // optional IANA display timezone
+
   // Trusted group from your auth layer. Plumbed into every memory call the
   // plugin + its tools make. LLM tool arguments CANNOT override this —
   // see "Security model" below.
   groupId?: string;
+
+  // Optional shared assistant persona and current-organization bootstrap.
+  personaEntityId?: string;
+  groupBootstrap?: {
+    displayName: string;
+    identifiers?: Array<{ kind: string; value: string }>;
+    permissions?: { group?: 'none'|'read'|'write'; world?: 'none'|'read'|'write' };
+  };
 
   // Permissions stamped on the bootstrapped user/agent entities.
   // Defaults: library defaults (group:read, world:read).
   userEntityPermissions?:  { group?: 'none'|'read'|'write'; world?: 'none'|'read'|'write' };
   agentEntityPermissions?: { group?: 'none'|'read'|'write'; world?: 'none'|'read'|'write' };
 
-  // What to inject into the system message for the user profile.
+  // What to inject into the system message.
   userProfileInjection?:  ProfileInjection;
   // DEPRECATED — no longer read. Agent profile auto-render was removed; global
   // agent personality lives on `Agent.create({ instructions })`. Kept in the
   // type for backward-compat so existing callers don't need a breaking change.
   agentProfileInjection?: ProfileInjection;
+  groupProfileInjection?: ProfileInjection;
 
-  // Per-subject default visibility for `memory_remember` / `memory_link`.
-  // Defaults: user → 'private', this_agent → 'group', other → 'private'.
+  // Compatibility-only in 1.0.0. LLM-facing write schemas omit visibility;
+  // configure MemorySystem.visibilityPolicy instead.
   defaultVisibility?: {
     forUser?:  'private' | 'group' | 'public';
     forAgent?: 'private' | 'group' | 'public';
@@ -1942,6 +2081,9 @@ interface MemoryPluginConfig {
 
   // Fuzzy-match threshold for {surface} lookups. Default 0.9 (conservative).
   autoResolveThreshold?: number;
+
+  userDisplayName?: string;
+  agentDisplayName?: string;
 }
 
 interface ProfileInjection {
@@ -1951,7 +2093,12 @@ interface ProfileInjection {
   relatedTasks?: boolean;     // Include active tasks. Default false.
   relatedEvents?: boolean;    // Include recent events. Default false.
   identifiers?: boolean;      // Render identifier list. Default false.
-  maxFactLineChars?: number;  // Truncate each rendered fact line. Default 200.
+  maxFactLineChars?: number;  // Optional truncation. Default undefined (no cap).
+  recentActivity?: {          // Default: last 7 days, newest 20 rows.
+    limit?: number;           // 0 disables.
+    windowDays?: number;
+    predicates?: string[];
+  };
 }
 ```
 
@@ -1966,7 +2113,7 @@ On first `getContent()` the plugin calls `memory.upsertEntity` to ensure:
 
 **Note:** cross-process uniqueness is the storage adapter's responsibility. For Mongo you want a unique compound index on `{identifiers.kind, identifiers.value}`.
 
-### The 11 tools
+### The 12 tools
 
 All tools accept a **`SubjectRef`** where an entity is needed — a flexible type that reflects the fact that an entity can have many identifiers (email, slack_id, github_login, internal_id…). Valid forms:
 
@@ -2029,17 +2176,32 @@ Semantic text search across facts. Requires an embedder; returns a structured er
 
 Args cap: `topK ≤ 100`. Date filters must be ISO-8601 strings — invalid strings are rejected with a structured error.
 
+#### `memory_search_documents`
+
+Search long-form `document` entities by content. Semantic mode (the default)
+uses the configured embedder; keyword mode performs a case-insensitive match
+over the document body and title. Results contain the document, score, snippet,
+and match mode.
+
+```json
+{"query": "Q3 launch brief"}
+{"query": "TODO", "mode": "keyword"}
+{"query": "design", "attachedTo": {"surface": "NA Launch project"}, "role": ["spec", "plan"], "limit": 5}
+```
+
+`attachedTo` narrows the search to documents linked through `has_document`.
+`limit ≤ 50`. Semantic mode requires an embedder; keyword mode does not.
+
 #### `memory_find_entity`
 
-Look up, list, or upsert an entity by any of its identifiers, by surface, or by type + metadata. Multi-ID enrichment happens automatically on upsert — if any identifier matches an existing entity, the others get merged in.
+Read-only lookup or listing by id, identifier, surface, or type + metadata.
+Entity creation and identifier enrichment belong to `memory_upsert_entity`,
+which is available only when the write plugin is enabled.
 
 ```json
 {"by": {"identifier": {"kind": "email", "value": "alice@a.com"}}}
 {"by": {"surface": "Alice from accounting"}}
 {"action": "list", "by": {"type": "project", "metadataFilter": {"state": "active"}}}
-{"action": "upsert", "type": "person", "displayName": "Alice Smith",
- "identifiers": [{"kind": "email", "value": "alice@a.com"},
-                 {"kind": "slack_user_id", "value": "U07ABC"}]}
 ```
 
 `list.limit ≤ 200`.
@@ -2056,6 +2218,25 @@ Paginated raw fact enumeration for a subject. Use when you want structured facts
 
 `archivedOnly: true` returns the audit view (archived only); default returns only live facts. `limit ≤ 200`.
 
+#### `memory_upsert_entity`
+
+Create or merge an entity. Strong identifiers are optional: when supplied,
+matching any identifier merges the others; when omitted, resolution falls back
+to normalized display name within scope. Existing metadata uses conservative
+`fillMissing` semantics unless `metadataMerge: "overwrite"` is explicit.
+
+```json
+{"type": "person", "displayName": "Alice Smith",
+ "identifiers": [{"kind": "email", "value": "alice@a.com", "exclusive": true},
+                 {"kind": "slack_user_id", "value": "U07ABC"}]}
+{"type": "task", "displayName": "Send budget",
+ "metadata": {"state": "pending", "dueAt": "2026-04-30T09:00:00Z", "priority": "high"}}
+```
+
+Hosts can set `forbiddenEntityTypes` in the write-plugin/tool-factory config to
+prevent the agent from creating entity types populated deterministically by the
+application.
+
 #### `memory_remember`
 
 Write a new atomic fact. The LLM should call this proactively whenever the user reveals something worth remembering.
@@ -2065,13 +2246,13 @@ Write a new atomic fact. The LLM should call this proactively whenever the user 
 {"subject": {"surface": "Acme"}, "predicate": "employee_count",
  "value": 500, "confidence": 0.8, "importance": 0.3}
 {"subject": "this_agent", "predicate": "learned_pattern",
- "details": "Ask for dimensions before tax calcs", "visibility": "group"}
+ "details": "Ask for dimensions before tax calcs"}
 ```
 
-`visibility` maps to the permission block:
-- `"private"` → `{group: 'none', world: 'none'}` (owner-only)
-- `"group"`   → `{group: 'read', world: 'none'}` (group-readable)
-- `"public"`  → undefined (library defaults: group:read, world:read)
+The LLM-facing schema does not accept `visibility`. When no explicit
+permissions are supplied programmatically, `MemorySystem.visibilityPolicy`
+decides the record's permissions. Configure that policy for every multi-tenant
+deployment; the bare library default is group/world-readable.
 
 #### `memory_link`
 
@@ -2089,6 +2270,18 @@ Archive a fact (optionally superseding it with a correction). Supersession prese
 ```json
 {"factId": "fact_xyz"}
 {"factId": "fact_xyz", "replaceWith": {"predicate": "role", "value": "senior engineer"}}
+```
+
+The tool is rate-limited to 10 archive operations per user per 60 seconds by
+default. Configure `forgetRateLimit` to change that guardrail.
+
+#### `memory_restore`
+
+Undo an archive so a fact participates in queries again. A superseded fact
+cannot be restored while its successor remains active.
+
+```json
+{"factId": "fact_xyz"}
 ```
 
 #### `memory_set_agent_rule`
@@ -2110,10 +2303,10 @@ Record a user-specific behavior rule for this agent. Writes a fact with `subject
 **Render shape.** On the next turn the system message carries:
 
 ```
-## User-specific instructions for this agent
-_Each line begins with `[ruleId=<id>]` — pass that to memory_set_agent_rule.replaces to supersede, or to memory_forget.factId to drop..._
-- [ruleId=fact_abc123_...] Be terse in replies.
-- [ruleId=fact_def456_...] Reply in English again.
+## Your persona — how YOU (the assistant) present yourself
+_These lines define the assistant, not the user. Each begins with `[ruleId=<id>]`; pass that id to memory_set_agent_rule.replaces to supersede it or memory_forget.factId to drop it._
+- [ruleId=fact_abc123_...] I reply tersely.
+- [ruleId=fact_def456_...] I reply in English.
 ```
 
 The block is omitted entirely when the user hasn't set any rules. Rules are scoped per-user-per-agent via `ownerId` (another user of the same agent gets a different set).
@@ -2130,7 +2323,11 @@ The library's permission system trusts scope (`{userId, groupId}`) because the h
 
 **No ghost-writes.** `memory_remember` and `memory_link` reject writes whose subject (`subject` for remember, `from` for link) is owned by another user. Because the memory layer enforces `fact.ownerId == subject.ownerId`, a write against someone else's entity would silently attribute the fact to *them*. Tools return a structured error in that case. Use `memory_upsert_entity` to create your own entity for the fact you want to record.
 
-**`contextIds` auto-downgrade.** If a write specifies `contextIds` that include entities you don't own, and the chosen visibility is `"group"` or `"public"`, the tool silently downgrades visibility to `"private"` and includes a `warnings` entry in the response. This prevents a compromised agent from planting cross-owner facts that would then surface in a victim's graph-walk results.
+**Foreign `contextIds` force owner-only permissions.** If a write references
+context entities the caller does not own—or whose ownership cannot be verified—the
+tool overrides both the host policy and any programmatic permission request with
+`{group:'none', world:'none'}` and returns a warning. This prevents a compromised
+agent from planting a readable fact into another owner's graph results.
 
 **Numeric input validation.** All LLM-controllable numeric limits are clamped (see per-tool caps above) to prevent DoS via huge `maxDepth` / `topK` / `limit` values. `confidence` and `importance` are clamped to `[0, 1]` at both the tool layer and the memory layer (`MemorySystem.addFact`) so a rogue `importance: 1e9` can't permanently dominate ranking.
 
@@ -2142,9 +2339,9 @@ The library's permission system trusts scope (`{userId, groupId}`) because the h
 
 If you're building a custom agent and don't want the full plugin setup, you can still use the `memory_*` tools directly. Three factories are exported, all sharing the same `CreateMemoryToolsArgs`:
 
-- `createMemoryReadTools(...)` — the 5 retrieval tools (`memory_recall`, `memory_graph`, `memory_search`, `memory_find_entity`, `memory_list_facts`).
+- `createMemoryReadTools(...)` — the 6 retrieval tools (`memory_recall`, `memory_graph`, `memory_search`, `memory_search_documents`, `memory_find_entity`, `memory_list_facts`).
 - `createMemoryWriteTools(...)` — the 6 mutation tools (`memory_remember`, `memory_link`, `memory_upsert_entity`, `memory_forget`, `memory_restore`, `memory_set_agent_rule`).
-- `createMemoryTools(...)` — convenience returning all 11.
+- `createMemoryTools(...)` — convenience returning all 12.
 
 ```ts
 import { createMemoryReadTools, createMemoryWriteTools } from '@everworker/oneringai';
@@ -2154,18 +2351,18 @@ const readTools = createMemoryReadTools({
   agentId: 'my-agent',
   defaultUserId: 'alice',              // fallback when ToolContext.userId is unset
   defaultGroupId: 'team-A',            // TRUSTED — from your auth layer
+  defaultPrincipals: ['user:alice', 'group:team-A', 'world'],
   // Optional: wire "me" / "this_agent" token resolution.
   getOwnSubjectIds: () => ({ userEntityId: '<ent-id>', agentEntityId: '<ent-id>' }),
-  defaultVisibility: { forUser: 'private', forAgent: 'group', forOther: 'private' },
   autoResolveThreshold: 0.9,
 });
 
 // Register on any Agent. For a read-only agent skip the write bundle entirely.
-agent.registerTools(readTools);
+agent.tools.registerMany(readTools);
 
 // Or, for full read+write:
 const writeTools = createMemoryWriteTools({ memory, agentId: 'my-agent', defaultUserId: 'alice' });
-agent.registerTools([...readTools, ...writeTools]);
+agent.tools.registerMany(writeTools);
 ```
 
 Without `getOwnSubjectIds`, the `"me"` / `"this_agent"` tokens return a structured error; callers must reference entities by id, identifier, or surface.
@@ -2182,7 +2379,7 @@ Both are **deprecated** in favour of `MemoryPluginNextGen`. They keep working un
 
 Where the legacy plugins still fit: small, fixed, agent-side string configuration that never needs to evolve.
 
-### Learning from agent runs — `SessionIngestorPluginNextGen`
+### Learning from agent runs with SessionIngestorPluginNextGen
 
 The `memory_*` tools let the LLM write deliberately. But you shouldn't rely on it alone — agents forget, skip, or race past moments worth remembering. `SessionIngestorPluginNextGen` is a side-effect plugin that observes the conversation **before every `prepare()`** (crucially, BEFORE any compaction that would evict messages) and extracts structured facts through a dedicated LLM call.
 
@@ -2247,7 +2444,7 @@ Agent-subject writes are forbidden at every diligence level (see "No agent-subje
 **Graceful degradation.** Extractor errors log via `logger.warn` and never propagate. A misbehaving plugin cannot break `prepare()`.
 
 **Relationship to `MemoryPluginNextGen` / `MemoryWritePluginNextGen`.** The plugins compose:
-- `MemoryPluginNextGen` — injects the user profile + user-specific behavior rules into the system message + exposes the **5 read** `memory_*` tools.
+- `MemoryPluginNextGen` — injects the visible profile/persona/priorities context and exposes the **6 read** `memory_*` tools.
 - `MemoryWritePluginNextGen` — optional sidecar exposing the **6 write** `memory_*` tools (including `memory_set_agent_rule`) for deliberate writes by the LLM. Omit when you want the agent to be retrieval-only.
 - `SessionIngestorPluginNextGen` — passively captures observations from the conversation itself, fire-and-forget. Never writes agent-subject facts (that's `memory_set_agent_rule`'s job). Good replacement for `MemoryWritePluginNextGen` when you don't want the main agent to pay the write-tool schema cost or be trusted with direct memory mutations (note: without `memory_set_agent_rule`, user-driven behavior rules are not captured at all — pair the ingestor with at least the write plugin if rules matter).
 
@@ -2262,8 +2459,10 @@ Common integration patterns:
 **Meteor / DDP session per connection** — flush when the client tab closes:
 ```ts
 Meteor.publish('agent-session', function () {
-  const ingestor = new SessionIngestorPluginNextGen({ ... });
-  const agent = Agent.create({ ... });
+  const ingestor = new SessionIngestorPluginNextGen({
+    memory, agentId: 'assistant', userId, connectorName: 'openai', model: 'gpt-5.6-terra',
+  });
+  const agent = Agent.create({ connector: 'openai', model: 'gpt-5.6-terra', userId });
   agent.context.registerPlugin(ingestor);
 
   this.onStop(async () => {
@@ -2382,8 +2581,8 @@ const viewAsOf = await memory.getContext(entityId, { asOf: new Date('2026-01-15'
 ### Who changed what (provenance)
 
 ```ts
-const fact = /* some fact */;
-if (fact.sourceSignalId) {
+const fact = await memory.getFact(factId, scope);
+if (fact?.sourceSignalId) {
   const signal = await mySignalStore.get(fact.sourceSignalId);
   console.log('Came from:', signal.source, 'at', signal.timestamp);
 }
@@ -2498,40 +2697,41 @@ const tasks = EntitiesCollection.find().fetch();
 
 ### Indexes
 
-Always call `ensureIndexes` on startup for Mongo:
+Run `ensureIndexes` from your Mongo migration (it is idempotent, but index
+creation does not belong on a request hot path):
 
 ```ts
 await ensureIndexes({ entities: entitiesColl, facts: factsColl });
 ```
 
-This creates 9 indexes covering all hot paths: identifier lookup, fact-by-subject, fact-by-object, fact-by-context, recent-by-predicate, task metadata filtering, event metadata filtering.
+This creates the current set of entity-, fact-, principal-, task-, event-, and
+context-led b-tree indexes. Treat the exact count as an implementation detail;
+also install the two host-managed uniqueness constraints described in
+[Choosing a storage backend](#choosing-a-storage-backend).
 
 ### Atlas Vector Search (Mongo)
 
-For production-scale semantic search, create an Atlas Vector Search index on the facts collection:
-
-```json
-{
-  "fields": [
-    { "type": "vector", "path": "embedding", "numDimensions": 1536, "similarity": "cosine" },
-    { "type": "filter", "path": "groupId" },
-    { "type": "filter", "path": "ownerId" },
-    { "type": "filter", "path": "subjectId" },
-    { "type": "filter", "path": "archived" }
-  ]
-}
-```
-
-Then:
+For production-scale semantic search, configure the runtime index names and
+create the Atlas definitions programmatically:
 
 ```ts
 const store = new MongoMemoryAdapter({
   entities, facts,
   vectorIndexName: 'memory_facts_vector',
+  entityVectorIndexName: 'memory_entities_identity_vector',
+  entityContentVectorIndexName: 'memory_entities_content_vector',
 });
+
+await store.ensureVectorSearchIndexes({ dimensions: 1536 });
 ```
 
-Without this, `semanticSearch` falls back to a cursor scan + in-memory cosine — correct but O(N).
+The helper creates fact and entity-identity indexes by default. Entity-content
+search is opt-in and is created here because `entityContentVectorIndexName` is
+configured. It also declares all required scope, permission, ACL, principal,
+and archive filter paths. Do not hand-build a reduced definition in the Atlas
+UI: omitted filter paths can turn a vector query into a silent cross-tenant
+read leak. Without an Atlas index, built-in adapters fall back to in-memory
+cosine scanning—correct but O(N).
 
 ### Native `$graphLookup`
 
@@ -2565,14 +2765,21 @@ console.log('embedder calls:', embedCallCount);
 
 ### When NOT to embed
 
-Every fact with `isSemantic === true` is embedded. The auto-computation rule: `kind === 'document'` OR (`kind === 'atomic'` AND `details.length ≥ 80`). Short attribute facts (no `details`) aren't embedded.
+Every fact is eligible for embedding by default, including short structural
+triples. The configured fact-content composer decides what text to embed and
+can return an empty string to skip. This replaces the old 80-character
+threshold, which made useful triples such as `Sarah works_at Acme` invisible to
+semantic search.
 
 To skip embedding a specific fact explicitly:
 
 ```ts
 await memory.addFact(
   {
-    ...,
+    subjectId: john.id,
+    predicate: 'temporary_note',
+    kind: 'atomic',
+    details: longNarrative,
     isSemantic: false,  // don't embed
   },
   scope,
@@ -2583,8 +2790,9 @@ await memory.addFact(
 
 ```ts
 const memory = createMemorySystemWithConnectors({
-  ...,
-  profileRegenerationThreshold: 20,  // default 10; higher = less frequent regen
+  store,
+  connectors,
+  profileRegenerationThreshold: 20,  // default 3; higher = less frequent regen
 });
 ```
 
@@ -2600,8 +2808,11 @@ Scope mismatch. The entity exists but isn't visible to your caller's scope.
 
 ```ts
 // Wrong: created in group A, queried in group B
-await memory.upsertEntity({ ..., groupId: 'a' }, { groupId: 'a' });
-const missing = await memory.getEntity(id, { groupId: 'b' });  // null!
+const { entity } = await memory.upsertEntity(
+  { type: 'project', displayName: 'Example project' },
+  { groupId: 'a', userId: 'user-123' },
+);
+const missing = await memory.getEntity(entity.id, { groupId: 'b', userId: 'user-123' }); // null
 ```
 
 ### "object entity Y not visible or not found" on addFact
@@ -2654,8 +2865,8 @@ await memory.regenerateProfile(entityId, targetScope, 'manual');
 2. Does the store implement `semanticSearch`? (InMemory and Mongo both do.)
 3. Are any facts actually embedded? Check with:
    ```ts
-   const n = await store.countFacts(/* any filter */, scope);
-   const page = await store.findFacts(/* any */, { limit: 50 }, scope);
+   const n = await store.countFacts({}, scope);
+   const page = await store.findFacts({}, { limit: 50 }, scope);
    const embedded = page.items.filter((f) => f.embedding).length;
    console.log(`${embedded}/${page.items.length} facts embedded`);
    ```
@@ -2666,7 +2877,7 @@ await memory.regenerateProfile(entityId, targetScope, 'manual');
 Use `flushEmbeddings()` to make embedding deterministic in tests:
 
 ```ts
-await memory.addFact(..., scope);
+await memory.addFact(factInput, scope);
 await memory.flushEmbeddings();
 // now semantic search will find it
 const results = await memory.semanticSearch('query', {}, scope);

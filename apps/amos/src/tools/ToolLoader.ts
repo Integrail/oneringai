@@ -9,7 +9,7 @@
  * Phase 1.3 Improvements:
  * - Extracted developer tools config building to dedicated function (DRY)
  * Phase 2: External Tools
- * - Added external tools integration (webSearch, webScrape, webFetch)
+ * - Added external tools integration (web_search, web_scrape, web_fetch)
  */
 
 import { readdir } from 'node:fs/promises';
@@ -29,11 +29,10 @@ import {
   type ShellToolConfig,
   tools as agentTools,
 } from '@everworker/oneringai';
-import type { IToolLoader, AmosConfig, IConnectorManager } from '../config/types.js';
+import type { IToolLoader, AmosConfig } from '../config/types.js';
 import { ExternalToolManager, type ExternalToolInfo } from './ExternalToolManager.js';
 
-// Web tools from the library (via namespace)
-const { webFetch, webSearch } = agentTools;
+const { webFetch } = agentTools;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Developer Tools Configuration (Phase 1.3 - Extracted)
@@ -99,11 +98,14 @@ export class ToolLoader implements IToolLoader {
   private tools: Map<string, ToolFunction> = new Map();
   private enabledTools: Set<string> = new Set();
   private customToolsDir: string;
+  private readonly defaultCustomToolsDir: string;
   private config: AmosConfig | null = null;
   private externalToolManager: ExternalToolManager | null = null;
+  private customImportVersion = 0;
 
   constructor(customToolsDir: string = './data/tools') {
     this.customToolsDir = customToolsDir;
+    this.defaultCustomToolsDir = customToolsDir;
   }
 
   /**
@@ -111,6 +113,9 @@ export class ToolLoader implements IToolLoader {
    */
   setConfig(config: AmosConfig): void {
     this.config = config;
+    this.customToolsDir = config.tools.customToolsDir === './data/tools'
+      ? this.defaultCustomToolsDir
+      : config.tools.customToolsDir;
     // Update external tool manager config if it exists
     if (this.externalToolManager && config.externalTools) {
       this.externalToolManager.updateConfig(config.externalTools);
@@ -229,12 +234,13 @@ export class ToolLoader implements IToolLoader {
             timestamp: now.getTime(),
             timezone: args.timezone || 'local',
           };
-        } catch {
+        } catch (error) {
           return {
             formatted: now.toString(),
             iso: now.toISOString(),
             timestamp: now.getTime(),
             timezone: 'local',
+            error: `Invalid timezone '${args.timezone}': ${error instanceof Error ? error.message : String(error)}`,
           };
         }
       },
@@ -269,8 +275,20 @@ export class ToolLoader implements IToolLoader {
       },
       execute: async (args: { min: number; max: number; integer?: boolean }) => {
         const { min, max, integer = true } = args;
-        const random = Math.random() * (max - min) + min;
-        const result = integer ? Math.floor(random) : random;
+        if (!Number.isFinite(min) || !Number.isFinite(max)) {
+          return { error: 'min and max must be finite numbers' };
+        }
+        if (max < min) {
+          return { error: 'max must be greater than or equal to min' };
+        }
+        const integerMin = Math.ceil(min);
+        const integerMax = Math.floor(max);
+        if (integer && integerMin > integerMax) {
+          return { error: 'range does not contain an integer' };
+        }
+        const result = integer
+          ? Math.floor(Math.random() * (integerMax - integerMin + 1)) + integerMin
+          : Math.random() * (max - min) + min;
         return { result, min, max, integer };
       },
     });
@@ -330,31 +348,16 @@ export class ToolLoader implements IToolLoader {
 
     // web_search - Requires connector
     if (this.externalToolManager) {
-      const searchTool = this.externalToolManager.createSearchTool(webSearch);
+      const searchTool = this.externalToolManager.createSearchTool();
       if (searchTool) {
         tools.push(searchTool);
-      } else if (externalConfig.search === null) {
-        // Add unconfigured tool so user can see it exists
-        // but mark it as disabled
-        tools.push(webSearch);
-        // Don't enable it - will be filtered out
       }
-    } else if (externalConfig.search?.enabled && externalConfig.search?.connectorName) {
-      // Direct config without manager (fallback)
-      const connectorName = externalConfig.search.connectorName;
-      tools.push({
-        ...webSearch,
-        execute: async (args: any) => {
-          return webSearch.execute({
-            ...args,
-            connectorName: args.connectorName || connectorName,
-          });
-        },
-      });
-    }
 
-    // Note: webScrape would be added here similarly when available
-    // For now, we only support webFetch and webSearch
+      const scrapeTool = this.externalToolManager.createScrapeTool();
+      if (scrapeTool) {
+        tools.push(scrapeTool);
+      }
+    }
   }
 
   /**
@@ -377,7 +380,7 @@ export class ToolLoader implements IToolLoader {
           // Handle both absolute and relative paths
           const baseDir = isAbsolute(directory) ? directory : resolve(process.cwd(), directory);
           const filePath = join(baseDir, file);
-          const fileUrl = pathToFileURL(filePath).href;
+          const fileUrl = `${pathToFileURL(filePath).href}?amosReload=${this.customImportVersion++}`;
           const module = await import(fileUrl);
 
           // Expect default export or named 'tool' export
@@ -527,59 +530,143 @@ export class ToolLoader implements IToolLoader {
       tan: Math.tan,
     };
 
-    // Replace function names with placeholders
-    let processed = expression.toLowerCase();
+    type Token = { type: 'number' | 'identifier' | 'symbol'; value: string };
+    const tokens: Token[] = [];
+    const source = expression.toLowerCase();
+    let position = 0;
 
-    // Simple tokenizer for basic math
-    // This is a basic implementation - a real one would use a proper parser
-    const tokens = processed.match(/[\d.]+|[+\-*/^()%]|[a-z]+/g) || [];
-
-    let result = 0;
-    let currentOp = '+';
-    let current = 0;
-    const stack: number[] = [];
-    const opStack: string[] = [];
-
-    for (const token of tokens) {
-      if (/^\d/.test(token)) {
-        current = parseFloat(token);
-      } else if (token in mathFunctions) {
-        // Handle function - simplified, assumes single argument
-        // A real implementation would parse parentheses properly
+    while (position < source.length) {
+      const rest = source.slice(position);
+      const whitespace = rest.match(/^\s+/)?.[0];
+      if (whitespace) {
+        position += whitespace.length;
         continue;
-      } else if ('+-*/^%'.includes(token)) {
-        // Apply previous operation
-        result = this.applyOp(result, current, currentOp);
-        currentOp = token;
-        current = 0;
-      } else if (token === '(') {
-        stack.push(result);
-        opStack.push(currentOp);
-        result = 0;
-        currentOp = '+';
-      } else if (token === ')') {
-        result = this.applyOp(result, current, currentOp);
-        current = result;
-        result = stack.pop() || 0;
-        currentOp = opStack.pop() || '+';
       }
+      const number = rest.match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+\-]?\d+)?/)?.[0];
+      if (number) {
+        tokens.push({ type: 'number', value: number });
+        position += number.length;
+        continue;
+      }
+      const identifier = rest.match(/^[a-z][a-z0-9_]*/)?.[0];
+      if (identifier) {
+        tokens.push({ type: 'identifier', value: identifier });
+        position += identifier.length;
+        continue;
+      }
+      const symbol = rest[0];
+      if ('+\-*/^%(),'.includes(symbol)) {
+        tokens.push({ type: 'symbol', value: symbol });
+        position += 1;
+        continue;
+      }
+      throw new Error(`Unexpected character '${symbol}' at position ${position + 1}`);
     }
 
-    // Final operation
-    result = this.applyOp(result, current, currentOp);
+    if (tokens.length === 0) throw new Error('Expression is empty');
+    let index = 0;
+    const current = (): Token | undefined => tokens[index];
+    const peek = (value: string): boolean => tokens[index]?.value === value;
+    const consume = (value?: string): Token => {
+      const token = tokens[index];
+      if (!token || (value !== undefined && token.value !== value)) {
+        throw new Error(value ? `Expected '${value}'` : 'Unexpected end of expression');
+      }
+      index += 1;
+      return token;
+    };
 
+    const parseExpression = (): number => {
+      let value = parseTerm();
+      while (peek('+') || peek('-')) {
+        const op = consume().value;
+        const right = parseTerm();
+        value = op === '+' ? value + right : value - right;
+      }
+      return value;
+    };
+    const parseTerm = (): number => {
+      let value = parseUnary();
+      while (peek('*') || peek('/') || peek('%')) {
+        const op = consume().value;
+        const right = parseUnary();
+        if ((op === '/' || op === '%') && right === 0) throw new Error('Division by zero');
+        value = op === '*' ? value * right : op === '/' ? value / right : value % right;
+      }
+      return value;
+    };
+    const parseUnary = (): number => {
+      if (peek('+')) {
+        consume('+');
+        return parseUnary();
+      }
+      if (peek('-')) {
+        consume('-');
+        return -parseUnary();
+      }
+      return parsePower();
+    };
+    const parsePower = (): number => {
+      const base = parsePrimary();
+      if (peek('^')) {
+        consume('^');
+        return Math.pow(base, parseUnary());
+      }
+      return base;
+    };
+    const parsePrimary = (): number => {
+      const token = current();
+      if (!token) throw new Error('Unexpected end of expression');
+      if (token.type === 'number') {
+        consume();
+        return Number(token.value);
+      }
+      if (peek('(')) {
+        consume('(');
+        const value = parseExpression();
+        consume(')');
+        return value;
+      }
+      if (token.type === 'identifier') {
+        const name = consume().value;
+        if (name === 'pi') return Math.PI;
+        if (name === 'e') return Math.E;
+        const fn = mathFunctions[name];
+        if (!fn) throw new Error(`Unknown function or constant '${name}'`);
+        consume('(');
+        const args: number[] = [];
+        if (!peek(')')) {
+          args.push(parseExpression());
+          while (peek(',')) {
+            consume(',');
+            args.push(parseExpression());
+          }
+        }
+        consume(')');
+        const unaryFunctions = new Set([
+          'abs', 'acos', 'asin', 'atan', 'ceil', 'cos', 'exp', 'floor',
+          'log', 'log10', 'round', 'sin', 'sqrt', 'tan',
+        ]);
+        if (unaryFunctions.has(name) && args.length !== 1) {
+          throw new Error(`${name} requires exactly one argument`);
+        }
+        if (name === 'pow' && args.length !== 2) {
+          throw new Error('pow requires exactly two arguments');
+        }
+        if ((name === 'min' || name === 'max') && args.length === 0) {
+          throw new Error(`${name} requires at least one argument`);
+        }
+        if (name === 'random' && args.length > 0) {
+          throw new Error('random does not accept arguments');
+        }
+        return fn(...args);
+      }
+      throw new Error(`Unexpected token '${token.value}'`);
+    };
+
+    const result = parseExpression();
+    if (index !== tokens.length) throw new Error(`Unexpected token '${tokens[index].value}'`);
+    if (!Number.isFinite(result)) throw new Error('Result is not finite');
     return result;
-  }
-
-  private applyOp(a: number, b: number, op: string): number {
-    switch (op) {
-      case '+': return a + b;
-      case '-': return a - b;
-      case '*': return a * b;
-      case '/': return b !== 0 ? a / b : NaN;
-      case '^': return Math.pow(a, b);
-      case '%': return a % b;
-      default: return b;
-    }
   }
 }

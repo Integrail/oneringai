@@ -53,9 +53,11 @@ export class PromptManager implements IPromptManager {
   private prompts: Map<string, PromptTemplate> = new Map();
   private activePromptName: string | null = null;
 
-  constructor(config: AmosConfig) {
+  constructor(config: AmosConfig, defaultPromptsDir?: string) {
     this.config = config;
-    this.promptsDir = config.prompts.promptsDir;
+    this.promptsDir = config.prompts.promptsDir === './data/prompts' && defaultPromptsDir
+      ? defaultPromptsDir
+      : config.prompts.promptsDir;
     this.activePromptName = config.prompts.activePrompt;
   }
 

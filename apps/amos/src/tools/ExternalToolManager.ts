@@ -2,12 +2,12 @@
  * ExternalToolManager - Manages external tools that require API connectors
  *
  * This manager handles tools that depend on external services:
- * - Search tools (web_search) - Serper, Brave, Tavily, RapidAPI
+ * - Search tools (web_search) - Serper
  * - Scrape tools (web_scrape) - ZenRows
  * - Fetch tools (web_fetch) - No connector needed (native)
  */
 
-import { Connector } from '@everworker/oneringai';
+import { Connector, ConnectorTools } from '@everworker/oneringai';
 import type { ToolFunction } from '@everworker/oneringai';
 import type {
   ExternalToolsConfig,
@@ -38,27 +38,6 @@ const SEARCH_PROVIDERS: Record<SearchProvider, ConnectorRequirement> = {
     displayName: 'Serper (Google Search)',
     baseURL: 'https://google.serper.dev',
     envVarHint: 'SERPER_API_KEY',
-  },
-  brave: {
-    providerType: 'search',
-    serviceType: 'brave-search',
-    displayName: 'Brave Search',
-    baseURL: 'https://api.search.brave.com/res/v1',
-    envVarHint: 'BRAVE_API_KEY',
-  },
-  tavily: {
-    providerType: 'search',
-    serviceType: 'tavily',
-    displayName: 'Tavily (AI-Optimized)',
-    baseURL: 'https://api.tavily.com',
-    envVarHint: 'TAVILY_API_KEY',
-  },
-  rapidapi: {
-    providerType: 'search',
-    serviceType: 'rapidapi-search',
-    displayName: 'RapidAPI Real-Time Search',
-    baseURL: 'https://real-time-web-search.p.rapidapi.com',
-    envVarHint: 'RAPIDAPI_KEY',
   },
 };
 
@@ -121,14 +100,17 @@ export class ExternalToolManager {
     const providerConfig = this.config.search;
     const hasConnector = !!(providerConfig?.enabled && providerConfig.connectorName);
     const connectorName = providerConfig?.connectorName || null;
+    const connectorValid = connectorName
+      ? this.validateConnector(connectorName, 'search').valid
+      : false;
 
     return {
       name: 'web_search',
       displayName: 'Web Search',
-      description: 'Search the web using Google, Brave, Tavily, or RapidAPI',
+      description: 'Search the web through a Serper connector',
       providerType: 'search',
       requiresConnector: true,
-      available: this.config.enabled && hasConnector,
+      available: this.config.enabled && hasConnector && connectorValid,
       connectorName,
       supportedProviders: Object.keys(SEARCH_PROVIDERS),
     };
@@ -141,6 +123,9 @@ export class ExternalToolManager {
     const providerConfig = this.config.scrape;
     const hasConnector = !!(providerConfig?.enabled && providerConfig.connectorName);
     const connectorName = providerConfig?.connectorName || null;
+    const connectorValid = connectorName
+      ? this.validateConnector(connectorName, 'scrape').valid
+      : false;
 
     return {
       name: 'web_scrape',
@@ -148,7 +133,7 @@ export class ExternalToolManager {
       description: 'Scrape web pages with anti-bot protection via ZenRows',
       providerType: 'scrape',
       requiresConnector: true,
-      available: this.config.enabled && hasConnector,
+      available: this.config.enabled && hasConnector && connectorValid,
       connectorName,
       supportedProviders: Object.keys(SCRAPE_PROVIDERS),
     };
@@ -258,6 +243,15 @@ export class ExternalToolManager {
       return { valid: false, error: `Connector '${connectorName}' is not active` };
     }
 
+    const expectedServiceTypes = this.getProvidersForType(type).map((provider) => provider.serviceType);
+    const actualServiceType = connector.serviceType || connector.vendor.toLowerCase();
+    if (!expectedServiceTypes.includes(actualServiceType)) {
+      return {
+        valid: false,
+        error: `Connector '${connectorName}' is '${actualServiceType}', expected ${expectedServiceTypes.join(' or ')}`,
+      };
+    }
+
     return { valid: true };
   }
 
@@ -266,17 +260,15 @@ export class ExternalToolManager {
    */
   getSuitableConnectors(type: ExternalProviderType): string[] {
     const providers = type === 'search' ? SEARCH_PROVIDERS : SCRAPE_PROVIDERS;
-    const serviceTypes = Object.values(providers).map(p => p.serviceType);
+    const serviceTypes = Object.values(providers).map((provider) => provider.serviceType);
 
     // Find connectors with matching service types
     const allConnectors = this.connectorManager.list();
     const suitable: string[] = [];
 
     for (const connector of allConnectors) {
-      // Check if connector is registered and has a matching vendor/service type
-      if (this.connectorManager.isRegistered(connector.name)) {
-        // For now, just return connectors that are registered
-        // In a more sophisticated implementation, we'd check serviceType
+      const serviceType = connector.serviceType || connector.vendor.toLowerCase();
+      if (this.connectorManager.isRegistered(connector.name) && serviceTypes.includes(serviceType)) {
         suitable.push(connector.name);
       }
     }
@@ -291,7 +283,7 @@ export class ExternalToolManager {
   /**
    * Create a configured version of the web_search tool
    */
-  createSearchTool(baseTool: ToolFunction): ToolFunction | null {
+  createSearchTool(): ToolFunction | null {
     if (!this.config.enabled) {
       return null;
     }
@@ -303,39 +295,23 @@ export class ExternalToolManager {
     }
 
     const connectorName = this.config.search.connectorName;
-
-    // Wrap the tool to inject the connector name
-    return {
-      ...baseTool,
-      execute: async (args: any) => {
-        return baseTool.execute({
-          ...args,
-          connectorName: args.connectorName || connectorName,
-        });
-      },
-    };
+    const validation = this.validateConnector(connectorName, 'search');
+    if (!validation.valid) return null;
+    return this.getConnectorTool(connectorName, '_web_search', 'web_search');
   }
 
   /**
    * Create a configured version of the web_scrape tool
    */
-  createScrapeTool(baseTool: ToolFunction): ToolFunction | null {
+  createScrapeTool(): ToolFunction | null {
     if (!this.config.enabled) return null;
     if (!this.config.scrape?.enabled) return null;
     if (!this.config.scrape.connectorName) return null;
 
     const connectorName = this.config.scrape.connectorName;
-
-    // Wrap the tool to inject the connector name
-    return {
-      ...baseTool,
-      execute: async (args: any) => {
-        return baseTool.execute({
-          ...args,
-          connectorName: args.connectorName || connectorName,
-        });
-      },
-    };
+    const validation = this.validateConnector(connectorName, 'scrape');
+    if (!validation.valid) return null;
+    return this.getConnectorTool(connectorName, '_web_scrape', 'web_scrape');
   }
 
   /**
@@ -345,6 +321,32 @@ export class ExternalToolManager {
     if (!this.config.enabled) return null;
     if (!this.config.webFetchEnabled) return null;
     return baseTool;
+  }
+
+  /**
+   * Resolve the service-specific tool produced by ConnectorTools and expose a
+   * stable AMOS command name. The execute closure remains bound to the selected
+   * Serper or ZenRows connector.
+   */
+  private getConnectorTool(
+    connectorName: string,
+    toolSuffix: '_web_search' | '_web_scrape',
+    publicName: 'web_search' | 'web_scrape',
+  ): ToolFunction | null {
+    const connectorTool = ConnectorTools.for(connectorName)
+      .find((tool) => tool.definition.function.name.endsWith(toolSuffix));
+    if (!connectorTool) return null;
+
+    return {
+      ...connectorTool,
+      definition: {
+        ...connectorTool.definition,
+        function: {
+          ...connectorTool.definition.function,
+          name: publicName,
+        },
+      },
+    };
   }
 }
 

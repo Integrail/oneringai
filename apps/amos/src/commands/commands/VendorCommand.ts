@@ -99,7 +99,7 @@ ALIASES:
     if (sonnet) return sonnet.name;
 
     // Sort by context window size (descending) and take first
-    const sorted = [...models].sort((a, b) => b.features.input.tokens - a.features.input.tokens);
+    const sorted = [...models].sort((a, b) => (b.features.input.tokens ?? 0) - (a.features.input.tokens ?? 0));
     return sorted[0]?.name || models[0].name;
   }
 
@@ -240,7 +240,14 @@ Tip: Use /model list to see all available models for this vendor
 
     // Get default model for vendor from MODEL_REGISTRY
     const vendorInfo = this.getVendorInfo(vendorName);
-    const defaultModel = vendorInfo.defaultModel;
+    const connectorModels = connectorManager.getModelsForConnector(connectors[0].name);
+    const defaultModel = connectorModels[0] || vendorInfo.defaultModel;
+    if (defaultModel === 'default') {
+      return this.error(
+        `No default model is registered for ${vendorName}. ` +
+        `Add a models list to connector '${connectors[0].name}' or switch with /model <name>.`
+      );
+    }
 
     // Update config
     app.updateConfig({
@@ -251,6 +258,7 @@ Tip: Use /model list to see all available models for this vendor
 
     // Recreate agent with new vendor
     await app.createAgent();
+    await app.saveConfig();
 
     return this.success(
       `Switched to vendor: ${vendorName}\n` +

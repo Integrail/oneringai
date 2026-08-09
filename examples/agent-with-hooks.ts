@@ -27,11 +27,16 @@ async function askForApproval(toolName: string, args: any): Promise<boolean> {
 }
 
 async function main() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required. Add it to .env before running this example.');
+  }
+
   // Create connector
   Connector.create({
     name: 'openai',
     vendor: Vendor.OpenAI,
-    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
+    auth: { type: 'api_key', apiKey },
   });
 
   console.log('🔧 Agent with Hooks Demo\n');
@@ -40,7 +45,7 @@ async function main() {
   // Create agent with hooks
   const agent = Agent.create({
     connector: 'openai',
-    model: 'gpt-4',
+    model: 'gpt-4.1-mini',
     tools: [tools.jsonManipulator],
     instructions: 'You are a JSON manipulation assistant.',
 
@@ -213,4 +218,7 @@ ${JSON.stringify(testObject)}
   console.log('✅ Agent destroyed and resources cleaned up\n');
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

@@ -10,6 +10,7 @@
  *   GOOGLE_API_KEY=...
  *   GROQ_API_KEY=...
  *   TOGETHER_API_KEY=...
+ *   XAI_API_KEY=...
  */
 
 import 'dotenv/config';
@@ -21,6 +22,7 @@ async function main() {
 
   // Create connectors for all available providers
   const configuredProviders: string[] = [];
+  const xaiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
 
   if (process.env.OPENAI_API_KEY) {
     Connector.create({
@@ -67,6 +69,19 @@ async function main() {
     configuredProviders.push('together');
   }
 
+  if (xaiKey) {
+    Connector.create({
+      name: 'grok',
+      vendor: Vendor.Grok,
+      auth: { type: 'api_key', apiKey: xaiKey },
+    });
+    configuredProviders.push('grok');
+  }
+
+  if (configuredProviders.length === 0) {
+    throw new Error('No provider API keys found. Add at least one supported key to .env.');
+  }
+
   console.log('📋 Configured providers:', configuredProviders.join(', '));
   console.log('');
 
@@ -76,12 +91,14 @@ async function main() {
 
   // Test each provider
   const providers = [
-    { name: 'openai', model: 'gpt-4o', enabled: Connector.has('openai') },
-    { name: 'anthropic', model: 'claude-sonnet-4-5-20250929', enabled: Connector.has('anthropic') },
-    { name: 'google', model: 'gemini-3-flash-preview', enabled: Connector.has('google') },
-    { name: 'groq', model: 'llama-3.1-70b-versatile', enabled: Connector.has('groq') },
-    { name: 'together', model: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', enabled: Connector.has('together') },
+    { name: 'openai', model: 'gpt-4.1-mini', enabled: Connector.has('openai') },
+    { name: 'anthropic', model: 'claude-haiku-4-5-20251001', enabled: Connector.has('anthropic') },
+    { name: 'google', model: 'gemini-2.5-flash', enabled: Connector.has('google') },
+    { name: 'groq', model: 'llama-3.3-70b-versatile', enabled: Connector.has('groq') },
+    { name: 'together', model: 'openai/gpt-oss-20b', enabled: Connector.has('together') },
+    { name: 'grok', model: 'grok-4.3', enabled: Connector.has('grok') },
   ];
+  const failedProviders: string[] = [];
 
   for (const provider of providers) {
     if (!provider.enabled) {
@@ -89,12 +106,13 @@ async function main() {
       continue;
     }
 
+    let agent: ReturnType<typeof Agent.create> | undefined;
     try {
       console.log(`🤖 Testing ${provider.name.toUpperCase()} (${provider.model})...`);
 
       const startTime = Date.now();
 
-      const agent = Agent.create({
+      agent = Agent.create({
         connector: provider.name,
         model: provider.model,
         temperature: 0.7,
@@ -106,9 +124,16 @@ async function main() {
       console.log(`✅ Response (${duration}ms):`);
       console.log(`   "${response.output_text}"`);
       console.log('');
-    } catch (error: any) {
-      console.log(`❌ Error: ${error.message}\n`);
+    } catch (error: unknown) {
+      console.log(`❌ Error: ${error instanceof Error ? error.message : String(error)}\n`);
+      failedProviders.push(provider.name);
+    } finally {
+      agent?.destroy();
     }
+  }
+
+  if (failedProviders.length > 0) {
+    throw new Error(`Configured providers failed: ${failedProviders.join(', ')}`);
   }
 
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -126,6 +151,10 @@ async function main() {
   console.log('   GOOGLE_API_KEY=...');
   console.log('   GROQ_API_KEY=gsk_...');
   console.log('   TOGETHER_API_KEY=...');
+  console.log('   XAI_API_KEY=... (GROK_API_KEY is also accepted)');
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

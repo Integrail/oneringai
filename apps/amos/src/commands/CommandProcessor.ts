@@ -183,7 +183,7 @@ export class CommandProcessor {
         continue;
       }
 
-      if (char === ' ' && inQuote === null) {
+      if (/\s/.test(char) && inQuote === null) {
         if (current.length > 0) {
           tokens.push(current);
           current = '';
@@ -192,6 +192,10 @@ export class CommandProcessor {
       }
 
       current += char;
+    }
+
+    if (escape) {
+      current += '\\';
     }
 
     if (current.length > 0) {

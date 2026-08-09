@@ -3,7 +3,7 @@
  */
 
 import { BaseCommand } from '../BaseCommand.js';
-import type { CommandContext, CommandResult } from '../../config/types.js';
+import { DEFAULT_CONFIG, type CommandContext, type CommandResult } from '../../config/types.js';
 
 export class ConfigCommand extends BaseCommand {
   readonly name = 'config';
@@ -25,7 +25,6 @@ USAGE:
 
 CONFIGURABLE KEYS:
   defaults.temperature      LLM temperature (0-2)
-  defaults.maxOutputTokens  Max response tokens
   planning.enabled          Enable planning mode
   planning.autoDetect       Auto-detect complex tasks
   planning.requireApproval  Require plan approval
@@ -83,7 +82,6 @@ DEFAULTS:
   Vendor: ${config.defaults.vendor}
   Model: ${config.defaults.model}
   Temperature: ${config.defaults.temperature}
-  Max Output Tokens: ${config.defaults.maxOutputTokens}
 
 PLANNING:
   Enabled: ${config.planning.enabled}
@@ -181,7 +179,6 @@ Use /config set <key> <value> to change values
       'defaults.vendor',
       'defaults.model',
       'defaults.temperature',
-      'defaults.maxOutputTokens',
       'planning.enabled',
       'planning.autoDetect',
       'planning.requireApproval',
@@ -208,9 +205,19 @@ Use /config set <key> <value> to change values
 
     // Validate value types
     const typeValidations: Record<string, (v: unknown) => boolean> = {
+      'defaults.vendor': (v) => typeof v === 'string' && v.length > 0,
+      'defaults.model': (v) => typeof v === 'string' && v.length > 0,
       'defaults.temperature': (v) => typeof v === 'number' && v >= 0 && v <= 2,
-      'defaults.maxOutputTokens': (v) => typeof v === 'number' && v > 0,
-      'session.autoSaveIntervalMs': (v) => typeof v === 'number' && v >= 1000,
+      'session.autoSaveIntervalMs': (v) => Number.isInteger(v) && (v as number) >= 1000,
+      'planning.enabled': (v) => typeof v === 'boolean',
+      'planning.autoDetect': (v) => typeof v === 'boolean',
+      'planning.requireApproval': (v) => typeof v === 'boolean',
+      'session.autoSave': (v) => typeof v === 'boolean',
+      'ui.showTokenUsage': (v) => typeof v === 'boolean',
+      'ui.showTiming': (v) => typeof v === 'boolean',
+      'ui.streamResponses': (v) => typeof v === 'boolean',
+      'ui.colorOutput': (v) => typeof v === 'boolean',
+      'tools.customToolsDir': (v) => typeof v === 'string' && v.length > 0,
     };
 
     const validator = typeValidations[key];
@@ -229,6 +236,26 @@ Use /config set <key> <value> to change values
 
     target[parts[parts.length - 1]] = parsedValue;
     app.updateConfig(config);
+    await app.saveConfig();
+
+    if (key === 'ui.colorOutput') {
+      app.setColorOutput(parsedValue as boolean);
+    }
+
+    if (key === 'tools.customToolsDir') {
+      const toolLoader = app.getToolLoader();
+      toolLoader.setConfig(app.getConfig());
+      await toolLoader.reloadTools();
+      toolLoader.applyConfig(config.tools.enabledTools, config.tools.disabledTools);
+      app.getAgent()?.updateTools(toolLoader.getEnabledTools());
+    }
+
+    if (
+      app.getAgent()
+      && (key.startsWith('planning.') || key.startsWith('session.') || key.startsWith('defaults.'))
+    ) {
+      await app.createAgent();
+    }
 
     return this.success(`Set ${key} = ${JSON.stringify(parsedValue)}`);
   }
@@ -243,14 +270,27 @@ Use /config set <key> <value> to change values
 
     // Reset to defaults but keep activeConnector
     const config = app.getConfig();
-    const { DEFAULT_CONFIG } = await import('../../config/types.js');
-
     app.updateConfig({
       ...DEFAULT_CONFIG,
       activeConnector: config.activeConnector,
       activeVendor: config.activeVendor,
       activeModel: config.activeModel,
     });
+
+    await app.saveConfig();
+    app.setColorOutput(app.getConfig().ui.colorOutput);
+
+    const toolLoader = app.getToolLoader();
+    toolLoader.setConfig(app.getConfig());
+    await toolLoader.reloadTools();
+    toolLoader.applyConfig(
+      app.getConfig().tools.enabledTools,
+      app.getConfig().tools.disabledTools,
+    );
+
+    if (app.getAgent()) {
+      await app.createAgent();
+    }
 
     return this.success('Configuration reset to defaults.');
   }

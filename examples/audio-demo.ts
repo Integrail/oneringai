@@ -11,11 +11,8 @@
  * - OPENAI_API_KEY environment variable
  */
 
+import 'dotenv/config';
 import { Connector, Agent, TextToSpeech, SpeechToText, Vendor, TTS_MODELS, STT_MODELS } from '../src/index.js';
-import * as fs from 'fs/promises';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
 
 async function main() {
   // Validate API key
@@ -42,7 +39,7 @@ async function main() {
 
   const tts = TextToSpeech.create({
     connector: 'openai',
-    model: TTS_MODELS[Vendor.OpenAI].TTS_1_HD,
+    model: TTS_MODELS[Vendor.OpenAI].GPT_4O_MINI_TTS,
     voice: 'nova', // Female voice
   });
 
@@ -159,7 +156,8 @@ async function main() {
 
   // Step 4: TTS for agent response
   console.log('\n🔊 Converting to speech...');
-  await tts.toFile(agentResponse.output_text, './agent-response.mp3', { voice: 'nova' });
+  const spokenResponse = agentResponse.output_text || 'I was unable to produce a response.';
+  await tts.toFile(spokenResponse, './agent-response.mp3', { voice: 'nova' });
   console.log('✅ Agent audio created: agent-response.mp3');
 
   console.log('\n✨ Voice assistant pipeline complete!');
@@ -177,19 +175,20 @@ async function main() {
   const longText = 'A'.repeat(5000); // 5000 characters
   console.log(`Estimating cost for ${longText.length} characters with tts-1-hd:`);
 
-  const tts1Info = tts.getModelInfo('tts-1');
-  const tts1hdInfo = tts.getModelInfo('tts-1-hd');
+  const tts1Info = tts.getModelInfo(TTS_MODELS[Vendor.OpenAI].TTS_1);
+  const tts1hdInfo = tts.getModelInfo(TTS_MODELS[Vendor.OpenAI].TTS_1_HD);
 
-  const cost1 = (longText.length / 1000) * tts1Info.pricing!.per1kCharacters;
-  const costHD = (longText.length / 1000) * tts1hdInfo.pricing!.per1kCharacters;
+  const cost1 = (longText.length / 1000) * (tts1Info.pricing?.per1kCharacters ?? 0);
+  const costHD = (longText.length / 1000) * (tts1hdInfo.pricing?.per1kCharacters ?? 0);
 
   console.log(`  - tts-1:    $${cost1.toFixed(4)}`);
   console.log(`  - tts-1-hd: $${costHD.toFixed(4)}`);
 
+  agent.destroy();
   console.log('\n✅ Demo complete!');
 }
 
-main().catch((error) => {
-  console.error('❌ Error:', error.message);
+main().catch((error: unknown) => {
+  console.error('❌ Error:', error instanceof Error ? error.message : String(error));
   process.exit(1);
 });

@@ -8,11 +8,18 @@
 import 'dotenv/config';
 import {
   Connector,
-  authenticatedFetch,
   createAuthenticatedFetch,
   FileStorage,
   generateEncryptionKey,
 } from '../src/index.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const tokenDirectory = mkdtempSync(join(tmpdir(), 'oneringai-auth-fetch-'));
+process.once('exit', () => rmSync(tokenDirectory, { recursive: true, force: true }));
+const encryptionKey = process.env.OAUTH_ENCRYPTION_KEY || generateEncryptionKey();
+process.env.OAUTH_ENCRYPTION_KEY ||= encryptionKey;
 
 // Simulated users (in a real app, these come from your database)
 const users = [
@@ -27,8 +34,8 @@ async function main() {
 
   // Set default storage for all connectors
   Connector.setDefaultStorage(new FileStorage({
-    directory: './tokens',
-    encryptionKey: process.env.OAUTH_ENCRYPTION_KEY || generateEncryptionKey(),
+    directory: tokenDirectory,
+    encryptionKey,
   }));
 
   // ==================== Setup: Register OAuth Connector ====================
@@ -109,7 +116,7 @@ async function main() {
   for (const user of users) {
     console.log(`\n📋 Creating fetch function for ${user.name}...`);
     const userFetch = createAuthenticatedFetch('github', user.id);
-    console.log(`   ✅ ${user.name}Fetch ready: userFetch("url") → auto-authenticated`);
+    console.log(`   ✅ ${user.name}Fetch ready (${typeof userFetch}): userFetch("url") → auto-authenticated`);
   }
 
   // ==================== Pattern 3: Web Application ====================
@@ -205,7 +212,7 @@ async function main() {
   console.log('});\n');
   console.log('const agent = Agent.create({');
   console.log('  connector: "openai",');
-  console.log('  model: "gpt-4",');
+  console.log('  model: "gpt-4.1-mini",');
   console.log('  tools: [jsTool],');
   console.log('  instructions: `You can access GitHub API using authenticatedFetch.');
   console.log('    For multi-user apps, pass userId as 4th parameter.`');
@@ -270,4 +277,7 @@ async function main() {
   Connector.clear();
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

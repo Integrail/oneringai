@@ -39,10 +39,92 @@ Read the [complete 1.0.0 release notes](./CHANGELOG.md#100--2026-08-08),
 [upgrade guide](./USER_GUIDE.md#upgrading-to-100), and
 [official-source model audit](./docs/MODEL_REGISTRY_AUDIT.md) before deploying.
 
+## Meet AMOS: a terminal agent built with OneRingAI
+
+> **Want to see the library running as a real application?** AMOS is the
+> terminal-based AI assistant in this repository, built entirely on OneRingAI.
+
+AMOS turns the library's core capabilities into an interactive CLI: configure
+named connectors, switch vendors and models without restarting, use guarded
+filesystem and shell tools, search with Serper, scrape with ZenRows, inspect
+context usage, and save or resume working sessions.
+
+**[Explore AMOS, its commands, and local setup →](./apps/amos/README.md)**
+
+## Memory is a first-class subsystem
+
+OneRingAI includes a complete, standalone **`MemorySystem`**—not just chat
+history and not a thin vector-store wrapper. It models knowledge as typed
+entities and provenance-aware facts, combines graph traversal with vector
+search, resolves repeated mentions to stable identities, and turns accumulated
+observations into evolving profiles. It is substantial enough to be its own
+package, but ships as part of OneRingAI so agents, connectors, embeddings,
+permissions, and context injection work together without integration glue.
+
+| Capability | What the memory layer provides |
+|------------|--------------------------------|
+| Knowledge model | Entities, atomic and relational facts, typed metadata, aliases, multiple identifiers, confidence, importance, provenance, `contextIds`, supersession, and archival history |
+| Retrieval | Ranked recall, semantic search over embedded facts and documents, N-hop graph traversal, related tasks/events, and bitemporal `asOf` queries |
+| Ingestion | Plain text, email, and calendar signal adapters; deterministic participant seeding; LLM extraction; entity resolution; and custom source/extractor interfaces |
+| Learning | Incremental user-profile generation, optional organization profiles, background conversation ingestion, and per-user-per-agent behavior rules |
+| Storage and scale | Zero-dependency in-memory storage plus Mongo adapters, native `$graphLookup`, Atlas Vector Search, index helpers, and pluggable `IMemoryStore` backends |
+| Security | Required ownership, owner/group/world permissions, optional principal ACLs, storage-level read filtering, write authorization, and LLM-safe scoped tools |
+
+Use it in three ways:
+
+1. **Directly** through `MemorySystem` in a server, worker, migration, or any
+   non-agent application.
+2. **Inside an agent** with `MemoryPluginNextGen` (six read tools and profile
+   injection) plus the optional `MemoryWritePluginNextGen` (six write tools).
+3. **As an ingestion pipeline** with `SignalIngestor` or
+   `SessionIngestorPluginNextGen`, including retrieval-only agents that learn
+   in the background without giving the LLM write access.
+
+Start with the **[Memory Layer Guide](./docs/MEMORY_GUIDE.md)**. The specialist
+docs cover the [API](./docs/MEMORY_API.md),
+[permissions](./docs/MEMORY_PERMISSIONS.md),
+[predicate vocabulary](./docs/MEMORY_PREDICATES.md), and
+[signal ingestion](./docs/MEMORY_SIGNALS.md).
+
+## Context plugins and tools are modular by design
+
+`AgentContextNextGen` is the runtime composition layer around an agent. Its
+goal is to let each capability own its instructions, context content, tools,
+token accounting, compaction behavior, and persisted state while the context
+manager assembles one coherent model input. Compaction happens once before the
+LLM call, tool-call/result pairs stay together, and disabled features add no
+tools or prompt content.
+
+| Context feature | Purpose |
+|-----------------|---------|
+| Working memory | External, tiered scratch storage for raw notes, summaries, and findings |
+| In-context memory | Small high-value state kept directly in the prompt—no retrieval call required |
+| Self-learning memory | Profiles, graph/vector retrieval, document search, and optional controlled writes through `memory_*` tools |
+| Tool catalog | Lets agents discover and load only the tool categories needed for the current task |
+| Shared workspace | Versioned coordination board for multi-agent teams |
+| Persistent instructions / user info | Backward-compatible stores; new applications should generally prefer the self-learning memory system |
+
+Tools reach an agent from four explicit sources: application-supplied
+`ToolFunction`s, the 39 generated built-ins, feature plugins (`store_*`,
+`memory_*`, catalog tools, and others), and connector-generated tools.
+`ConnectorTools.for(name)` always adds a protected authenticated API tool when
+the connector has a `baseURL`, then adds a specialized pack where OneRingAI has
+one—for example Slack, GitHub, Microsoft, Google Workspace, Telegram, Twilio,
+Zoom, web search/scraping, and AI media connectors. Generated names are
+connector-prefixed, so multiple accounts and vendors can coexist safely.
+
+See the **[Connector & Tool Catalog](./docs/CONNECTOR_TOOL_CATALOG.md)** for the
+complete 50-template matrix, every first-party specialized pack, and discovery
+APIs. The [Context Management guide](./USER_GUIDE.md#context-management) covers
+plugin lifecycle, stores, compaction, persistence, and custom plugins.
+
 ## Table of Contents
 
 - [What's new in v1.0.0](#whats-new-in-v100)
 - [Before upgrading](#before-upgrading)
+- [Meet AMOS: a terminal agent built with OneRingAI](#meet-amos-a-terminal-agent-built-with-oneringai)
+- [Memory is a first-class subsystem](#memory-is-a-first-class-subsystem)
+- [Context plugins and tools are modular by design](#context-plugins-and-tools-are-modular-by-design)
 - [Features](#features)
 - [Quick Start](#quick-start) — Installation, basic usage, tools, vision, audio, images, video, search, scraping
 - [Supported Providers](#supported-providers)
@@ -74,7 +156,7 @@ Read the [complete 1.0.0 release notes](./CHANGELOG.md#100--2026-08-08),
   - [21. Routine Execution](#21-routine-execution) — Multi-step workflows with task dependencies, validation, and memory bridging
   - [22. External API Integration](#22-external-api-integration) — Scoped Registry, Vendor Templates, Tool Discovery
   - [23. Microsoft Graph Connector Tools](#23-microsoft-graph-connector-tools) — Email, calendar, meetings, and Teams transcripts
-  - [24. Tool Catalog](#24-tool-catalog) — Dynamic tool loading/unloading for agents with 100+ tools
+  - [24. Tool Catalog](#24-tool-catalog) — Dynamic discovery and loading for large tool sets
   - [25. Async (Non-Blocking) Tools](#25-async-non-blocking-tools) — Background tool execution with auto-continuation
   - [26. Long-Running Sessions (Suspend/Resume)](#26-long-running-sessions-suspendresume) — Suspend agent loops waiting for external input, resume days later
   - [27. Agent Registry](#27-agent-registry) — Global tracking, deep inspection, parent/child hierarchy, event fan-in, external control
@@ -106,6 +188,10 @@ Read the [complete 1.0.0 release notes](./CHANGELOG.md#100--2026-08-08),
 |----------|-------------|
 | **[User Guide](./USER_GUIDE.md)** | Comprehensive guide covering every feature with examples — connectors, agents, context, plugins, audio, video, search, MCP, OAuth, and more |
 | **[API Reference](./API_REFERENCE.md)** | Auto-generated reference for all public exports — classes, interfaces, types, and functions with signatures |
+| **[Memory Layer Guide](./docs/MEMORY_GUIDE.md)** | Standalone entity/fact memory system: graph and vector retrieval, ingestion, resolution, profiles, adapters, scaling, and agent integration |
+| **[Memory API & Security](./docs/MEMORY_API.md)** | Complete `MemorySystem` API, with dedicated [permissions](./docs/MEMORY_PERMISSIONS.md), [predicates](./docs/MEMORY_PREDICATES.md), and [signals](./docs/MEMORY_SIGNALS.md) guides |
+| **[Connector & Tool Catalog](./docs/CONNECTOR_TOOL_CATALOG.md)** | All 50 connector templates, generic authenticated API behavior, specialized tool packs, built-ins, plugin tools, and discovery APIs |
+| **[Runnable Examples](https://github.com/aantich/oneringai/blob/main/examples/README.md)** | Every example program, what it demonstrates, required credentials, side effects, and exact run command |
 | **[1.0.0 Upgrade Guide](./USER_GUIDE.md#upgrading-to-100)** | Breaking changes, compatibility guarantees, migration checklist, and before/after examples |
 | [Model Registry Audit](./docs/MODEL_REGISTRY_AUDIT.md) | Vendor-by-vendor gaps, implemented status, model snapshot, API boundaries, and official sources |
 | [CHANGELOG](./CHANGELOG.md#100--2026-08-08) | Full 1.0.0 release notes, breaking changes, validation, and version history |
@@ -763,10 +849,20 @@ Policy-based permission system with per-user rules, argument inspection, and plu
 
 #### Zero-Config (Backward Compatible)
 
-Existing code works unchanged. Safe tools (read-only, memory, catalog) are auto-allowed; all others default to prompting:
+Existing code works unchanged. Tools that declare `scope: 'always'` (including
+the built-in read-only filesystem tools) execute immediately. Tools declaring
+`'session'` or `'once'` use the approval flow; without an
+`onApprovalRequired` callback they are denied rather than silently allowed:
 
 ```typescript
-const agent = Agent.create({ connector: 'openai', model: 'gpt-4.1', tools: [readFile, bash] });
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4.1',
+  tools: [readFile, bash],
+  permissions: {
+    onApprovalRequired: async (ctx) => showApprovalDialog(ctx),
+  },
+});
 
 // read_file executes immediately (in DEFAULT_ALLOWLIST)
 // bash triggers approval flow (write/shell tools require approval by default)
@@ -797,9 +893,13 @@ await manager.userRules.addRule({
 
 Condition operators: `starts_with`, `not_starts_with`, `contains`, `not_contains`, `equals`, `not_equals`, `matches` (regex), `not_matches`.
 
-#### Built-in Policies
+#### Policy Model
 
-Eight composable policies evaluated in priority order (`deny` short-circuits):
+OneRingAI evaluates composable policies in priority order (`deny`
+short-circuits). The package root exports `IPermissionPolicy`,
+`PermissionPolicyManager`, user-rule storage, and the legacy-compatible
+allowlist/blocklist configuration. The source tree also contains the following
+internal policy implementations:
 
 | Policy | Description |
 |--------|-------------|
@@ -812,16 +912,35 @@ Eight composable policies evaluated in priority order (`deny` short-circuits):
 | **RolePolicy** | Role-based access control (map user roles to tool permissions) |
 | **RateLimitPolicy** | Limit tool invocations per time window |
 
+The concrete classes in that table are not package-root exports in 1.0.0. Use
+the public allowlist/blocklist options, or implement `IPermissionPolicy`:
+
 ```typescript
-import { PathRestrictionPolicy, BashFilterPolicy } from '@everworker/oneringai';
+import type { IPermissionPolicy } from '@everworker/oneringai';
+
+const noPrivilegedShell: IPermissionPolicy = {
+  name: 'app:no-privileged-shell',
+  priority: 50,
+  evaluate(ctx) {
+    const command = String(ctx.args.command ?? '');
+    return ctx.toolName === 'bash' && /\b(?:sudo|rm\s+-rf)\b/.test(command)
+      ? {
+          verdict: 'deny',
+          reason: 'Privileged and recursive-delete commands are blocked',
+          policyName: 'app:no-privileged-shell',
+        }
+      : {
+          verdict: 'abstain',
+          reason: 'Not applicable',
+          policyName: 'app:no-privileged-shell',
+        };
+  },
+};
 
 const agent = Agent.create({
   connector: 'openai', model: 'gpt-4.1',
   permissions: {
-    policies: [
-      new PathRestrictionPolicy({ allowedPaths: ['/workspace'] }),
-      new BashFilterPolicy({ denyCommands: ['rm -rf', 'sudo'] }),
-    ],
+    policies: [noPrivilegedShell],
   },
 });
 ```
@@ -856,7 +975,7 @@ Tool authors declare permission defaults on the tool definition. App developers 
 
 ```typescript
 const myTool: ToolFunction = {
-  definition: { type: 'function', function: { name: 'deploy', description: '...', parameters: {...} } },
+  definition: { type: 'function', function: { name: 'deploy', description: '...', parameters: {} } },
   execute: async (args) => { /* ... */ },
   // Author-declared defaults
   permission: {
@@ -1118,7 +1237,7 @@ const plugin = ctx.getPlugin('in_context_memory');
 plugin.set('current_state', 'Task processing state', { step: 2, status: 'active' });
 plugin.set('user_prefs', 'User preferences', { verbose: true }, 'high');
 
-// Store data with UI display - shown in the host app's sidebar panel
+// Store host-owned UI metadata through the direct API
 plugin.set('dashboard', 'Progress dashboard', '## Progress\n- [x] Step 1\n- [ ] Step 2', 'normal', true);
 
 // LLM uses unified store tools: store_set("whiteboard", ...), store_get("whiteboard", ...), etc.
@@ -1130,7 +1249,11 @@ const state = plugin.get('current_state');  // { step: 2, status: 'active' }
 - **WorkingMemory**: External storage + index → requires `store_get("notes", key)` for values
 - **InContextMemory**: Full values in context → instant access, no retrieval needed
 
-**UI Display (`showInUI`):** Entries with `showInUI: true` are displayed in the host application's sidebar panel with full markdown rendering (code blocks, tables, charts, diagrams, etc.). The LLM sets this via `store_set("whiteboard", key, { ..., showInUI: true })`. Users can also pin specific entries to always display them regardless of the agent's setting. See the [User Guide](./USER_GUIDE.md#ui-display-showInUI) for details.
+**UI metadata (`showInUI`):** OneRingAI stores, serializes, and reports this
+flag, but does not render a sidebar or implement pinning. The built-in
+`store_set` schema intentionally does not advertise the field to the LLM; host
+code can set it through the direct API or expose it deliberately in a custom UI
+integration. See the [User Guide](./USER_GUIDE.md#ui-display-showinui).
 
 **Use cases:** Session state, user preferences, counters, flags, small accumulated results, live dashboards.
 
@@ -1221,7 +1344,21 @@ TODOs are stored alongside user info and rendered in a separate **"Current TODOs
 A brain-like, queryable knowledge store built on the [memory layer](./docs/MEMORY_GUIDE.md). Two cooperating context plugins + **12 LLM-callable tools** turn the agent into a learning system: it bootstraps a `person` entity for the user (and optionally an `organization` entity for their group), injects the evolving user profile + any user-given behavior rules into the system message every turn, and exposes `memory_*` tools so the LLM can read or write the knowledge graph mid-conversation. Observations flow in via `memory_remember` (LLM-driven) or `SessionIngestorPluginNextGen` (passive); incremental profile regeneration synthesises them; the next turn sees the updated profile. No manual prompt engineering for user/agent preferences.
 
 ```typescript
-import { Agent, createMemorySystemWithConnectors, InMemoryAdapter } from '@everworker/oneringai';
+import {
+  Agent,
+  createMemorySystemWithConnectors,
+  InMemoryAdapter,
+  PredicateRegistry,
+} from '@everworker/oneringai';
+
+const predicates = PredicateRegistry.standard().register({
+  name: 'prefers',
+  description: 'A durable user preference.',
+  category: 'preference',
+  payloadKind: 'attribute',
+  subjectTypes: ['person'],
+  lifecycle: 'stable',
+});
 
 const memory = createMemorySystemWithConnectors({
   store: new InMemoryAdapter(),                 // or MongoMemoryAdapter for production
@@ -1229,6 +1366,9 @@ const memory = createMemorySystemWithConnectors({
     embedding: { connector: 'openai', model: 'text-embedding-3-small', dimensions: 1536 },
     profile:   { connector: 'anthropic', model: 'claude-sonnet-4-6' },
   },
+  predicates,
+  predicateMode: 'strict',
+  visibilityPolicy: () => ({ group: 'read', world: 'none' }),
 });
 
 const agent = Agent.create({
@@ -1254,7 +1394,7 @@ const agent = Agent.create({
 
 await agent.run('Remember I prefer concise answers');
 // Agent calls memory_remember({subject:"me", predicate:"prefers", value:"concise answers"})
-// Fact stored → profile regen fires in background → next turn sees it in the user profile
+// Fact is available to recall immediately; profile regeneration runs after the configured threshold.
 ```
 
 **Key Features:**
@@ -1267,8 +1407,8 @@ await agent.run('Remember I prefer concise answers');
 - 🧬 **Multi-ID entities** — lookup by email / slack_id / github_login / domain / any identifier; upsert auto-merges
 - 📜 **Supersession history** — corrections archive predecessors; audit chain preserved via `archivedOnly: true`
 - 🪧 **User-driven behavior rules** — `memory_set_agent_rule` records "be terse" / "reply in Russian" / "your name is Jason" directives, rendered back into the system message every turn (per-user-per-agent scoped)
-- 🏢 **Optional org bootstrap** — when `groupBootstrap` is set, an `organization` entity is upserted and rendered as a separate "Your Organization Profile" block alongside the user profile
-- 🛡️ **LLM-safe** — `groupId` fixed by host app (never from tool args); ghost-write protection; `contextIds` auto-downgrade; numeric limits clamped
+- 🏢 **Optional org bootstrap** — when `groupBootstrap` is set, an `organization` entity is upserted and rendered as an "About the User's Organization" block alongside the user profile
+- 🛡️ **LLM-safe** — `groupId` fixed by host app (never from tool args); ghost-write protection; foreign `contextIds` force owner-only permissions; numeric limits clamped
 
 **12 LLM tools** (`memory_*`), split into two opt-in bundles:
 
@@ -1731,7 +1871,9 @@ for await (const chunk of tts.synthesizeStream('Hello!', { format: 'pcm' })) {
 const voice = VoiceStream.create({
   ttsConnector: 'openai', ttsModel: 'tts-1-hd', voice: 'nova',
 });
-for await (const event of voice.wrap(agent.stream('Tell me a story'))) { ... }
+for await (const event of voice.wrap(agent.stream('Tell me a story'))) {
+  handleVoiceEvent(event);
+}
 ```
 
 ### OpenAI Realtime API (GA)
@@ -2246,11 +2388,11 @@ import { SimpleScheduler, EventEmitterTrigger } from '@everworker/oneringai';
 
 // Schedule: run every hour
 const scheduler = new SimpleScheduler();
-scheduler.schedule('hourly-report', { intervalMs: 3600000 }, () => executeRoutine({ ... }));
+scheduler.schedule('hourly-report', { intervalMs: 3600000 }, () => executeRoutine({ definition, agent }));
 
 // Event trigger: run from webhook
 const trigger = new EventEmitterTrigger();
-trigger.on('new-order', (payload) => executeRoutine({ ... }));
+trigger.on('new-order', (payload) => executeRoutine({ definition, agent, inputs: payload }));
 // In your webhook handler:
 trigger.emit('new-order', { orderId: '123' });
 ```
@@ -2261,7 +2403,7 @@ trigger.emit('new-order', { orderId: '123' });
 import { createFileRoutineDefinitionStorage, createRoutineDefinition } from '@everworker/oneringai';
 
 const storage = createFileRoutineDefinitionStorage();
-const routine = createRoutineDefinition({ name: 'Daily Report', description: '...', tasks: [...] });
+const routine = createRoutineDefinition({ name: 'Daily Report', description: '...', tasks: [] });
 await storage.save(undefined, routine);  // undefined = default user
 const loaded = await storage.load(undefined, routine.id);
 const all = await storage.list(undefined, { tags: ['daily'] });
@@ -2419,18 +2561,19 @@ await agent.run('List my GitHub repositories');
 **Supported Categories (50 vendors):**
 | Category | Vendors |
 |----------|---------|
-| Communication | Slack, Discord, Telegram, Zoom, Twilio, HeyReach |
+| Major vendors | Microsoft, Google Workspace |
+| Communication | Slack, Discord, Telegram, X (Twitter), Zoom, HeyReach |
 | Development | GitHub, GitLab, Bitbucket, Jira, Linear, Asana, Trello |
-| Productivity | Notion, Airtable, Google Workspace, Microsoft 365, Confluence, Cal.com, Calendly |
+| Productivity | Notion, Airtable, Confluence, Cal.com, Calendly |
 | CRM | Salesforce, HubSpot, Pipedrive |
-| Payments | Stripe, PayPal |
+| Payments | Stripe, PayPal, QuickBooks, Ramp |
 | Cloud | AWS, Cloudflare |
 | Storage | Dropbox, Box |
-| Email | SendGrid, Mailchimp, Postmark, EmailBison |
+| Email | SendGrid, Mailchimp, Postmark, Mailgun, EmailBison |
 | Monitoring | Datadog, PagerDuty, Sentry |
-| Search | Serper, Brave, Tavily, RapidAPI |
+| Search | Serper, Brave Search, Tavily, RapidAPI Web Search |
 | Scrape | ZenRows |
-| Other | Zendesk, Intercom, Shopify, Clay |
+| Other | Twilio, Zendesk, Intercom, Shopify, ipinfo, Clay |
 
 Each vendor includes:
 - **Credentials setup URL** - Direct link to where you create API keys
@@ -2571,7 +2714,7 @@ await agent.run('Search for information about quantum computing');
 - **Connector discovery** — Connector tools auto-discovered as categories, filtered by `identities`
 - **Registry API** — `ToolCatalogRegistry.resolveTools()` for app-level tool resolution
 
-See the [User Guide](./USER_GUIDE.md#tool-catalog) for full documentation.
+See the [User Guide](./USER_GUIDE.md#tool-catalog-dynamic-tool-loadingunloading) for full documentation.
 
 ### 25. Async (Non-Blocking) Tools
 
@@ -2919,15 +3062,11 @@ const tools = ConnectorTools.for('my-zoom');
 Cross-provider meeting slot finder — aggregates busy intervals from Google + Microsoft calendars:
 
 ```typescript
-import {
-  createUnifiedFindMeetingSlotsTool,
-  createGoogleCalendarSlotsProvider,
-  createMicrosoftCalendarSlotsProvider,
-} from '@everworker/oneringai';
+import { tools } from '@everworker/oneringai';
 
-const tool = createUnifiedFindMeetingSlotsTool([
-  createGoogleCalendarSlotsProvider(googleConnector),
-  createMicrosoftCalendarSlotsProvider(msftConnector),
+const tool = tools.createUnifiedFindMeetingSlotsTool([
+  tools.createGoogleCalendarSlotsProvider(googleConnector),
+  tools.createMicrosoftCalendarSlotsProvider(msftConnector),
 ]);
 
 const result = await tool.execute({
@@ -2971,10 +3110,12 @@ const suites = IntegrationTestRunner.getAllSuites();
 // → google-workspace, microsoft-365, slack, github, telegram, twilio, zoom,
 //   generic-api, plus 4 web-search-* and 4 web-scrape-* provider variants
 
-// Run a suite: pass the suite OBJECT, the tools, and a flat params map
-import { googleWorkspaceSuite } from '@everworker/oneringai';
-const result = await IntegrationTestRunner.runSuite(googleWorkspaceSuite, tools, {
-  testEmail: 'test@example.com',
+// Run a suite: select the suite object, then pass tools and a flat params map
+const googleSuite = suites.find((suite) => suite.id === 'google-workspace');
+if (!googleSuite) throw new Error('Google Workspace suite not registered');
+
+const result = await IntegrationTestRunner.runSuite(googleSuite, connectorTools, {
+  testRecipientEmail: 'test@example.com',
 });
 ```
 
@@ -3086,6 +3227,8 @@ See [MCP_INTEGRATION.md](./MCP_INTEGRATION.md) for complete documentation.
 
 ## Examples
 
+See the **[complete examples guide](https://github.com/aantich/oneringai/blob/main/examples/README.md)** for every runnable program, its purpose, required credentials, side effects, and exact command.
+
 ```bash
 # Basic examples
 npm run example:text               # Simple text generation
@@ -3165,4 +3308,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 1.0.0 | **Last Updated:** 2026-08-08 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 1.0.0 | **Last Updated:** 2026-08-09 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**

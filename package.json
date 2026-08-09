@@ -100,6 +100,7 @@
     "example:custom-infrastructure": "tsx examples/custom-infrastructure.ts",
     "example:provider-config": "tsx examples/provider-config-generator.ts",
     "example:logging": "tsx examples/logging-demo.ts",
+    "examples:check": "tsc --noEmit -p examples/tsconfig.json",
     "docs": "tsx scripts/generate-api-docs.ts --mode public",
     "docs:public": "tsx scripts/generate-api-docs.ts --mode public",
     "docs:full": "mkdir -p docs && tsx scripts/generate-api-docs.ts --mode full"

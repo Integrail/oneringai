@@ -81,11 +81,9 @@ ALIASES:
     }
 
     try {
-      const sessionId = await agent.saveSession();
+      const sessionId = await agent.saveSession(name);
 
-      // Update config with session name mapping if provided
       if (name) {
-        // Could store name -> sessionId mapping in config
         app.print(`Session saved as "${name}" (ID: ${sessionId})`);
       } else {
         app.print(`Session saved (ID: ${sessionId})`);
@@ -97,6 +95,7 @@ ALIASES:
           activeSessionId: sessionId,
         },
       });
+      await app.saveConfig();
 
       return this.success();
     } catch (error) {
@@ -125,6 +124,7 @@ ALIASES:
           activeSessionId: sessionId,
         },
       });
+      await app.saveConfig();
 
       return this.success(`Session loaded: ${sessionId}`);
     } catch (error) {
@@ -134,21 +134,26 @@ ALIASES:
 
   private async listSessions(context: CommandContext): Promise<CommandResult> {
     const { app } = context;
+    const agent = app.getAgent();
+    if (!agent) {
+      return this.error('No active agent. Configure a connector first.');
+    }
 
-    // This would need access to session storage
-    // For now, show a placeholder
-    const config = app.getConfig();
+    const sessions = await agent.listSessions();
+    if (sessions.length === 0) {
+      return this.success('No saved sessions. Use /session save [name] to create one.');
+    }
 
-    const lines = [
-      'Saved Sessions:',
-      '',
-      '(Session listing requires session storage access)',
-      '',
-      `Current Session: ${config.session.activeSessionId || '(none)'}`,
-      '',
-      'Use /session save to save current session',
-      'Use /session load <id> to load a session',
-    ];
+    const current = agent.getSessionId() || app.getConfig().session.activeSessionId;
+    const lines = ['Saved Sessions:', ''];
+    for (const session of sessions) {
+      const marker = session.id === current ? '→' : ' ';
+      const title = session.title ? ` — ${session.title}` : '';
+      lines.push(`${marker} ${session.id}${title}`);
+      lines.push(`    ${session.messageCount} messages, saved ${session.lastSavedAt.toLocaleString()}`);
+    }
+    lines.push('');
+    lines.push('Use /session load <id> to resume a session.');
 
     return this.success(lines.join('\n'));
   }
@@ -165,21 +170,31 @@ ALIASES:
       return this.success('Cancelled.');
     }
 
-    // Would need session storage access to delete
-    app.print(`Session ${sessionId} deleted.`);
+    const agent = app.getAgent();
+    if (!agent) {
+      return this.error('No active agent. Configure a connector first.');
+    }
+
+    try {
+      await agent.deleteSession(sessionId);
+    } catch (error) {
+      return this.error(`Failed to delete session: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
     // Clear from config if it was active
     const config = app.getConfig();
-    if (config.session.activeSessionId === sessionId) {
+    if (config.session.activeSessionId === sessionId || agent.getSessionId() === sessionId) {
       app.updateConfig({
         session: {
           ...config.session,
           activeSessionId: null,
         },
       });
+      await app.createAgent({ freshSession: true });
+      await app.saveConfig();
     }
 
-    return this.success();
+    return this.success(`Session ${sessionId} deleted.`);
   }
 
   private async showSessionInfo(context: CommandContext): Promise<CommandResult> {
@@ -225,7 +240,8 @@ Agent Status: ${agent ? (agent.isRunning() ? 'Running' : 'Ready') : 'No agent'}
     });
 
     // Recreate agent
-    await app.createAgent();
+    await app.createAgent({ freshSession: true });
+    await app.saveConfig();
 
     return this.success('New session started.');
   }

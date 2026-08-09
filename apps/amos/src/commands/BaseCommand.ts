@@ -83,7 +83,7 @@ export abstract class BaseCommand implements ICommand {
 
     // Calculate column widths
     const widths = headers.map((h, i) => {
-      const maxRowWidth = Math.max(...rows.map((r) => (r[i] || '').length));
+      const maxRowWidth = Math.max(0, ...rows.map((r) => (r[i] || '').length));
       return Math.max(h.length, maxRowWidth);
     });
 

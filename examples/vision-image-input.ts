@@ -12,17 +12,22 @@ import {
   Vendor,
   MessageBuilder,
   createMessageWithImages,
-  InputItem,
   MessageRole,
   ContentType,
 } from '../src/index.js';
+import type { InputItem } from '../src/index.js';
 
 async function main() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required. Add it to .env before running this example.');
+  }
+
   // Create connector
   Connector.create({
     name: 'openai',
     vendor: Vendor.OpenAI,
-    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
+    auth: { type: 'api_key', apiKey },
   });
 
   console.log('🖼️  Vision / Image Input Examples\n');
@@ -45,7 +50,7 @@ async function main() {
 
   const agent1 = Agent.create({
     connector: 'openai',
-    model: 'gpt-4o', // GPT-4 Vision model
+    model: 'gpt-4.1-mini',
   });
 
   const response1 = await agent1.run([input1]);
@@ -72,7 +77,7 @@ async function main() {
 
   const agent2 = Agent.create({
     connector: 'openai',
-    model: 'gpt-4o',
+    model: 'gpt-4.1-mini',
   });
 
   const response2 = await agent2.run([input2]);
@@ -94,30 +99,30 @@ async function main() {
 
   // First turn: Ask about an image
   builder.addUserMessageWithImages(
-    'What architectural style is this building?',
-    ['https://images.unsplash.com/photo-1511739001486-6bfe10ce65f4?w=400']
+    'What landscape features are visible in this image?',
+    [imageUrl1]
   );
 
   const agent3 = Agent.create({
     connector: 'openai',
-    model: 'gpt-4o',
+    model: 'gpt-4.1-mini',
   });
 
-  const response3 = await agent3.run(builder.build());
+  const response3 = await agent3.runDirect(builder.build());
 
-  console.log('📸 Image: [Eiffel Tower]');
-  console.log('👤 User: What architectural style is this building?');
+  console.log('📸 Image: [mountain landscape]');
+  console.log('👤 User: What landscape features are visible in this image?');
   console.log('\n🤖 Assistant:', response3.output_text);
 
   // Add assistant response to history
   builder.addAssistantMessage(response3.output_text || '');
 
   // Second turn: Follow-up question (no image needed)
-  builder.addUserMessage('When was it built?');
+  builder.addUserMessage('What visual clues suggest the time of day?');
 
-  const response4 = await agent3.run(builder.build());
+  const response4 = await agent3.runDirect(builder.build());
 
-  console.log('\n👤 User: When was it built?');
+  console.log('\n👤 User: What visual clues suggest the time of day?');
   console.log('\n🤖 Assistant:', response4.output_text);
   console.log('\n✅ Total tokens used:', response4.usage.total_tokens);
 
@@ -128,8 +133,8 @@ async function main() {
   console.log('Example 4: Image Detail Levels');
   console.log('──────────────────────────────────\n');
   console.log('Note: You can control image detail for token usage:');
-  console.log('  - "low": ~85 tokens per image (faster, cheaper)');
-  console.log('  - "high": ~170-340 tokens per image (more detail)');
+  console.log('  - "low": faster and cheaper for broad visual understanding');
+  console.log('  - "high": more detail for dense or small visual elements');
   console.log('  - "auto": Model chooses based on image size (default)');
 
   // Using the raw InputItem structure for fine control
@@ -155,7 +160,7 @@ async function main() {
 
   const agent4 = Agent.create({
     connector: 'openai',
-    model: 'gpt-4o',
+    model: 'gpt-4.1-mini',
   });
 
   const response5 = await agent4.run(inputWithDetailControl);
@@ -170,10 +175,17 @@ async function main() {
 
   console.log('💡 Tips:');
   console.log('  • Use public URLs or base64 data URIs');
-  console.log('  • GPT-4o is faster and cheaper than GPT-4 Vision');
+  console.log('  • Choose a current model with vision support, such as GPT-4.1 mini');
   console.log('  • Use "low" detail for simple tasks to save tokens');
   console.log('  • Images can be combined with text in any order');
   console.log('  • Works great with the MessageBuilder for conversations');
+  agent1.destroy();
+  agent2.destroy();
+  agent3.destroy();
+  agent4.destroy();
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

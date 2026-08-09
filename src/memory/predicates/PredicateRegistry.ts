@@ -6,7 +6,7 @@
  * ranking-weight derivation.
  *
  * Usage patterns:
- *   - `PredicateRegistry.standard()` — ship-with-the-library 45-predicate set
+ *   - `PredicateRegistry.standard()` — ship-with-the-library 44-predicate set
  *     across 10 categories. Authoritative count lives in `standard.ts`'s
  *     header — update both when the standard set grows.
  *   - `PredicateRegistry.empty().registerAll([...])` — build your own vocab.
@@ -25,7 +25,7 @@ export class PredicateRegistry {
   private byAlias = new Map<string, string>();
 
   /**
-   * Returns a fresh registry seeded with the standard 45-predicate set
+   * Returns a fresh registry seeded with the standard 44-predicate set
    * (10 categories). Called as a factory — each invocation produces an
    * independent instance, so mutations never leak between MemorySystems
    * or tests. The authoritative count lives in `standard.ts`'s header.

@@ -4,17 +4,21 @@
  * Demonstrates using MCP resources and subscriptions.
  */
 
+import 'dotenv/config';
+import { fileURLToPath } from 'node:url';
 import { MCPRegistry } from '../../src/index.js';
 
 async function main() {
   // Create MCP client
+  const demoServerPath = fileURLToPath(new URL('./demo-server.ts', import.meta.url));
   const client = MCPRegistry.create({
-    name: 'filesystem',
+    name: 'demo-resources',
     transport: 'stdio',
     transportConfig: {
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-filesystem', process.cwd()],
+      command: process.execPath,
+      args: ['--import', 'tsx', demoServerPath, '--label', 'resources-client'],
     },
+    autoReconnect: false,
   });
 
   // Connect
@@ -34,7 +38,7 @@ async function main() {
 
   // Read a resource
   if (resources.length > 0) {
-    const resource = resources[0];
+    const resource = resources[0]!;
     console.log(`\nReading resource: ${resource.name}`);
     const content = await client.readResource(resource.uri);
     console.log(`Content type: ${content.mimeType}`);
@@ -52,7 +56,7 @@ async function main() {
     });
 
     if (resources.length > 0) {
-      const resource = resources[0];
+      const resource = resources[0]!;
       console.log(`Subscribing to: ${resource.uri}`);
       await client.subscribeResource(resource.uri);
       console.log('Subscribed! Waiting for updates...');
@@ -79,7 +83,7 @@ async function main() {
 
   // Get a prompt
   if (prompts.length > 0) {
-    const prompt = prompts[0];
+    const prompt = prompts[0]!;
     console.log(`\nGetting prompt: ${prompt.name}`);
     const promptResult = await client.getPrompt(prompt.name);
     console.log(`Description: ${promptResult.description}`);
@@ -94,4 +98,7 @@ async function main() {
   console.log('\nDisconnected');
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

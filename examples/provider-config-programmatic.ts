@@ -5,14 +5,37 @@
  */
 
 import 'dotenv/config';
-import { Connector, Vendor, ProviderConfigAgent, ConnectorConfigResult } from '../src/index.js';
+import { Connector, Vendor, ProviderConfigAgent } from '../src/index.js';
+import type { ConnectorConfigResult } from '../src/index.js';
 
 // Type guard to check if result is a ConnectorConfigResult (not a string question)
 function isConfigResult(result: string | ConnectorConfigResult): result is ConnectorConfigResult {
   return typeof result !== 'string' && 'name' in result && 'config' in result;
 }
 
+async function finishConfiguration(
+  agent: ProviderConfigAgent,
+  request: string,
+  followUps: string[],
+): Promise<ConnectorConfigResult> {
+  let result = await agent.run(request);
+  for (const answer of followUps) {
+    if (isConfigResult(result)) return result;
+    console.log(`AI asked: ${result}`);
+    result = await agent.continue(answer);
+  }
+  if (!isConfigResult(result)) {
+    throw new Error(`Configuration is incomplete; last question was: ${result}`);
+  }
+  return result;
+}
+
 async function main() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required. Add it to .env before running this example.');
+  }
+
   console.log('🔌 Programmatic OAuth Provider Configuration\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
@@ -20,24 +43,22 @@ async function main() {
   Connector.create({
     name: 'openai',
     vendor: Vendor.OpenAI,
-    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+    auth: { type: 'api_key', apiKey },
   });
 
   // Create config agent
   const configAgent = new ProviderConfigAgent('openai');
+  let failures = 0;
 
   // Example 1: Generate GitHub user OAuth config
   console.log('Example 1: GitHub User OAuth (Authorization Code)\n');
 
   try {
-    const result = await configAgent.run(
-      'Configure GitHub with user OAuth for a web app at http://localhost:3000/callback'
+    const result = await finishConfiguration(
+      configAgent,
+      'Configure GitHub for a web app. Users will sign in with GitHub; the app needs their email and repository access. Use http://localhost:3000/callback.',
+      ['Users sign in with GitHub.', 'Read email addresses and repositories.', 'Yes, generate the configuration now.'],
     );
-
-    if (!isConfigResult(result)) {
-      console.log('AI is asking:', result);
-      return;
-    }
 
     console.log('✅ Generated configuration:\n');
     console.log('Provider Name:', result.name);
@@ -55,13 +76,10 @@ async function main() {
     console.log(JSON.stringify(result.config, null, 2));
     console.log('');
 
-    // Register it immediately!
-    console.log('📝 Registering connector...');
-    Connector.create({ name: result.name, ...result.config });
-    console.log(`✅ Connector '${result.name}' registered!`);
-    console.log(`   Available connectors: ${Connector.list().join(', ')}`);
+    console.log('Use this object with Connector.create() after replacing ENV:... placeholders.');
   } catch (error) {
     console.error('❌ Error:', (error as Error).message);
+    failures += 1;
   }
 
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
@@ -72,14 +90,11 @@ async function main() {
   configAgent.reset(); // Reset for new conversation
 
   try {
-    const result2 = await configAgent.run(
-      'Configure Microsoft Graph API with client credentials for a backend service'
+    const result2 = await finishConfiguration(
+      configAgent,
+      'Configure Microsoft Graph for a backend service with no user login. It needs application access to read user profiles and mail.',
+      ['No users sign in; this is a backend service.', 'Read user profiles and mail.', 'Yes, generate the configuration now.'],
     );
-
-    if (!isConfigResult(result2)) {
-      console.log('AI is asking:', result2);
-      return;
-    }
 
     console.log('✅ Generated configuration:\n');
     console.log('Provider Name:', result2.name);
@@ -91,9 +106,15 @@ async function main() {
     console.log(JSON.stringify(result2.config, null, 2));
   } catch (error) {
     console.error('❌ Error:', (error as Error).message);
+    failures += 1;
   }
 
+  configAgent.destroy();
+  if (failures > 0) throw new Error(`${failures} provider configuration example(s) failed.`);
   console.log('\n✨ Done! The AI generated everything - no templates needed!');
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

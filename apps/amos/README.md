@@ -2,6 +2,8 @@
 
 A powerful terminal-based AI assistant powered by `@everworker/oneringai`. Features multi-vendor support, runtime model switching, tool permissions, session management, and comprehensive context inspection.
 
+> The historical name says “Multimodal,” but the current CLI implements text agents and tools only. Image, audio, and video commands are not implemented yet.
+
 ## Features
 
 - **Multi-Vendor Support** - OpenAI, Anthropic, Google, Groq, Mistral, and more
@@ -11,11 +13,14 @@ A powerful terminal-based AI assistant powered by `@everworker/oneringai`. Featu
 - **Session Management** - Save and resume conversations
 - **Context Inspection** - Monitor token usage and context budget
 - **Coding Agent Mode** - Autonomous coding with filesystem and shell access
+- **Web Tools** - Native fetch plus connector-bound Serper search and ZenRows scraping
 - **Extensible Commands** - Easy-to-add custom commands
 
 ## Quick Start
 
 ```bash
+# Requires Node.js 22+
+
 # Install dependencies
 npm install
 
@@ -81,7 +86,7 @@ Features:
 - File system tools (read, write, edit, glob, grep)
 - Shell command execution
 - Git-aware workflow
-- Plan approval workflow
+- Conversational plan/approval guidance for complex work
 
 ## Prompt Templates
 
@@ -130,6 +135,8 @@ data/
 ├── prompts/          # System prompt templates
 └── logs/             # Log files (dev mode)
 ```
+
+Connector JSON files contain credentials in plaintext. Keep `data/connectors/` private and out of version control.
 
 ## Scripts
 

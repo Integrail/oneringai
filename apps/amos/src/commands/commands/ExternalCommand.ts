@@ -2,8 +2,8 @@
  * ExternalCommand - Manage external tools (search, scrape, fetch)
  *
  * External tools are tools that require external API connectors:
- * - web_search: Requires Serper, Brave, Tavily, or RapidAPI
- * - web_scrape: Requires ZenRows (or similar)
+ * - web_search: Requires Serper
+ * - web_scrape: Requires ZenRows
  * - web_fetch: Free, no connector needed
  *
  * Subcommands:
@@ -36,7 +36,7 @@ export class ExternalCommand extends BaseCommand {
 /external - Manage External Tools
 
 External tools are web tools that require API connectors:
-  - web_search: Search the web (Serper, Brave, Tavily, RapidAPI)
+  - web_search: Search the web (Serper)
   - web_scrape: Scrape web pages (ZenRows)
   - web_fetch: Simple HTTP fetch (free, no connector needed)
 
@@ -221,11 +221,20 @@ EXAMPLES:
     const existingConnector = connectorManager.get(connectorName);
 
     if (existingConnector) {
+      const actualServiceType = existingConnector.serviceType || existingConnector.vendor.toLowerCase();
+      if (actualServiceType !== providerInfo.serviceType) {
+        return this.error(
+          `Connector '${connectorName}' is configured for '${actualServiceType}', not '${providerInfo.serviceType}'.`
+        );
+      }
       const useExisting = await app.confirm(
         `Connector '${connectorName}' already exists. Use it?`
       );
 
       if (useExisting) {
+        if (!connectorManager.isRegistered(connectorName)) {
+          connectorManager.registerConnector(connectorName);
+        }
         return this.configureProvider(context, type, connectorName);
       }
 
@@ -243,6 +252,7 @@ EXAMPLES:
       await connectorManager.add({
         name: connectorName,
         vendor: providerInfo.serviceType, // Use serviceType as vendor for external services
+        serviceType: providerInfo.serviceType,
         auth: {
           type: 'api_key',
           apiKey: apiKey.trim(),
@@ -276,9 +286,15 @@ EXAMPLES:
   ): Promise<CommandResult> {
     const { app } = context;
     const config = app.getConfig();
+    const connectorManager = app.getConnectorManager();
+
+    if (!connectorManager.isRegistered(connectorName)) {
+      connectorManager.registerConnector(connectorName);
+    }
 
     // Update config
     const externalTools = { ...config.externalTools };
+    externalTools.enabled = true;
     externalTools[type] = {
       connectorName,
       enabled: true,
@@ -303,12 +319,9 @@ EXAMPLES:
 
     // Now reload tools with the updated config
     await toolLoader.reloadTools();
+    toolLoader.applyConfig(updatedConfig.tools.enabledTools, updatedConfig.tools.disabledTools);
 
-    // Recreate agent to pick up the new tools
-    // Agent stores tools at creation time, so tool changes require recreation
-    if (app.getAgent()?.isReady()) {
-      await app.createAgent();
-    }
+    app.getAgent()?.updateTools(toolLoader.getEnabledTools());
 
     return this.success(
       `${type} tool configured with connector '${connectorName}'.\n` +
@@ -329,6 +342,7 @@ EXAMPLES:
 
     const config = app.getConfig();
     const externalTools = { ...config.externalTools };
+    externalTools.enabled = true;
 
     switch (toolName) {
       case 'fetch':
@@ -374,11 +388,9 @@ EXAMPLES:
       externalToolManager.updateConfig(updatedConfig.externalTools);
     }
     await toolLoader.reloadTools();
+    toolLoader.applyConfig(updatedConfig.tools.enabledTools, updatedConfig.tools.disabledTools);
 
-    // Recreate agent to pick up the new tools
-    if (app.getAgent()?.isReady()) {
-      await app.createAgent();
-    }
+    app.getAgent()?.updateTools(toolLoader.getEnabledTools());
 
     return this.success(`Tool '${toolName}' enabled.`);
   }
@@ -433,11 +445,9 @@ EXAMPLES:
       externalToolManager.updateConfig(updatedConfig.externalTools);
     }
     await toolLoader.reloadTools();
+    toolLoader.applyConfig(updatedConfig.tools.enabledTools, updatedConfig.tools.disabledTools);
 
-    // Recreate agent to pick up the new tools
-    if (app.getAgent()?.isReady()) {
-      await app.createAgent();
-    }
+    app.getAgent()?.updateTools(toolLoader.getEnabledTools());
 
     return this.success(`Tool '${toolName}' disabled.`);
   }

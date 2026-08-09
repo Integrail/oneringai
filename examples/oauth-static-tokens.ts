@@ -11,7 +11,7 @@ import {
   Agent,
   Vendor,
   authenticatedFetch,
-  generateWebAPITool,
+  ConnectorTools,
 } from '../src/index.js';
 
 async function main() {
@@ -45,6 +45,8 @@ async function main() {
     auth: {
       type: 'api_key',
       apiKey: process.env.ANTHROPIC_API_KEY || 'sk-ant-demo-key',
+      headerName: 'x-api-key',
+      headerPrefix: '',
     },
   });
 
@@ -82,7 +84,7 @@ async function main() {
       authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
       tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
       redirectUri: 'http://localhost:3000/callback',
-      scope: 'User.Read Mail.Read',
+      scope: 'User.Read Mail.Read offline_access',
     },
   });
 
@@ -123,7 +125,7 @@ async function main() {
     );
 
     if (response.ok) {
-      const data: any = await response.json();
+      const data = await response.json() as { data?: unknown[] };
       console.log('✅ OpenAI API call successful!');
       console.log(`Models available: ${data.data?.length || 0}\n`);
     } else {
@@ -134,17 +136,15 @@ async function main() {
     console.log('ℹ️  Demo mode - set OPENAI_API_KEY to test real calls\n');
   }
 
-  // ==================== Generate Universal API Tool ====================
+  // ==================== Generate Connector Tools ====================
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-  console.log('Universal API Tool');
+  console.log('Connector-Bound API Tools');
   console.log('─────────────────────────────────\n');
 
-  const apiTool = generateWebAPITool();
+  const apiTools = [...ConnectorTools.discoverAll().values()].flat();
 
-  console.log('Generated tool:', apiTool.definition.function.name);
-  console.log('Supports connectors:', apiTool.definition.function.parameters?.properties?.authProvider?.enum);
-  console.log('\nTool description includes:\n');
-  console.log(Connector.getDescriptionsForTools());
+  console.log('Generated tools:', apiTools.map((tool) => tool.definition.function.name).join(', '));
+  console.log('\nEach tool is tied to one named connector.');
   console.log('');
 
   // ==================== Use with AI Agent ====================
@@ -162,22 +162,23 @@ async function main() {
 
     const agent = Agent.create({
       connector: 'openai',
-      model: 'gpt-4',
-      tools: [apiTool],
-      instructions: `You have access to multiple APIs through the api_request tool.
+      model: 'gpt-4.1-mini',
+      tools: apiTools,
+      instructions: `You have access to multiple APIs through connector-bound tools.
 
 Available connectors: ${Connector.list().join(', ')}
 
 Choose the appropriate connector based on what the user asks for.`,
     });
 
-    console.log('Agent created with universal API tool');
+    console.log(`Agent created with ${agent.listTools().length} connector tools`);
     console.log('The agent can call:');
     console.log('  • OpenAI API (via openai-api connector)');
     console.log('  • Anthropic API (via anthropic-api connector)');
     console.log('  • Microsoft Graph (via microsoft connector)');
     console.log('  • Any other registered connector!');
     console.log('');
+    agent.destroy();
   }
 
   // ==================== Summary ====================
@@ -199,12 +200,15 @@ Choose the appropriate connector based on what the user asks for.`,
   console.log('  // Use unified fetch');
   console.log('  authenticatedFetch(url, options, connectorName)');
   console.log('');
-  console.log('  // Or generate universal tool');
-  console.log('  const tool = generateWebAPITool()');
+  console.log('  // Or generate connector-bound tools');
+  console.log('  const tools = ConnectorTools.for(connectorName)');
   console.log('');
 
   // Cleanup
   Connector.clear();
 }
 
-main().catch(console.error);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

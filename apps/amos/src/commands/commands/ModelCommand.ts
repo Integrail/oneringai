@@ -4,7 +4,7 @@
 
 import { BaseCommand } from '../BaseCommand.js';
 import type { CommandContext, CommandResult } from '../../config/types.js';
-import { MODEL_REGISTRY, getModelsByVendor, getModelInfo } from '@everworker/oneringai';
+import { getModelsByVendor, getModelInfo } from '@everworker/oneringai';
 
 export class ModelCommand extends BaseCommand {
   readonly name = 'model';
@@ -27,7 +27,7 @@ USAGE:
 
 EXAMPLES:
   /model                    List available models
-  /model gpt-4o             Switch to GPT-4o
+  /model gpt-5.6-terra      Switch to GPT-5.6 Terra
   /model claude-opus-4-5    Switch to Claude Opus 4.5
   /model info               Show current model details
 
@@ -63,23 +63,24 @@ ALIASES:
     const vendorModels = getModelsByVendor(currentVendor as any);
 
     if (vendorModels.length === 0) {
-      // Show all models if vendor has none registered
-      const allModels = Object.values(MODEL_REGISTRY);
-      const lines = [
-        `All Available Models:`,
-        '',
-      ];
-
-      for (const model of allModels) {
-        const marker = model.name === currentModel ? '→ ' : '  ';
-        const features: string[] = [];
-        if (model.features.vision) features.push('vision');
-        if (model.features.reasoning) features.push('reasoning');
-        if (model.features.functionCalling) features.push('tools');
-        const featureStr = features.length > 0 ? ` [${features.join(', ')}]` : '';
-        lines.push(`${marker}${model.name}${featureStr}`);
+      const connectorModels = config.activeConnector
+        ? app.getConnectorManager().getModelsForConnector(config.activeConnector)
+        : [];
+      if (connectorModels.length > 0) {
+        const lines = [`Models configured for ${config.activeConnector}:`, ''];
+        for (const model of connectorModels) {
+          lines.push(`${model === currentModel ? '→ ' : '  '}${model}`);
+        }
+        return this.success(lines.join('\n'));
       }
 
+      const lines = [
+        `No models are registered for ${currentVendor}.`,
+        '',
+        `Current model: ${currentModel}`,
+        'You can still switch to a provider-supported model by name:',
+        '  /model <model-name>',
+      ];
       return this.success(lines.join('\n'));
     }
 
@@ -97,7 +98,7 @@ ALIASES:
       const featureStr = features.length > 0 ? ` [${features.join(', ')}]` : '';
 
       lines.push(`${marker}${model.name}${featureStr}`);
-      lines.push(`    Context: ${(model.features.input.tokens / 1000).toFixed(0)}K in / ${(model.features.output.tokens / 1000).toFixed(0)}K out`);
+      lines.push(`    Context: ${((model.features.input.tokens ?? 0) / 1000).toFixed(0)}K in / ${((model.features.output.tokens ?? 0) / 1000).toFixed(0)}K out`);
     }
 
     lines.push('');
@@ -131,8 +132,8 @@ Model: ${modelInfo.name}
 Vendor: ${modelInfo.provider}
 
 Context Window:
-  Input:  ${(features.input.tokens / 1000).toFixed(0)}K tokens
-  Output: ${(features.output.tokens / 1000).toFixed(0)}K tokens
+  Input:  ${((features.input.tokens ?? 0) / 1000).toFixed(0)}K tokens
+  Output: ${((features.output.tokens ?? 0) / 1000).toFixed(0)}K tokens
 
 Pricing (per million tokens):
   Input:  $${features.input.cpm.toFixed(2)}
@@ -159,6 +160,7 @@ Release: ${modelInfo.releaseDate || 'Unknown'}
     // Recreate agent with new model (model change requires agent recreation)
     try {
       await app.createAgent();
+      await app.saveConfig();
     } catch (error) {
       return this.error(`Failed to switch model: ${error instanceof Error ? error.message : String(error)}`);
     }

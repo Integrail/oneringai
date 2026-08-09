@@ -30,17 +30,15 @@ import {
   Connector,
   Agent,
   Vendor,
-  InputItem,
   MessageRole,
   ContentType,
   MessageBuilder,
   authenticatedFetch,
-  ToolFunction,
-  tools,
   isOutputTextDelta,
   StreamHelpers,
   createExecuteJavaScriptTool,
 } from '../src/index.js';
+import type { InputItem, ToolFunction } from '../src/index.js';
 import { readClipboardImage } from '../src/utils/clipboardImage.js';
 
 // Provider information interface
@@ -48,10 +46,12 @@ interface ProviderInfo {
   name: string;
   displayName: string;
   model: string;
-  apiKey: string;
+  apiKey?: string;
   description: string;
   hasVision: boolean;
   baseURL?: string;
+  projectId?: string;
+  location?: string;
 }
 
 // Configure readline for interactive input
@@ -68,6 +68,30 @@ let pendingImages: string[] = [];
 let selectedProvider: ProviderInfo;
 let availableProviders: ProviderInfo[];
 let streamingEnabled = true; // Default to streaming for better UX
+let activeAgent: Agent;
+let activeAgentTools: ToolFunction[] = [];
+let activeAgentInstructions = '';
+let activeAgentNeedsHistoryReplay = false;
+
+function createActiveAgent(): Agent {
+  return Agent.create({
+    connector: selectedProvider.name,
+    model: selectedProvider.model,
+    tools: activeAgentTools,
+    instructions: activeAgentInstructions,
+    temperature: 0.7,
+    maxIterations: 10,
+    permissions: {
+      onApprovalRequired: async ({ toolName, args }) => new Promise((resolve) => {
+        console.log(`\nTool approval requested: ${toolName}`);
+        console.log(JSON.stringify(args, null, 2));
+        rl.question('Allow this tool call? (y/N): ', (answer) => {
+          resolve({ approved: /^y(es)?$/i.test(answer.trim()) });
+        });
+      }),
+    },
+  });
+}
 
 /**
  * Detect available providers from environment variables
@@ -79,7 +103,7 @@ function detectAvailableProviders(): ProviderInfo[] {
     providers.push({
       name: 'openai',
       displayName: 'OpenAI',
-      model: 'gpt-4o',
+      model: 'gpt-4.1-mini',
       apiKey: process.env.OPENAI_API_KEY,
       description: 'Best for vision and general use',
       hasVision: true,
@@ -90,7 +114,7 @@ function detectAvailableProviders(): ProviderInfo[] {
     providers.push({
       name: 'anthropic',
       displayName: 'Anthropic (Claude)',
-      model: 'claude-sonnet-4-5-20250929', // Claude Sonnet 4.5 (latest)
+      model: 'claude-haiku-4-5-20251001',
       apiKey: process.env.ANTHROPIC_API_KEY,
       description: 'Best for coding and analysis',
       hasVision: true,
@@ -101,9 +125,9 @@ function detectAvailableProviders(): ProviderInfo[] {
     providers.push({
       name: 'google',
       displayName: 'Google (Gemini)',
-      model: 'gemini-2.0-flash-exp', // Gemini 2.0 Flash (experimental, best tool support)
+      model: 'gemini-2.5-flash',
       apiKey: process.env.GOOGLE_API_KEY,
-      description: 'Gemini 2.0 Flash with excellent tool calling',
+      description: 'Gemini 2.5 Flash with tool calling',
       hasVision: true,
     });
   }
@@ -112,7 +136,7 @@ function detectAvailableProviders(): ProviderInfo[] {
     providers.push({
       name: 'groq',
       displayName: 'Groq',
-      model: 'llama-3.1-70b-versatile',
+      model: 'llama-3.3-70b-versatile',
       apiKey: process.env.GROQ_API_KEY,
       description: 'Fastest inference (100-300ms)',
       hasVision: false,
@@ -124,7 +148,7 @@ function detectAvailableProviders(): ProviderInfo[] {
     providers.push({
       name: 'together-ai',
       displayName: 'Together AI',
-      model: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
+      model: 'openai/gpt-oss-20b',
       apiKey: process.env.TOGETHER_API_KEY,
       description: 'Cost-effective Llama models',
       hasVision: false,
@@ -132,12 +156,12 @@ function detectAvailableProviders(): ProviderInfo[] {
     });
   }
 
-  if (process.env.GROK_API_KEY) {
+  if (process.env.XAI_API_KEY || process.env.GROK_API_KEY) {
     providers.push({
       name: 'grok',
       displayName: 'Grok (xAI)',
-      model: 'grok-2-vision',
-      apiKey: process.env.GROK_API_KEY,
+      model: 'grok-4.3',
+      apiKey: process.env.XAI_API_KEY || process.env.GROK_API_KEY,
       description: 'Latest from xAI',
       hasVision: true,
       baseURL: 'https://api.x.ai/v1',
@@ -149,12 +173,12 @@ function detectAvailableProviders(): ProviderInfo[] {
     providers.push({
       name: 'vertex-ai',
       displayName: 'Google Vertex AI',
-      model: 'gemini-2.0-flash-exp', // Gemini 2.0 for better tool support
+      model: 'gemini-2.5-flash',
       projectId: process.env.GOOGLE_CLOUD_PROJECT,
       location: process.env.GOOGLE_CLOUD_LOCATION,
       description: 'Enterprise Gemini with SLA & advanced features',
       hasVision: true,
-    } as any);
+    });
   }
 
   return providers;
@@ -166,7 +190,7 @@ function detectAvailableProviders(): ProviderInfo[] {
 async function selectProvider(providers: ProviderInfo[]): Promise<ProviderInfo> {
   // If only one provider, auto-select
   if (providers.length === 1) {
-    const selected = providers[0];
+    const selected = providers[0]!;
     console.log(`\n✅ Auto-selected: ${selected.displayName} (only provider configured)\n`);
     return selected;
   }
@@ -176,7 +200,7 @@ async function selectProvider(providers: ProviderInfo[]): Promise<ProviderInfo> 
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
   for (let i = 0; i < providers.length; i++) {
-    const p = providers[i];
+    const p = providers[i]!;
     const visionBadge = p.hasVision ? ' 🖼️' : '';
     console.log(`${i + 1}. ${p.displayName}${visionBadge}`);
     console.log(`   Model: ${p.model}`);
@@ -220,7 +244,7 @@ async function main() {
     console.error('  GOOGLE_API_KEY=...');
     console.error('  GROQ_API_KEY=gsk_...');
     console.error('  TOGETHER_API_KEY=...');
-    console.error('  GROK_API_KEY=...\n');
+    console.error('  XAI_API_KEY=... (or GROK_API_KEY)\n');
     console.error('See .env.example for all options.');
     process.exit(1);
   }
@@ -231,10 +255,10 @@ async function main() {
       Connector.create({
         name: p.name,
         vendor: Vendor.GoogleVertex,
-        auth: { type: 'api_key', apiKey: '' }, // Vertex uses ADC
+        auth: { type: 'none' }, // Vertex uses Application Default Credentials
         options: {
-          projectId: (p as any).projectId,
-          location: (p as any).location,
+          projectId: p.projectId,
+          location: p.location,
         },
       });
     } else {
@@ -249,7 +273,7 @@ async function main() {
       Connector.create({
         name: p.name,
         vendor: vendorMap[p.name] || Vendor.OpenAI,
-        auth: { type: 'api_key', apiKey: p.apiKey },
+        auth: { type: 'api_key', apiKey: p.apiKey! },
         baseURL: p.baseURL,
       });
     }
@@ -435,15 +459,10 @@ Example endpoints:
   instructions += '\n- Console output (console.log)';
   instructions += '\n\nIMPORTANT: When user says "run code" or "execute code", you MUST use the execute_javascript tool, not describe what code would do.';
 
-  // Create agent ONCE
-  const agent = Agent.create({
-    connector: selectedProvider.name,
-    model: selectedProvider.model,
-    tools: agentTools,
-    instructions,
-    temperature: 0.7,
-    maxIterations: 10,
-  });
+  // Create the active agent. /switch replaces this instance.
+  activeAgentTools = agentTools;
+  activeAgentInstructions = instructions;
+  activeAgent = createActiveAgent();
 
   // Enable raw mode for keypress detection
   if (process.stdin.isTTY) {
@@ -451,7 +470,7 @@ Example endpoints:
   }
 
   // Handle keypress events for Ctrl+V detection
-  process.stdin.on('keypress', async (chunk, key) => {
+  process.stdin.on('keypress', async (_chunk, key) => {
     if (!key) return;
 
     // Detect Ctrl+V (or Cmd+V)
@@ -518,20 +537,22 @@ Example endpoints:
         builder.addUserMessage(userInput);
       }
 
-      const messages = [...conversationHistory, ...builder.build()];
+      const newItems = builder.build();
+      const messages = activeAgentNeedsHistoryReplay
+        ? [...conversationHistory, ...newItems]
+        : newItems;
+      activeAgentNeedsHistoryReplay = false;
 
       process.stdout.write('🤖 Assistant: ');
 
       let response;
-      let assistantText = '';
 
       if (streamingEnabled) {
         // Streaming mode - stream text in real-time
         response = await StreamHelpers.collectResponse(
-          StreamHelpers.tap(agent.stream(messages), (event) => {
+          StreamHelpers.tap(activeAgent.stream(messages), (event) => {
             if (isOutputTextDelta(event)) {
               process.stdout.write(event.delta);
-              assistantText += event.delta;
             }
           })
         );
@@ -539,16 +560,15 @@ Example endpoints:
       } else {
         // Non-streaming mode - show thinking animation
         const thinkingInterval = startThinkingAnimation();
-        response = await agent.run(messages);
+        response = await activeAgent.run(messages);
         stopThinkingAnimation(thinkingInterval);
 
-        assistantText = response.output_text || '';
-        console.log(assistantText);
+        console.log(response.output_text || '');
         console.log('');
       }
 
       // Update history
-      conversationHistory.push(...builder.build());
+      conversationHistory.push(...newItems);
       conversationHistory.push(
         ...response.output.filter(
           (item): item is InputItem =>
@@ -564,8 +584,8 @@ Example endpoints:
         `\x1b[90m[${selectedProvider.displayName} | ${streamingEnabled ? '🚀 Streamed' : 'Tokens'}: ${tokens.total_tokens} (${tokens.input_tokens} in, ${tokens.output_tokens} out) | Messages: ${Math.floor(conversationHistory.length / 2)}]\x1b[0m`
       );
       console.log('');
-    } catch (error: any) {
-      console.error('\n❌ Error:', error.message);
+    } catch (error: unknown) {
+      console.error('\n❌ Error:', error instanceof Error ? error.message : String(error));
       console.log('');
     } finally {
       isProcessing = false;
@@ -576,11 +596,13 @@ Example endpoints:
   // Handle Ctrl+C
   rl.on('SIGINT', () => {
     console.log('\n\n👋 Goodbye! Thanks for chatting!');
+    activeAgent.destroy();
     process.exit(0);
   });
 
   rl.on('close', () => {
     console.log('\n\n👋 Goodbye! Thanks for chatting!');
+    activeAgent.destroy();
     process.exit(0);
   });
 }
@@ -672,8 +694,8 @@ async function addImage(urlOrPath: string): Promise<void> {
 
     console.log(`❌ Invalid image: Not a URL or existing file path`);
     console.log(`   Tried: ${urlOrPath}`);
-  } catch (error: any) {
-    console.log(`❌ Error adding image: ${error.message}`);
+  } catch (error: unknown) {
+    console.log(`❌ Error adding image: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -688,12 +710,16 @@ async function handleCommand(command: string) {
     case '/quit':
     case '/q':
       console.log('\n👋 Goodbye! Thanks for chatting!');
+      activeAgent.destroy();
       process.exit(0);
       break;
 
     case '/clear':
       conversationHistory = [];
       pendingImages = [];
+      activeAgent.destroy();
+      activeAgent = createActiveAgent();
+      activeAgentNeedsHistoryReplay = false;
       console.clear();
       console.log('✅ Conversation history and pending images cleared');
       console.log('');
@@ -763,7 +789,11 @@ async function handleSwitch() {
   }
 
   const newProvider = await selectProvider(availableProviders);
+  const previousAgent = activeAgent;
   selectedProvider = newProvider;
+  activeAgent = createActiveAgent();
+  activeAgentNeedsHistoryReplay = conversationHistory.length > 0;
+  previousAgent.destroy();
 
   console.log(`✅ Switched to ${selectedProvider.displayName}`);
   console.log(`   Model: ${selectedProvider.model}`);
@@ -853,9 +883,6 @@ function showAvailableTools() {
 
 /**
  * Handle /paste command
-
-/**
- * Handle /paste command
  */
 async function handleTextPaste() {
   try {
@@ -889,8 +916,8 @@ async function handleTextPaste() {
     }
 
     console.log('');
-  } catch (error: any) {
-    console.log('❌ Error reading clipboard: ' + (error.message || 'Unknown error'));
+  } catch (error: unknown) {
+    console.log('❌ Error reading clipboard: ' + (error instanceof Error ? error.message : String(error)));
     console.log('');
   }
 }
@@ -913,7 +940,7 @@ function showImages() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
   for (let i = 0; i < pendingImages.length; i++) {
-    const img = pendingImages[i];
+    const img = pendingImages[i]!;
     if (img.startsWith('data:')) {
       const sizeKB = Math.round((img.length * 3) / 4 / 1024);
       console.log(`${i + 1}. [clipboard image] (${sizeKB}KB)`);

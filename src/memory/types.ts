@@ -1425,7 +1425,7 @@ export interface MemorySystemConfig {
    * predicates, and folds registry weights into ranking. Absent = free-form
    * predicate strings (pre-registry behavior).
    *
-   * Pass `PredicateRegistry.standard()` for the built-in 54-predicate starter
+   * Pass `PredicateRegistry.standard()` for the built-in 44-predicate starter
    * set, `PredicateRegistry.empty()` plus `.registerAll(...)` for a fully
    * custom vocabulary.
    */

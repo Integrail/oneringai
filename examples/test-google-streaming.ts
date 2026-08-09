@@ -2,25 +2,27 @@
  * Test Google streaming with tools
  */
 
+import 'dotenv/config';
 import { Connector, Agent, Vendor, tools, isOutputTextDelta, StreamEventType } from '../src/index.js';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
 
 async function main() {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) throw new Error('GOOGLE_API_KEY is required. Add it to .env.');
+
   Connector.create({
     name: 'google',
     vendor: Vendor.Google,
-    auth: { type: 'api_key', apiKey: process.env.GOOGLE_API_KEY! },
+    auth: { type: 'api_key', apiKey },
   });
 
   console.log('=== Testing Google Streaming with Tools ===\n');
 
   const agent = Agent.create({
     connector: 'google',
-    model: 'gemini-2.0-flash-exp',
+    model: 'gemini-2.5-flash',
     instructions: 'Use the execute_javascript tool when asked to run code.',
     tools: [tools.executeJavaScript],
+    permissions: { autoApproveAll: true }, // Demo-only.
   });
 
   try {
@@ -64,10 +66,19 @@ async function main() {
     console.log('Tool call detected:', hasToolCall);
     console.log('Tool executed:', hasToolExecution);
     console.log('Final usage:', finalUsage);
-  } catch (error: any) {
-    console.error('\n❌ Error:', error.message);
-    console.error(error.stack);
+    if (!hasToolCall || !hasToolExecution || !finalUsage) {
+      throw new Error('The stream did not include the expected tool lifecycle and final usage.');
+    }
+  } catch (error: unknown) {
+    console.error('\n❌ Error:', error instanceof Error ? error.message : String(error));
+    if (error instanceof Error) console.error(error.stack);
+    throw error;
   }
+
+  agent.destroy();
 }
 
-main();
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

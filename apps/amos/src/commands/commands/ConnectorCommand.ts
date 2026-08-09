@@ -137,11 +137,12 @@ ALIASES:
     if (!name.trim()) {
       return this.error('Connector name is required.');
     }
+    const connectorName = name.trim();
 
     // Check if exists
     const connectorManager = app.getConnectorManager();
-    if (connectorManager.get(name)) {
-      return this.error(`Connector "${name}" already exists. Use /connector edit ${name} to modify.`);
+    if (connectorManager.get(connectorName)) {
+      return this.error(`Connector "${connectorName}" already exists. Use /connector edit ${connectorName} to modify.`);
     }
 
     // Get vendor
@@ -172,11 +173,12 @@ ALIASES:
       }
       auth = { type: 'api_key', apiKey: apiKey.trim() };
     } else {
-      // OAuth flow
+      // OAuth client-credentials flow (interactive authorization-code login is
+      // outside the scope of this terminal app).
+      app.print('OAuth in AMOS uses the client_credentials flow.');
       const clientId = await app.prompt('Client ID: ');
       const clientSecret = await app.prompt('Client Secret: ');
       const tokenUrl = await app.prompt('Token URL: ');
-      const authorizationUrl = await app.prompt('Authorization URL (optional): ');
       const scope = await app.prompt('Scope (optional): ');
 
       auth = {
@@ -184,7 +186,6 @@ ALIASES:
         clientId: clientId.trim(),
         clientSecret: clientSecret.trim(),
         tokenUrl: tokenUrl.trim(),
-        authorizationUrl: authorizationUrl.trim() || undefined,
         scope: scope.trim() || undefined,
       };
     }
@@ -194,7 +195,7 @@ ALIASES:
 
     // Create connector config
     const connectorConfig: StoredConnectorConfig = {
-      name: name.trim(),
+      name: connectorName,
       vendor,
       auth,
       baseURL: baseURL.trim() || undefined,
@@ -208,13 +209,14 @@ ALIASES:
     // Offer to use immediately
     const useNow = await app.confirm('Use this connector now?');
     if (useNow) {
-      connectorManager.registerConnector(name);
-      app.updateConfig({ activeConnector: name, activeVendor: vendor });
+      connectorManager.registerConnector(connectorName);
+      app.updateConfig({ activeConnector: connectorName, activeVendor: vendor });
       await app.createAgent();
-      return this.success(`Connector "${name}" created and activated.`);
+      await app.saveConfig();
+      return this.success(`Connector "${connectorName}" created and activated.`);
     }
 
-    return this.success(`Connector "${name}" created. Use /connector use ${name} to activate.`);
+    return this.success(`Connector "${connectorName}" created. Use /connector use ${connectorName} to activate.`);
   }
 
   private async editConnector(context: CommandContext, name?: string): Promise<CommandResult> {
@@ -234,30 +236,33 @@ ALIASES:
     app.print(`\n=== Edit Connector: ${name} ===\n`);
     app.print('Press Enter to keep current value.\n');
 
+    const updated: StoredConnectorConfig = {
+      ...existing,
+      auth: { ...existing.auth },
+    };
+
     // Edit API key (for api_key auth)
-    if (existing.auth.type === 'api_key') {
-      const newKey = await app.prompt(`API Key [****${existing.auth.apiKey?.slice(-4) || ''}]: `);
+    if (updated.auth.type === 'api_key') {
+      const newKey = await app.prompt(`API Key [****${updated.auth.apiKey?.slice(-4) || ''}]: `);
       if (newKey.trim()) {
-        existing.auth.apiKey = newKey.trim();
+        updated.auth.apiKey = newKey.trim();
       }
     }
 
     // Edit base URL
-    const currentURL = existing.baseURL || '(none)';
+    const currentURL = updated.baseURL || '(none)';
     const newURL = await app.prompt(`Base URL [${currentURL}]: `);
     if (newURL.trim()) {
-      existing.baseURL = newURL.trim() === 'none' ? undefined : newURL.trim();
+      updated.baseURL = newURL.trim() === 'none' ? undefined : newURL.trim();
     }
 
-    existing.updatedAt = Date.now();
+    updated.updatedAt = Date.now();
 
-    await connectorManager.update(name, existing);
+    await connectorManager.update(name, updated);
 
     // Re-register if active
     const config = app.getConfig();
     if (config.activeConnector === name) {
-      connectorManager.unregisterConnector(name);
-      connectorManager.registerConnector(name);
       await app.createAgent();
     }
 
@@ -291,6 +296,29 @@ ALIASES:
     }
 
     await connectorManager.delete(name);
+
+    const externalTools = { ...config.externalTools };
+    let externalChanged = false;
+    if (externalTools.search?.connectorName === name) {
+      externalTools.search = { ...externalTools.search, enabled: false };
+      externalChanged = true;
+    }
+    if (externalTools.scrape?.connectorName === name) {
+      externalTools.scrape = { ...externalTools.scrape, enabled: false };
+      externalChanged = true;
+    }
+    if (externalChanged) {
+      app.updateConfig({ externalTools });
+      const toolLoader = app.getToolLoader();
+      toolLoader.setConfig(app.getConfig());
+      await toolLoader.reloadTools();
+      toolLoader.applyConfig(
+        app.getConfig().tools.enabledTools,
+        app.getConfig().tools.disabledTools,
+      );
+      app.getAgent()?.updateTools(toolLoader.getEnabledTools());
+    }
+    await app.saveConfig();
 
     return this.success(`Connector "${name}" deleted.`);
   }
@@ -406,6 +434,7 @@ Respond with ONLY the JSON object, no explanation.
 
     // Recreate agent
     await app.createAgent();
+    await app.saveConfig();
 
     return this.success(`Now using connector: ${name} (${connector.vendor})`);
   }

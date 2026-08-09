@@ -17,7 +17,7 @@ export class ConfigManager {
 
   constructor(dataDir: string = './data') {
     this.configPath = join(dataDir, 'config.json');
-    this.config = { ...DEFAULT_CONFIG };
+    this.config = structuredClone(DEFAULT_CONFIG);
   }
 
   /**
@@ -35,12 +35,12 @@ export class ConfigManager {
         ) as unknown as AmosConfig;
       } else {
         // Create default config
-        this.config = { ...DEFAULT_CONFIG };
+        this.config = structuredClone(DEFAULT_CONFIG);
         await this.save();
       }
     } catch (error) {
       console.error('Failed to load config, using defaults:', error);
-      this.config = { ...DEFAULT_CONFIG };
+      this.config = structuredClone(DEFAULT_CONFIG);
     }
 
     this.dirty = false;
@@ -138,7 +138,7 @@ export class ConfigManager {
    * Reset to default configuration
    */
   reset(): void {
-    this.config = { ...DEFAULT_CONFIG };
+    this.config = structuredClone(DEFAULT_CONFIG);
     this.dirty = true;
   }
 

@@ -7,7 +7,7 @@
 import { readFile, writeFile, readdir, unlink, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Connector, Vendor } from '@everworker/oneringai';
+import { Connector, ConnectorTools, Vendor } from '@everworker/oneringai';
 import type { StoredConnectorConfig, IConnectorManager } from '../config/types.js';
 
 export class ConnectorManager implements IConnectorManager {
@@ -23,6 +23,7 @@ export class ConnectorManager implements IConnectorManager {
    * Initialize - load all connectors from disk
    */
   async initialize(): Promise<void> {
+    this.connectors.clear();
     // Ensure directory exists
     if (!existsSync(this.dataDir)) {
       await mkdir(this.dataDir, { recursive: true });
@@ -37,6 +38,10 @@ export class ConnectorManager implements IConnectorManager {
       try {
         const content = await readFile(join(this.dataDir, file), 'utf-8');
         const config = JSON.parse(content) as StoredConnectorConfig;
+        this.validateConfig(config);
+        if (this.connectors.has(config.name)) {
+          throw new Error(`Duplicate connector name '${config.name}'`);
+        }
         this.connectors.set(config.name, config);
       } catch (error) {
         console.error(`Failed to load connector ${file}:`, error);
@@ -48,7 +53,7 @@ export class ConnectorManager implements IConnectorManager {
    * List all connectors
    */
   list(): StoredConnectorConfig[] {
-    return Array.from(this.connectors.values());
+    return Array.from(this.connectors.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**
@@ -62,6 +67,7 @@ export class ConnectorManager implements IConnectorManager {
    * Add a new connector
    */
   async add(config: StoredConnectorConfig): Promise<void> {
+    this.validateConfig(config);
     // Validate
     if (this.connectors.has(config.name)) {
       throw new Error(`Connector "${config.name}" already exists`);
@@ -69,9 +75,12 @@ export class ConnectorManager implements IConnectorManager {
 
     // Save to memory
     this.connectors.set(config.name, config);
-
-    // Persist to disk
-    await this.saveConnector(config);
+    try {
+      await this.saveConnector(config);
+    } catch (error) {
+      this.connectors.delete(config.name);
+      throw error;
+    }
   }
 
   /**
@@ -90,8 +99,14 @@ export class ConnectorManager implements IConnectorManager {
       updatedAt: Date.now(),
     };
 
+    this.validateConfig(updated);
     this.connectors.set(name, updated);
-    await this.saveConnector(updated);
+    try {
+      await this.saveConnector(updated);
+    } catch (error) {
+      this.connectors.set(name, existing);
+      throw error;
+    }
 
     // If registered, re-register with new config
     if (this.registeredConnectors.has(name)) {
@@ -135,6 +150,10 @@ export class ConnectorManager implements IConnectorManager {
     if (this.registeredConnectors.has(name)) {
       return; // Already registered
     }
+    if (Connector.has(name)) {
+      this.registeredConnectors.add(name);
+      return;
+    }
 
     // Map vendor string to Vendor enum
     const vendorMap: Record<string, string> = {
@@ -154,8 +173,8 @@ export class ConnectorManager implements IConnectorManager {
 
     // Service types for external APIs (search, scrape, etc.)
     const serviceTypeValues = [
-      'serper', 'brave-search', 'tavily', 'rapidapi-search', // Search providers
-      'zenrows', // Scrape providers
+      'serper',
+      'zenrows',
     ];
 
     // Determine vendor and serviceType
@@ -178,9 +197,6 @@ export class ConnectorManager implements IConnectorManager {
     // Header configuration for different search/scrape providers
     const providerHeaders: Record<string, { headerName: string; headerPrefix: string }> = {
       serper: { headerName: 'X-API-KEY', headerPrefix: '' },
-      'brave-search': { headerName: 'X-Subscription-Token', headerPrefix: '' },
-      tavily: { headerName: 'Authorization', headerPrefix: 'Bearer' }, // Tavily uses body, but this is fallback
-      'rapidapi-search': { headerName: 'X-RapidAPI-Key', headerPrefix: '' },
       zenrows: { headerName: 'Authorization', headerPrefix: 'Bearer' },
     };
 
@@ -235,12 +251,8 @@ export class ConnectorManager implements IConnectorManager {
    * Unregister a connector
    */
   unregisterConnector(name: string): void {
-    if (!this.registeredConnectors.has(name)) {
-      return;
-    }
-
-    // Connector class doesn't have a remove method, but we track our own state
-    // In a real implementation, we'd want Connector.remove(name)
+    ConnectorTools.invalidateCache(name);
+    Connector.remove(name);
     this.registeredConnectors.delete(name);
   }
 
@@ -280,5 +292,26 @@ export class ConnectorManager implements IConnectorManager {
 
     const filePath = join(this.dataDir, `${config.name}.json`);
     await writeFile(filePath, JSON.stringify(config, null, 2), 'utf-8');
+  }
+
+  private validateConfig(config: StoredConnectorConfig): void {
+    if (!config || typeof config !== 'object') {
+      throw new Error('Connector configuration must be an object');
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(config.name)) {
+      throw new Error('Connector name can only contain letters, numbers, hyphens, and underscores');
+    }
+    if (!config.vendor || typeof config.vendor !== 'string') {
+      throw new Error(`Connector '${config.name}' must declare a vendor or service type`);
+    }
+    if (!config.auth || !['api_key', 'oauth'].includes(config.auth.type)) {
+      throw new Error(`Connector '${config.name}' has an unsupported auth type`);
+    }
+    if (config.auth.type === 'api_key' && !config.auth.apiKey?.trim()) {
+      throw new Error(`Connector '${config.name}' requires an API key`);
+    }
+    if (config.auth.type === 'oauth' && (!config.auth.clientId?.trim() || !config.auth.tokenUrl?.trim())) {
+      throw new Error(`Connector '${config.name}' OAuth requires clientId and tokenUrl`);
+    }
   }
 }

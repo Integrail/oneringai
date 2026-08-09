@@ -75,7 +75,7 @@ export class AmosApp implements IAmosApp {
     await this.connectorManager.initialize();
 
     // Initialize prompt manager
-    this.promptManager = new PromptManager(config);
+    this.promptManager = new PromptManager(config, join(this.dataDir, 'prompts'));
     await this.promptManager.initialize();
 
     // Register active connector if configured (must be done before tool loading)
@@ -91,22 +91,23 @@ export class AmosApp implements IAmosApp {
     // Register external tool connectors BEFORE tool loading
     // These connectors are required for web_search and web_scrape tools to work
     await this.registerExternalToolConnectors(config);
+    const currentConfig = this.configManager.get();
 
     // Initialize tool loader (pass config for developer tools settings)
-    this.toolLoader.setConfig(config);
+    this.toolLoader.setConfig(currentConfig);
 
     // Set up external tool manager
     const externalToolManager = new ExternalToolManager(
-      config.externalTools,
+      currentConfig.externalTools,
       this.connectorManager
     );
     this.toolLoader.setExternalToolManager(externalToolManager);
 
     await this.toolLoader.initialize();
-    this.toolLoader.applyConfig(config.tools.enabledTools, config.tools.disabledTools);
+    this.toolLoader.applyConfig(currentConfig.tools.enabledTools, currentConfig.tools.disabledTools);
 
     // Create agent if we have an active connector
-    if (config.activeConnector) {
+    if (currentConfig.activeConnector) {
       await this.createAgent();
     }
   }
@@ -151,6 +152,13 @@ export class AmosApp implements IAmosApp {
 
     // Cleanup
     await this.shutdown();
+  }
+
+  /** Request a graceful stop (used by SIGINT/SIGTERM handlers). */
+  stop(): void {
+    this.running = false;
+    this.agentRunner?.cancel();
+    this.terminal.close();
   }
 
   /**
@@ -218,38 +226,6 @@ export class AmosApp implements IAmosApp {
               }
               break;
 
-            case 'mode:changed':
-              this.terminal.printDim(`\n[Mode: ${event.fromMode} → ${event.toMode}]`);
-              break;
-
-            case 'plan:created':
-              if (event.plan) {
-                this.terminal.printInfo('\n📋 Plan created:');
-                this.terminal.print(`  Goal: ${event.plan.goal}`);
-                event.plan.tasks.forEach((t, i) => {
-                  this.terminal.print(`  ${i + 1}. ${t.name}`);
-                });
-              }
-              break;
-
-            case 'task:started':
-              if (event.task) {
-                this.terminal.printDim(`\n⏳ Starting: ${event.task.name}`);
-              }
-              break;
-
-            case 'task:completed':
-              if (event.task) {
-                this.terminal.printSuccess(`✓ Completed: ${event.task.name}`);
-              }
-              break;
-
-            case 'task:failed':
-              if (event.task) {
-                this.terminal.printError(`✗ Failed: ${event.task.name}`);
-              }
-              break;
-
             case 'tool:start':
               if (event.tool && config.ui.showTiming) {
                 // Cast args to expected type (safe - args is Record<string, unknown> from library)
@@ -268,7 +244,7 @@ export class AmosApp implements IAmosApp {
               break;
 
             case 'error':
-              this.terminal.printError(`Error: ${event.error?.message || 'Unknown error'}`);
+              this.terminal.printError(event.error?.message || 'Unknown error');
               break;
 
             case 'done':
@@ -294,15 +270,6 @@ export class AmosApp implements IAmosApp {
 
           this.terminal.print('\n' + response.text);
 
-          if (response.plan && response.needsUserAction) {
-            this.terminal.printInfo('\n📋 Plan requires approval:');
-            this.terminal.print(`  Goal: ${response.plan.goal}`);
-            response.plan.tasks.forEach((t, i) => {
-              this.terminal.print(`  ${i + 1}. ${t.name}`);
-            });
-            this.terminal.print('\nType "approve" to proceed or "reject" to cancel.');
-          }
-
           if (config.ui.showTokenUsage && response.usage) {
             this.terminal.printDim(
               `\n[Tokens: ${response.usage.inputTokens} in / ${response.usage.outputTokens} out]`
@@ -321,6 +288,14 @@ export class AmosApp implements IAmosApp {
       this.terminal.printError(
         `Agent error: ${error instanceof Error ? error.message : String(error)}`
       );
+    } finally {
+      const sessionId = this.agentRunner?.getSessionId();
+      const currentSession = this.configManager.get().session;
+      if (sessionId && currentSession.activeSessionId !== sessionId) {
+        this.configManager.update({
+          session: { ...currentSession, activeSessionId: sessionId },
+        });
+      }
     }
   }
 
@@ -333,9 +308,13 @@ export class AmosApp implements IAmosApp {
     // Execute connector add command
     const result = await this.commandProcessor.execute('/connector add');
 
-    if (result.success) {
+    if (result.success && this.agentRunner?.isReady()) {
       this.terminal.printSuccess('\nSetup complete! You can now start chatting.');
       this.terminal.print('Type /help for available commands.\n');
+    } else if (result.success) {
+      this.terminal.printWarning(
+        '\nConnector created but not activated. Use /connector use <name> to activate it.\n'
+      );
     } else {
       this.terminal.printWarning(
         '\nSetup incomplete. Use /connector add to configure later.\n'
@@ -526,7 +505,7 @@ export class AmosApp implements IAmosApp {
     return this.agentRunner;
   }
 
-  async createAgent(): Promise<void> {
+  async createAgent(options: { freshSession?: boolean } = {}): Promise<void> {
     const config = this.configManager.get();
 
     if (!config.activeConnector) {
@@ -536,6 +515,20 @@ export class AmosApp implements IAmosApp {
     // Ensure connector is registered
     if (!this.connectorManager.isRegistered(config.activeConnector)) {
       this.connectorManager.registerConnector(config.activeConnector);
+    }
+
+    const previousRunner = this.agentRunner;
+    if (previousRunner) {
+      if (!options.freshSession && previousRunner.isReady()) {
+        const metrics = await previousRunner.getContextMetrics();
+        if ((metrics?.historyMessageCount ?? 0) > 0) {
+          const sessionId = await previousRunner.saveSession();
+          config.session.activeSessionId = sessionId;
+          this.configManager.update({ session: config.session });
+        }
+      }
+      previousRunner.destroy();
+      this.agentRunner = null;
     }
 
     // Get model
@@ -667,7 +660,11 @@ export class AmosApp implements IAmosApp {
         const configAllow = this.configManager.get();
         if (!configAllow.permissions.allowlist.includes(context.toolName)) {
           configAllow.permissions.allowlist.push(context.toolName);
+          configAllow.permissions.blocklist = configAllow.permissions.blocklist
+            .filter((name) => name !== context.toolName);
           this.configManager.update({ permissions: configAllow.permissions });
+          this.agentRunner?.allowlistTool(context.toolName);
+          await this.configManager.save();
         }
         return { approved: true, scope: 'always' };
 
@@ -676,7 +673,11 @@ export class AmosApp implements IAmosApp {
         const configBlock = this.configManager.get();
         if (!configBlock.permissions.blocklist.includes(context.toolName)) {
           configBlock.permissions.blocklist.push(context.toolName);
+          configBlock.permissions.allowlist = configBlock.permissions.allowlist
+            .filter((name) => name !== context.toolName);
           this.configManager.update({ permissions: configBlock.permissions });
+          this.agentRunner?.blocklistTool(context.toolName);
+          await this.configManager.save();
         }
         return { approved: false, reason: 'User blocked tool' };
 
@@ -723,5 +724,9 @@ export class AmosApp implements IAmosApp {
 
   async select<T extends string>(question: string, options: T[]): Promise<T> {
     return this.terminal.select(question, options);
+  }
+
+  setColorOutput(enabled: boolean): void {
+    this.terminal.setColorEnabled(enabled);
   }
 }
