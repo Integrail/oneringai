@@ -22518,7 +22518,7 @@ Used by initializeFromRegistry() and registerFromToolRegistry().
 
 ### ToolRegistryEntry `interface`
 
-📍 [`src/tools/registry.generated.ts:56`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:55`](src/tools/registry.generated.ts)
 
 Metadata for a tool in the registry
 
@@ -22749,7 +22749,7 @@ type Tool = FunctionToolDefinition | BuiltInTool
 
 ### ToolCategory `type`
 
-📍 [`src/tools/registry.generated.ts:53`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:52`](src/tools/registry.generated.ts)
 
 Tool category for grouping
 
@@ -23783,7 +23783,7 @@ export function generateWebAPITool(): ToolFunction&lt;APIRequestArgs, APIRequest
 
 ### getAllBuiltInTools `function`
 
-📍 [`src/tools/registry.generated.ts:433`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:432`](src/tools/registry.generated.ts)
 
 Get all built-in tools as ToolFunction array
 
@@ -23807,7 +23807,7 @@ export function getConnectorTools(connectorName: string): ToolFunction[]
 
 ### getToolByName `function`
 
-📍 [`src/tools/registry.generated.ts:448`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:447`](src/tools/registry.generated.ts)
 
 Get tool by name
 
@@ -23835,7 +23835,7 @@ export function getToolCallDescription&lt;TArgs&gt;(
 
 ### getToolCategories `function`
 
-📍 [`src/tools/registry.generated.ts:458`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:457`](src/tools/registry.generated.ts)
 
 Get all unique category names
 
@@ -23847,7 +23847,7 @@ export function getToolCategories(): ToolCategory[]
 
 ### getToolRegistry `function`
 
-📍 [`src/tools/registry.generated.ts:438`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:437`](src/tools/registry.generated.ts)
 
 Get full tool registry with metadata
 
@@ -23859,7 +23859,7 @@ export function getToolRegistry(): ToolRegistryEntry[]
 
 ### getToolsByCategory `function`
 
-📍 [`src/tools/registry.generated.ts:443`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:442`](src/tools/registry.generated.ts)
 
 Get tools by category
 
@@ -23871,7 +23871,7 @@ export function getToolsByCategory(category: ToolCategory): ToolRegistryEntry[]
 
 ### getToolsRequiringConnector `function`
 
-📍 [`src/tools/registry.generated.ts:453`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:452`](src/tools/registry.generated.ts)
 
 Get tools that require connector configuration
 
