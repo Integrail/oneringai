@@ -67,6 +67,10 @@ export interface ToolResultContent extends BaseContent {
 export interface ThinkingContent extends BaseContent {
   type: ContentType.THINKING;
   thinking: string;
+  /** Provider item identifier used when a stateless API requires reasoning replay. */
+  providerItemId?: string;
+  /** Opaque provider replay data; applications should not interpret its contents. */
+  providerMetadata?: Record<string, unknown>;
   /** Anthropic's opaque signature for round-tripping thinking blocks */
   signature?: string;
   /** Whether this thinking block should be persisted in conversation history.

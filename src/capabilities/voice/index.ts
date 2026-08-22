@@ -48,6 +48,7 @@ export { RealtimePipeline } from './pipelines/RealtimePipeline.js';
 export { OpenAIRealtimeSession, OpenAIRealtimeAPI } from './openai/index.js';
 export { GrokRealtimeAPI, GrokRealtimeSession } from './grok/index.js';
 export type {
+  OpenAIRealtimeConnectOptions,
   OpenAIRealtimeSessionOptions,
   OpenAIRealtimeSessionEvents,
   CreateRealtimeClientSecretOptions,

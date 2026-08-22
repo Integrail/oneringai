@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- **Dedicated DeepSeek provider.** Added current V4 Flash/Pro registry records,
+  Chat Completions and Responses transports, streaming, reasoning replay for
+  tool loops, structured output, native web search, model listing, FIM,
+  balance lookup, and strict beta tool schemas.
+- **DeepSeek hosted-provider presets.** Added canonical model mapping and
+  host-specific limits for OpenRouter, Together, Fireworks, DeepInfra, NVIDIA
+  NIM, Azure Foundry, and custom OpenAI-compatible deployments.
+
+### Changed
+
+- DeepSeek now routes through its dedicated adapter instead of inheriting the
+  OpenAI Responses-only implementation. Retired `deepseek-chat` and
+  `deepseek-reasoner` records point to current migration targets.
+
+### Fixed
+
+- Removed DeepSeek from the embedding-provider factory because its first-party
+  API does not expose an embeddings endpoint.
 
 ## [1.0.1] — 2026-08-09
 

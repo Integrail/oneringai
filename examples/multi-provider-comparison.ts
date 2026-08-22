@@ -10,6 +10,7 @@
  *   GOOGLE_API_KEY=...
  *   GROQ_API_KEY=...
  *   TOGETHER_API_KEY=...
+ *   DEEPSEEK_API_KEY=...
  *   XAI_API_KEY=...
  */
 
@@ -69,6 +70,15 @@ async function main() {
     configuredProviders.push('together');
   }
 
+  if (process.env.DEEPSEEK_API_KEY) {
+    Connector.create({
+      name: 'deepseek',
+      vendor: Vendor.DeepSeek,
+      auth: { type: 'api_key', apiKey: process.env.DEEPSEEK_API_KEY },
+    });
+    configuredProviders.push('deepseek');
+  }
+
   if (xaiKey) {
     Connector.create({
       name: 'grok',
@@ -96,6 +106,7 @@ async function main() {
     { name: 'google', model: 'gemini-2.5-flash', enabled: Connector.has('google') },
     { name: 'groq', model: 'llama-3.3-70b-versatile', enabled: Connector.has('groq') },
     { name: 'together', model: 'openai/gpt-oss-20b', enabled: Connector.has('together') },
+    { name: 'deepseek', model: 'deepseek-v4-flash', enabled: Connector.has('deepseek') },
     { name: 'grok', model: 'grok-4.3', enabled: Connector.has('grok') },
   ];
   const failedProviders: string[] = [];

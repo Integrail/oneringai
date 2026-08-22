@@ -38,7 +38,14 @@ export interface OpenAIRealtimeSessionOptions {
   headers?: Record<string, string>;
   connectTimeoutMs?: number;
   /** Test/custom-runtime hook. Normal callers should leave this unset. */
-  webSocketFactory?: (url: string, options: { headers: Record<string, string> }) => Promise<WebSocketLike> | WebSocketLike;
+  webSocketFactory?: (
+    url: string,
+    options: { headers: Record<string, string>; signal: AbortSignal },
+  ) => Promise<WebSocketLike> | WebSocketLike;
+}
+
+export interface OpenAIRealtimeConnectOptions {
+  signal?: AbortSignal;
 }
 
 export interface OpenAIRealtimeSessionEvents {
@@ -62,6 +69,7 @@ export class OpenAIRealtimeSession extends EventEmitter {
   private readonly options: OpenAIRealtimeSessionOptions;
   private socket: WebSocketLike | null = null;
   private connected = false;
+  private connectAbortController: AbortController | null = null;
   private inputAudioTransport: 'json' | 'binary' = 'json';
 
   constructor(options: OpenAIRealtimeSessionOptions) {
@@ -89,79 +97,112 @@ export class OpenAIRealtimeSession extends EventEmitter {
     return this.connected && this.socket?.readyState === 1;
   }
 
-  async connect(): Promise<OpenAIRealtimeServerEvent> {
-    if (this.socket) throw new Error('Realtime session is already connected');
-
-    const token = await this.connector.getToken();
-    let url = this.buildWebSocketURL();
-    const headers: Record<string, string> = {
-      ...this.options.headers,
-      ...(this.options.safetyIdentifier
-        ? { 'OpenAI-Safety-Identifier': this.options.safetyIdentifier }
-        : {}),
-    };
-    const auth = this.connector.config.auth;
-    if (auth.type === 'api_key' && auth.queryParamName) {
-      const authenticatedURL = new URL(url);
-      authenticatedURL.searchParams.set(auth.queryParamName, token);
-      url = authenticatedURL.toString();
-    } else {
-      const headerName = auth.type === 'api_key'
-        ? auth.headerName || 'Authorization'
-        : 'Authorization';
-      const prefix = auth.type === 'api_key' ? auth.headerPrefix ?? 'Bearer' : 'Bearer';
-      headers[headerName] = prefix ? `${prefix} ${token}` : token;
+  async connect(options: OpenAIRealtimeConnectOptions = {}): Promise<OpenAIRealtimeServerEvent> {
+    if (this.socket || this.connectAbortController) {
+      throw new Error('Realtime session is already connected or connecting');
     }
-    const socket = this.options.webSocketFactory
-      ? await this.options.webSocketFactory(url, { headers })
-      : await this.createDefaultSocket(url, headers);
-    this.socket = socket;
 
-    const created = await new Promise<OpenAIRealtimeServerEvent>((resolve, reject) => {
-      let settled = false;
-      const timeout = setTimeout(() => {
-        settled = true;
-        reject(new Error(`Timeout waiting for ${this.providerLabel} Realtime session.created`));
-      }, this.options.connectTimeoutMs ?? 15_000);
+    const controller = new AbortController();
+    this.connectAbortController = controller;
+    const forwardAbort = (): void => controller.abort(options.signal?.reason);
+    if (options.signal?.aborted) forwardAbort();
+    else options.signal?.addEventListener('abort', forwardAbort, { once: true });
 
-      const rejectOnce = (error: Error): void => {
-        if (settled) {
-          this.emit('error', error);
-          return;
-        }
-        settled = true;
-        clearTimeout(timeout);
-        reject(error);
+    try {
+      this.throwIfAborted(controller.signal);
+      const token = await this.connector.getToken();
+      this.throwIfAborted(controller.signal);
+      let url = this.buildWebSocketURL();
+      const headers: Record<string, string> = {
+        ...this.options.headers,
+        ...(this.options.safetyIdentifier
+          ? { 'OpenAI-Safety-Identifier': this.options.safetyIdentifier }
+          : {}),
       };
+      const auth = this.connector.config.auth;
+      if (auth.type === 'api_key' && auth.queryParamName) {
+        const authenticatedURL = new URL(url);
+        authenticatedURL.searchParams.set(auth.queryParamName, token);
+        url = authenticatedURL.toString();
+      } else {
+        const headerName = auth.type === 'api_key'
+          ? auth.headerName || 'Authorization'
+          : 'Authorization';
+        const prefix = auth.type === 'api_key' ? auth.headerPrefix ?? 'Bearer' : 'Bearer';
+        headers[headerName] = prefix ? `${prefix} ${token}` : token;
+      }
+      const socketPromise = Promise.resolve(
+        this.options.webSocketFactory
+          ? this.options.webSocketFactory(url, { headers, signal: controller.signal })
+          : this.createDefaultSocket(url, headers),
+      );
+      const socket = await this.awaitSocket(socketPromise, controller.signal);
+      this.socket = socket;
 
-      socket.on('message', (data: Buffer | string, isBinary?: boolean) => {
-        if (isBinary) {
-          this.emit('audio', Buffer.isBuffer(data) ? data : Buffer.from(data));
-          return;
-        }
-        const event = this.parseEvent(data);
-        if (!event) return;
-        this.emitServerEvent(event);
-        if (event.type === 'session.created') {
+      const created = await new Promise<OpenAIRealtimeServerEvent>((resolve, reject) => {
+        let settled = false;
+        const settle = (action: () => void): void => {
+          if (settled) return;
           settled = true;
           clearTimeout(timeout);
-          this.connected = true;
-          resolve(event);
-        } else if (event.type === 'error') {
-          const detail = event.error as { message?: string } | undefined;
-          rejectOnce(new Error(detail?.message ?? `${this.providerLabel} Realtime session creation failed`));
-        }
-      });
-      socket.on('error', (error: Error) => rejectOnce(error));
-      socket.on('close', (code: number, reason: Buffer | string) => {
-        this.connected = false;
-        if (!settled) rejectOnce(new Error(`${this.providerLabel} Realtime WebSocket closed during connect: ${code}`));
-        this.emit('close', code, reason?.toString() ?? '');
-      });
-    });
+          controller.signal.removeEventListener('abort', onAbort);
+          action();
+        };
+        const timeout = setTimeout(() => {
+          settle(() => reject(
+            new Error(`Timeout waiting for ${this.providerLabel} Realtime session.created`),
+          ));
+        }, this.options.connectTimeoutMs ?? 15_000);
+        const onAbort = (): void => settle(() => reject(this.abortError(controller.signal.reason)));
 
-    if (this.initialSession) this.updateSession(this.initialSession);
-    return created;
+        controller.signal.addEventListener('abort', onAbort, { once: true });
+        if (controller.signal.aborted) onAbort();
+        socket.on('message', (data: Buffer | string, isBinary?: boolean) => {
+          if (isBinary) {
+            this.emit('audio', Buffer.isBuffer(data) ? data : Buffer.from(data));
+            return;
+          }
+          const event = this.parseEvent(data);
+          if (!event) return;
+          this.emitServerEvent(event);
+          if (event.type === 'session.created') {
+            settle(() => {
+              this.connected = true;
+              resolve(event);
+            });
+          } else if (event.type === 'error') {
+            const detail = event.error as { message?: string } | undefined;
+            const error = new Error(
+              detail?.message ?? `${this.providerLabel} Realtime session creation failed`,
+            );
+            if (settled) this.emit('error', error);
+            else settle(() => reject(error));
+          }
+        });
+        socket.on('error', (error: Error) => {
+          if (settled) this.emit('error', error);
+          else settle(() => reject(error));
+        });
+        socket.on('close', (code: number, reason: Buffer | string) => {
+          this.connected = false;
+          settle(() => reject(new Error(
+            `${this.providerLabel} Realtime WebSocket closed during connect: ${code}`,
+          )));
+          this.emit('close', code, reason?.toString() ?? '');
+        });
+      });
+
+      this.throwIfAborted(controller.signal);
+      if (this.initialSession) this.updateSession(this.initialSession);
+      return created;
+    } catch (error) {
+      this.connected = false;
+      this.closeSocket(this.socket, 1000, 'Connect cancelled');
+      throw error;
+    } finally {
+      options.signal?.removeEventListener('abort', forwardAbort);
+      if (this.connectAbortController === controller) this.connectAbortController = null;
+    }
   }
 
   updateSession(session: NonNullable<OpenAIRealtimeSessionOptions['session']>): void {
@@ -243,12 +284,11 @@ export class OpenAIRealtimeSession extends EventEmitter {
   }
 
   close(code = 1000, reason = 'OK'): void {
+    this.connectAbortController?.abort(this.abortError(reason));
     const socket = this.socket;
     this.socket = null;
     this.connected = false;
-    if (!socket) return;
-    socket.removeAllListeners();
-    if (socket.readyState === 0 || socket.readyState === 1) socket.close(code, reason);
+    this.closeSocket(socket, code, reason);
   }
 
   on<K extends keyof OpenAIRealtimeSessionEvents>(event: K, handler: OpenAIRealtimeSessionEvents[K]): this {
@@ -258,6 +298,56 @@ export class OpenAIRealtimeSession extends EventEmitter {
   private async createDefaultSocket(url: string, headers: Record<string, string>): Promise<WebSocketLike> {
     const { default: WebSocket } = await import('ws' as string);
     return new WebSocket(url, { headers }) as WebSocketLike;
+  }
+
+  private awaitSocket(socketPromise: Promise<WebSocketLike>, signal: AbortSignal): Promise<WebSocketLike> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (action: () => void): void => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', onAbort);
+        action();
+      };
+      const closeLateSocket = (socket: WebSocketLike): void => {
+        this.closeSocket(socket, 1000, 'Connect cancelled');
+      };
+      const onAbort = (): void => {
+        settle(() => reject(this.abortError(signal.reason)));
+      };
+
+      signal.addEventListener('abort', onAbort, { once: true });
+      socketPromise.then(
+        (socket) => {
+          if (signal.aborted) {
+            closeLateSocket(socket);
+            settle(() => reject(this.abortError(signal.reason)));
+          } else {
+            settle(() => resolve(socket));
+          }
+        },
+        (error: unknown) => settle(() => reject(error)),
+      );
+      if (signal.aborted) onAbort();
+    });
+  }
+
+  private closeSocket(socket: WebSocketLike | null, code: number, reason: string): void {
+    if (!socket) return;
+    if (this.socket === socket) this.socket = null;
+    socket.removeAllListeners();
+    if (socket.readyState === 0 || socket.readyState === 1) socket.close(code, reason);
+  }
+
+  private throwIfAborted(signal: AbortSignal): void {
+    if (signal.aborted) throw this.abortError(signal.reason);
+  }
+
+  private abortError(reason: unknown): Error {
+    if (reason instanceof Error) return reason;
+    const error = new Error(typeof reason === 'string' && reason ? reason : 'Realtime connection aborted');
+    error.name = 'AbortError';
+    return error;
   }
 
   private buildWebSocketURL(): string {

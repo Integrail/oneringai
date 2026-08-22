@@ -249,7 +249,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 
 - ✨ **Unified API** - One interface for 12 AI providers (OpenAI, Anthropic, Google, Vertex, Groq, Together, Perplexity, Grok, DeepSeek, Mistral, Ollama, Custom)
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
-- 📊 **Model Registry v2** - Lifecycle, aliases, endpoints, official sources, and modality-aware pricing for 88 text/realtime models plus dedicated image, video, voice, STT, and embedding registries
+- 📊 **Model Registry v2** - Lifecycle, aliases, endpoints, official sources, and modality-aware pricing for 92 text/realtime models plus dedicated image, video, voice, STT, and embedding registries
 - 🎤 **Audio Capabilities** - Text-to-Speech and Speech-to-Text with OpenAI, Google, and xAI, including xAI WebSocket streaming
 - ☎️ **[OpenAI Realtime API](./USER_GUIDE.md#openai-realtime-api)** - GA voice agents, live transcription, and speech translation over WebSocket/WebRTC, plus SIP call control, tools, VAD, and Twilio bridging
 - 📞 **[xAI Voice Agent API](./USER_GUIDE.md#xai-realtime-voice-agent-api)** - JSON or binary audio, browser credentials, conversation resumption, reasoning controls, and SIP refer/hangup
@@ -709,11 +709,38 @@ await agent.run('Scrape https://example.com and summarize');
 | **Grok (xAI)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 1M |
 | **Groq** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 128K |
 | **Together AI** | ✅ | Some | ❌ | ❌ | ❌ | ❌ | ✅ | 128K |
-| **DeepSeek** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 64K |
+| **DeepSeek** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 1M |
 | **Mistral** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 32K |
 | **Perplexity** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 128K |
 | **Ollama** | ✅ | Varies | ❌ | ❌ | ❌ | ❌ | ✅ | Varies |
 | **Custom** | ✅ | Varies | ❌ | ❌ | ❌ | ❌ | ✅ | Varies |
+
+DeepSeek has a dedicated adapter rather than the generic OpenAI path. It
+supports Chat Completions, Responses, streaming, reasoning replay across tool
+turns, JSON/JSON Schema where the selected transport supports it, model
+listing, connector-backed FIM/balance access, and first-party native web search. The connector
+can target the official API or a known hosted endpoint:
+
+```typescript
+import { Agent, Connector, Vendor } from '@everworker/oneringai';
+
+Connector.create({
+  name: 'deepseek-openrouter',
+  vendor: Vendor.DeepSeek,
+  auth: { type: 'api_key', apiKey: process.env.OPENROUTER_API_KEY! },
+  options: { deepseekHost: 'openrouter' },
+});
+
+const agent = Agent.create({
+  connector: 'deepseek-openrouter',
+  model: 'deepseek-v4-pro', // mapped to the host's model ID
+});
+```
+
+Built-in hosts are `official`, `openrouter`, `together`, `fireworks`,
+`deepinfra`, `nvidia-nim`, and `azure-foundry`. Use `custom` plus an explicit
+`baseURL` for another OpenAI-compatible deployment. Host-specific model IDs and
+limits are resolved separately from the canonical DeepSeek model registry.
 
 ## Key Features
 
@@ -2074,7 +2101,7 @@ console.log(ollamaModels.map(m => `${m.name} (${m.capabilities.defaultDimensions
 
 ### 14. Model Registry
 
-Schema-v2 metadata for 88 text/realtime models, with lifecycle, aliases,
+Schema-v2 metadata for 92 text/realtime models, with lifecycle, aliases,
 snapshots, endpoints, replacement models, pricing modes, context windows, and
 feature flags:
 

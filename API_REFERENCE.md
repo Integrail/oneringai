@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-08-09
+**Generated:** 2026-08-11
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -21,14 +21,14 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Session Management](#session-management) (56 items)
 - [Tools & Function Calling](#tools-function-calling) (185 items)
 - [Streaming](#streaming) (30 items)
-- [Model Registry](#model-registry) (27 items)
+- [Model Registry](#model-registry) (29 items)
 - [OAuth & External APIs](#oauth-external-apis) (41 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
 - [Errors](#errors) (39 items)
 - [Utilities](#utilities) (10 items)
 - [Interfaces](#interfaces) (78 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (710 items)
+- [Other](#other) (721 items)
 
 ## Core
 
@@ -36,7 +36,7 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:205`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:204`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
 
@@ -1649,7 +1649,7 @@ refresh-grant tokens on every authorize URL — no migration required. |
 
 ### AgentConfig `interface`
 
-📍 [`src/core/Agent.ts:68`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:67`](src/core/Agent.ts)
 
 Agent configuration - extends BaseAgentConfig with Agent-specific options
 
@@ -1843,7 +1843,7 @@ Fetch options with additional connector-specific settings
 
 ### RunOptions `interface`
 
-📍 [`src/core/Agent.ts:151`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:150`](src/core/Agent.ts)
 
 Per-call options for run() and stream().
 These override the agent-level config for this single invocation.
@@ -1882,7 +1882,7 @@ type AgentEventListener = (agentId: string, agentName: string, event: string, da
 
 ### AgentSessionConfig `type`
 
-📍 [`src/core/Agent.ts:63`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:62`](src/core/Agent.ts)
 
 Session configuration for Agent (same as BaseSessionConfig)
 
@@ -1916,7 +1916,7 @@ type Vendor = (typeof Vendor)[keyof typeof Vendor]
 
 ### createProvider `function`
 
-📍 [`src/core/createProvider.ts:56`](src/core/createProvider.ts)
+📍 [`src/core/createProvider.ts:61`](src/core/createProvider.ts)
 
 Create a text provider from a connector
 
@@ -1928,7 +1928,7 @@ export function createProvider(connector: Connector): ITextProvider
 
 ### getVendorDefaultBaseURL `function`
 
-📍 [`src/core/createProvider.ts:49`](src/core/createProvider.ts)
+📍 [`src/core/createProvider.ts:54`](src/core/createProvider.ts)
 
 Get the default API base URL for a vendor.
 For OpenAI/Anthropic reads from the installed SDK at runtime.
@@ -24311,6 +24311,16 @@ getAllReasoning(): string
 
 **Returns:** `string`
 
+#### `getReasoningEntries()`
+
+Reasoning blocks with provider item IDs, used by stateless replay APIs.
+
+```typescript
+getReasoningEntries(): Array&lt;
+```
+
+**Returns:** `{ itemId: string; thinking: string; }[]`
+
 #### `hasReasoning()`
 
 Check if stream has any accumulated reasoning
@@ -25376,7 +25386,7 @@ Embedding model pricing
 
 ### IBaseModelDescription `interface`
 
-📍 [`src/domain/types/SharedTypes.ts:121`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:122`](src/domain/types/SharedTypes.ts)
 
 Base model description - shared by all registries
 Every model registry (Image, TTS, STT, Video) extends this
@@ -25610,6 +25620,26 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
 ---
 
+### ResolvedDeepSeekModel `interface`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:173`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `requestedModel` | `requestedModel: string;` | - |
+| `canonicalModel?` | `canonicalModel?: string;` | - |
+| `apiModel` | `apiModel: string;` | - |
+| `transport` | `transport: Exclude&lt;DeepSeekTransport, 'auto'&gt;;` | - |
+| `inputTokens?` | `inputTokens?: number;` | - |
+| `outputTokens?` | `outputTokens?: number;` | - |
+
+</details>
+
+---
+
 ### RestraintModelInfo `interface`
 
 📍 [`src/memory/integration/RestraintEvent.ts:50`](src/memory/integration/RestraintEvent.ts)
@@ -25674,6 +25704,7 @@ Normalized API surfaces used by the first-party provider adapters.
 ```typescript
 type ModelEndpoint = | 'responses'
   | 'chat_completions'
+  | 'completions'
   | 'messages'
   | 'generate_content'
   | 'interactions'
@@ -25742,7 +25773,7 @@ type ProcessingMode = | 'interactive'
 
 ### calculateCost `function`
 
-📍 [`src/domain/entities/Model.ts:3612`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3772`](src/domain/entities/Model.ts)
 
 Calculate the cost for a given model and token usage
 
@@ -25773,7 +25804,7 @@ export function calculateEmbeddingCost(
 
 ### getActiveModels `function`
 
-📍 [`src/domain/entities/Model.ts:3593`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3753`](src/domain/entities/Model.ts)
 
 Get all currently active models
 
@@ -25785,7 +25816,7 @@ export function getActiveModels(): ILLMDescription[]
 
 ### getDeprecatedModels `function`
 
-📍 [`src/domain/entities/Model.ts:3598`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3758`](src/domain/entities/Model.ts)
 
 Get callable models carrying an explicit vendor deprecation notice.
 
@@ -25811,7 +25842,7 @@ export function getEmbeddingModelsWithFeature(
 
 ### getModelInfo `function`
 
-📍 [`src/domain/entities/Model.ts:3570`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3730`](src/domain/entities/Model.ts)
 
 Get model information by name
 
@@ -25823,12 +25854,25 @@ export function getModelInfo(modelName: string): ILLMDescription | undefined
 
 ### getModelsByVendor `function`
 
-📍 [`src/domain/entities/Model.ts:3585`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3745`](src/domain/entities/Model.ts)
 
 Get all models for a specific vendor
 
 ```typescript
 export function getModelsByVendor(vendor: VendorType): ILLMDescription[]
+```
+
+---
+
+### resolveDeepSeekModel `function`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:182`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+
+```typescript
+export function resolveDeepSeekModel(
+  model: string,
+  host: ResolvedDeepSeekHost,
+): ResolvedDeepSeekModel
 ```
 
 ---
@@ -25850,7 +25894,7 @@ export function resolveModelCapabilities(
 
 ### resolveModelName `function`
 
-📍 [`src/domain/entities/Model.ts:3576`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3736`](src/domain/entities/Model.ts)
 
 Resolve a direct model ID or floating alias to the registry's canonical ID.
 
@@ -26254,7 +26298,7 @@ Last full audit: March 2026
 
 ### MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/Model.ts:344`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:352`](src/domain/entities/Model.ts)
 
 Complete model registry with all model metadata
 Registry schema v2. Last full first-party documentation audit: 2026-08-08.
@@ -29023,7 +29067,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    endpoints: ['responses', 'chat_completions'],
+    endpoints: ['responses', 'chat_completions', 'messages', 'completions'],
     releaseDate: '2026-06-01',
     knowledgeCutoff: '2026-02-01',
     sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.5', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
@@ -29349,6 +29393,150 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
         text: true,
         cpm: 0.50,
       },
+    },
+  }` | - |
+| `'deepseek-v4-flash'` | `{
+    name: 'deepseek-v4-flash',
+    provider: Vendor.DeepSeek,
+    description: 'DeepSeek V4 Flash reasoning model with first-party Responses and Chat Completions support',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['responses', 'chat_completions'],
+    releaseDate: '2026-04-24',
+    sources: {
+      documentation: 'https://api-docs.deepseek.com/quick_start/pricing/',
+      pricing: 'https://api-docs.deepseek.com/quick_start/pricing/',
+      lastVerified: '2026-08-11',
+    },
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: false,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      parameters: {
+        temperature: true,
+        topP: true,
+        frequencyPenalty: true,
+        presencePenalty: true,
+      },
+      input: {
+        tokens: 1_000_000,
+        text: true,
+        cpm: 0.14,
+        cpmCached: 0.0028,
+      },
+      output: {
+        tokens: 384_000,
+        text: true,
+        cpm: 0.28,
+      },
+      pricing: {
+        text: { input: 0.14, cachedInput: 0.0028, output: 0.28 },
+      },
+    },
+  }` | - |
+| `'deepseek-v4-pro'` | `{
+    name: 'deepseek-v4-pro',
+    provider: Vendor.DeepSeek,
+    description: 'Highest-capability DeepSeek V4 reasoning model; first-party access uses Chat Completions',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['chat_completions', 'messages', 'completions'],
+    releaseDate: '2026-04-24',
+    sources: {
+      documentation: 'https://api-docs.deepseek.com/quick_start/pricing/',
+      pricing: 'https://api-docs.deepseek.com/quick_start/pricing/',
+      lastVerified: '2026-08-11',
+    },
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: false,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      parameters: {
+        temperature: true,
+        topP: true,
+        frequencyPenalty: true,
+        presencePenalty: true,
+      },
+      input: {
+        tokens: 1_000_000,
+        text: true,
+        cpm: 0.435,
+        cpmCached: 0.003625,
+      },
+      output: {
+        tokens: 384_000,
+        text: true,
+        cpm: 0.87,
+      },
+      pricing: {
+        text: { input: 0.435, cachedInput: 0.003625, output: 0.87 },
+      },
+    },
+  }` | - |
+| `'deepseek-chat'` | `{
+    name: 'deepseek-chat',
+    provider: Vendor.DeepSeek,
+    description: 'Retired DeepSeek compatibility model ID',
+    isActive: false,
+    lifecycle: 'retired',
+    availability: 'public',
+    retirementDate: '2026-07-24',
+    replacementModel: 'deepseek-v4-flash',
+    endpoints: ['chat_completions'],
+    sources: {
+      documentation: 'https://api-docs.deepseek.com/updates/',
+      lastVerified: '2026-08-11',
+    },
+    features: {
+      reasoning: false, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: false,
+      audio: false, video: false, batchAPI: false, promptCaching: true,
+      input: { tokens: 1_000_000, text: true, cpm: 0.14, cpmCached: 0.0028 },
+      output: { tokens: 384_000, text: true, cpm: 0.28 },
+    },
+  }` | - |
+| `'deepseek-reasoner'` | `{
+    name: 'deepseek-reasoner',
+    provider: Vendor.DeepSeek,
+    description: 'Retired DeepSeek reasoning compatibility model ID',
+    isActive: false,
+    lifecycle: 'retired',
+    availability: 'public',
+    retirementDate: '2026-07-24',
+    replacementModel: 'deepseek-v4-flash',
+    endpoints: ['chat_completions'],
+    sources: {
+      documentation: 'https://api-docs.deepseek.com/updates/',
+      lastVerified: '2026-08-11',
+    },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: false,
+      audio: false, video: false, batchAPI: false, promptCaching: true,
+      input: { tokens: 1_000_000, text: true, cpm: 0.14, cpmCached: 0.0028 },
+      output: { tokens: 384_000, text: true, cpm: 0.28 },
     },
   }` | - |
 
@@ -33045,6 +33233,7 @@ TypeScript interfaces for extensibility
 
 | Property | Type | Description |
 |----------|------|-------------|
+| `reasoningHistory?` | `reasoningHistory?: 'discard' | 'always' | 'when_tools_configured';` | Whether normalized reasoning must be replayed in stateless conversation history. |
 | `promptCaching` | `promptCaching: {
     mode: PromptCachingMode;
     ttlModes: Array&lt;'short' | 'extended'&gt;;
@@ -33142,7 +33331,7 @@ Agent definition summary for listing
 
 ### BatchHandle `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:131`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:133`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -33171,7 +33360,7 @@ Agent definition summary for listing
 
 ### BatchSubmitOptions `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:125`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:127`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -33188,7 +33377,7 @@ Agent definition summary for listing
 
 ### BatchTextRequest `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:119`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:121`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -33204,7 +33393,7 @@ Agent definition summary for listing
 
 ### BatchTextResult `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:149`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:151`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -33680,7 +33869,7 @@ destroy(): Promise&lt;void&gt;;
 
 ### IAsyncTextBatchProvider `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:162`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:164`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -36215,7 +36404,7 @@ Word-level timestamp
 
 ### BatchProcessingState `type`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:110`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:112`](src/domain/interfaces/IAdvancedInference.ts)
 
 ```typescript
 type BatchProcessingState = | 'queued'
@@ -38039,6 +38228,86 @@ destroy(): void
 | `promptFn` | `promptFn: (ctx: ProfileGeneratorInput) =&gt; string` | - |
 | `temperature` | `temperature: number` | - |
 | `maxOutputTokens` | `maxOutputTokens: number | undefined` | - |
+
+</details>
+
+---
+
+### DeepSeekAPI `class`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekAPI.ts:15`](src/infrastructure/providers/deepseek/DeepSeekAPI.ts)
+
+Connector-backed access to DeepSeek account and completion APIs.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+private constructor(private readonly provider: DeepSeekTextProvider)
+```
+
+**Parameters:**
+- `provider`: `DeepSeekTextProvider`
+
+</details>
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static for()`
+
+Resolve credentials and endpoint configuration from a named connector.
+
+```typescript
+static for(connectorName: string): DeepSeekAPI
+```
+
+**Parameters:**
+- `connectorName`: `string`
+
+**Returns:** `DeepSeekAPI`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `listModels()`
+
+```typescript
+listModels(): Promise&lt;string[]&gt;
+```
+
+**Returns:** `Promise&lt;string[]&gt;`
+
+#### `createFimCompletion()`
+
+```typescript
+createFimCompletion(request: DeepSeekFimRequest): Promise&lt;DeepSeekFimResponse&gt;
+```
+
+**Parameters:**
+- `request`: `DeepSeekFimRequest`
+
+**Returns:** `Promise&lt;DeepSeekFimResponse&gt;`
+
+#### `getBalance()`
+
+```typescript
+getBalance(): Promise&lt;DeepSeekBalance&gt;
+```
+
+**Returns:** `Promise&lt;DeepSeekBalance&gt;`
+
+#### `destroy()`
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
 
 </details>
 
@@ -44942,6 +45211,10 @@ Used for BOTH AI providers AND external APIs
     anthropicVersion?: string;
     location?: string; // Google Vertex
     projectId?: string; // Google Vertex
+    /** Built-in DeepSeek host preset; defaults to the first-party API. */
+    deepseekHost?: 'official' | 'openrouter' | 'together' | 'fireworks' | 'deepinfra' | 'nvidia-nim' | 'azure-foundry' | 'custom';
+    /** DeepSeek API transport; auto routes first-party Flash to Responses and Pro to Chat. */
+    deepseekTransport?: 'auto' | 'responses' | 'chat_completions';
     [key: string]: unknown;
   };` | - |
 | `timeout?` | `timeout?: number;` | Request timeout in milliseconds |
@@ -44980,7 +45253,7 @@ Used for BOTH AI providers AND external APIs
 
 ### ConnectorConfigResult `interface`
 
-📍 [`src/domain/entities/Connector.ts:237`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:241`](src/domain/entities/Connector.ts)
 
 Result from ProviderConfigAgent
 Includes setup instructions and environment variables
@@ -45278,6 +45551,99 @@ Conversation message in history
 | `suggestedWinnerId` | `suggestedWinnerId: EntityId;` | The id the scorer recommends keeping. |
 | `suggestedLoserId` | `suggestedLoserId: EntityId;` | The id the scorer recommends archiving. |
 | `reason` | `reason: string;` | One-sentence human-readable rationale. |
+
+</details>
+
+---
+
+### DeepSeekBalance `interface`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekTextProvider.ts:42`](src/infrastructure/providers/deepseek/DeepSeekTextProvider.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `is_available` | `is_available: boolean;` | - |
+| `balance_infos` | `balance_infos: Array&lt;{
+    currency: string;
+    total_balance: string;
+    granted_balance: string;
+    topped_up_balance: string;
+  }&gt;;` | - |
+
+</details>
+
+---
+
+### DeepSeekFimRequest `interface`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekTextProvider.ts:33`](src/infrastructure/providers/deepseek/DeepSeekTextProvider.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `model` | `model: string;` | - |
+| `prompt` | `prompt: string;` | - |
+| `suffix?` | `suffix?: string;` | - |
+| `maxTokens?` | `maxTokens?: number;` | - |
+| `temperature?` | `temperature?: number;` | - |
+| `stop?` | `stop?: string | string[];` | - |
+
+</details>
+
+---
+
+### DeepSeekFimResponse `interface`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekTextProvider.ts:52`](src/infrastructure/providers/deepseek/DeepSeekTextProvider.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+| `object` | `object: string;` | - |
+| `created` | `created: number;` | - |
+| `model` | `model: string;` | - |
+| `choices` | `choices: Array&lt;{
+    index: number;
+    text: string;
+    finish_reason: string | null;
+    logprobs?: unknown;
+  }&gt;;` | - |
+| `usage?` | `usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };` | - |
+
+</details>
+
+---
+
+### DeepSeekHostProfile `interface`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:18`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: DeepSeekHost;` | - |
+| `displayName` | `displayName: string;` | - |
+| `baseURL?` | `baseURL?: string;` | - |
+| `requiresBaseURL?` | `requiresBaseURL?: boolean;` | Azure and custom deployments must provide a connector baseURL. |
+| `defaultTransport` | `defaultTransport: Exclude&lt;DeepSeekTransport, 'auto'&gt;;` | - |
+| `promptCaching` | `promptCaching: { mode: 'implicit' | 'unsupported'; reportsCacheUsage: boolean };` | - |
+| `modelIds` | `modelIds: Readonly&lt;Record&lt;string, string&gt;&gt;;` | - |
+| `modelLimits?` | `modelLimits?: Readonly&lt;Record&lt;string, { inputTokens?: number; outputTokens?: number }&gt;&gt;;` | Host-specific limits take precedence over the first-party model registry. |
+| `documentation` | `documentation: string;` | - |
 
 </details>
 
@@ -49454,7 +49820,7 @@ search(query: string, options?: SearchOptions): Promise&lt;SearchResponse&gt;;
 
 ### ISourceLinks `interface`
 
-📍 [`src/domain/types/SharedTypes.ts:77`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:78`](src/domain/types/SharedTypes.ts)
 
 Source links for model documentation and maintenance
 Used to track where information came from and when it was last verified
@@ -52434,6 +52800,40 @@ Research execution result
 
 ---
 
+### ResolvedDeepSeekHost `interface`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:146`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `profile` | `profile: DeepSeekHostProfile;` | - |
+| `baseURL` | `baseURL: string;` | - |
+| `transport` | `transport: DeepSeekTransport;` | - |
+
+</details>
+
+---
+
+### ResolveDeepSeekHostOptions `interface`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:140`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `host?` | `host?: DeepSeekHost;` | - |
+| `baseURL?` | `baseURL?: string;` | - |
+| `transport?` | `transport?: DeepSeekTransport;` | - |
+
+</details>
+
+---
+
 ### ResolveEntityOptions `interface`
 
 📍 [`src/memory/types.ts:1163`](src/memory/types.ts)
@@ -54609,6 +55009,8 @@ Text pipeline configuration — STT → Agent → TTS
 |----------|------|-------------|
 | `type` | `type: ContentType.THINKING;` | - |
 | `thinking` | `thinking: string;` | - |
+| `providerItemId?` | `providerItemId?: string;` | Provider item identifier used when a stateless API requires reasoning replay. |
+| `providerMetadata?` | `providerMetadata?: Record&lt;string, unknown&gt;;` | Opaque provider replay data; applications should not interpret its contents. |
 | `signature?` | `signature?: string;` | Anthropic's opaque signature for round-tripping thinking blocks |
 | `persistInHistory` | `persistInHistory: boolean;` | Whether this thinking block should be persisted in conversation history.
  Anthropic requires it (true), OpenAI/Google do not (false). |
@@ -55093,7 +55495,7 @@ WITHOUT conversation history.
 
 ### VendorOptionSchema `interface`
 
-📍 [`src/domain/types/SharedTypes.ts:94`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:95`](src/domain/types/SharedTypes.ts)
 
 Vendor-specific option schema for validation and documentation
 Used to describe vendor-specific options that fall outside semantic options
@@ -55365,7 +55767,7 @@ type AgentStatus = | 'idle'         // Created but not started
 
 ### AspectRatio `type`
 
-📍 [`src/domain/types/SharedTypes.ts:51`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:52`](src/domain/types/SharedTypes.ts)
 
 Aspect ratios - normalized across all visual modalities (images, video)
 
@@ -55404,7 +55806,7 @@ type AudioEncoding = 'pcm_s16le' | 'mulaw' | 'alaw'
 
 ### AudioFormat `type`
 
-📍 [`src/domain/types/SharedTypes.ts:62`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:63`](src/domain/types/SharedTypes.ts)
 
 Audio output formats
 
@@ -55572,7 +55974,7 @@ type ConnectorAuth = | OAuthConnectorAuth
 
 ### Content `type`
 
-📍 [`src/domain/entities/Content.ts:77`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:81`](src/domain/entities/Content.ts)
 
 ```typescript
 type Content = | InputTextContent
@@ -55609,6 +56011,26 @@ included BY DEFAULT unless the caller passes { tiers: 'minimal' }.
 
 ```typescript
 type ContextTier = 'documents' | 'semantic' | 'neighbors'
+```
+
+---
+
+### DeepSeekHost `type`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:15`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+
+```typescript
+type DeepSeekHost = (typeof DEEPSEEK_HOSTS)[keyof typeof DEEPSEEK_HOSTS]
+```
+
+---
+
+### DeepSeekTransport `type`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:16`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+
+```typescript
+type DeepSeekTransport = 'auto' | 'responses' | 'chat_completions'
 ```
 
 ---
@@ -56087,7 +56509,7 @@ type OpenAIRealtimeVoice = | 'alloy'
 
 ### OutputFormat `type`
 
-📍 [`src/domain/types/SharedTypes.ts:67`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:68`](src/domain/types/SharedTypes.ts)
 
 Output format preference for media
 
@@ -56275,7 +56697,7 @@ type PromptContext = ProfileGeneratorInput
 
 ### QualityLevel `type`
 
-📍 [`src/domain/types/SharedTypes.ts:57`](src/domain/types/SharedTypes.ts)
+📍 [`src/domain/types/SharedTypes.ts:58`](src/domain/types/SharedTypes.ts)
 
 Quality levels - normalized across vendors
 Providers map these to vendor-specific quality settings
@@ -58456,6 +58878,16 @@ export function resolveConnector(connectorOrName: string | Connector): Connector
 
 ---
 
+### resolveDeepSeekHost `function`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:152`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+
+```typescript
+export function resolveDeepSeekHost(options: ResolveDeepSeekHostOptions =
+```
+
+---
+
 ### resolveEagerness `function`
 
 📍 [`src/memory/integration/EagernessProfile.ts:124`](src/memory/integration/EagernessProfile.ts)
@@ -58998,6 +59430,121 @@ export function writeFilterForPrincipals(principals: string[]):
 
 Composer for `cluster` entities — type-specific anchor metadata. Embeds
 name + aliases + anchor entity displayNames + first/last-seen timestamps.
+
+---
+
+### DEEPSEEK_HOST_REGISTRY `const`
+
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:40`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+
+Provider presets intentionally describe only bearer-token, OpenAI-compatible
+endpoints. Bedrock and Vertex require their own signed/authenticated
+transports and are not represented as misleading URL aliases here.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `official` | `{
+    id: 'official',
+    displayName: 'DeepSeek Platform',
+    baseURL: 'https://api.deepseek.com/v1',
+    defaultTransport: 'responses',
+    promptCaching: { mode: 'implicit', reportsCacheUsage: true },
+    modelIds: { [FLASH]: FLASH, [PRO]: PRO },
+    documentation: 'https://api-docs.deepseek.com/',
+  }` | - |
+| `openrouter` | `{
+    id: 'openrouter',
+    displayName: 'OpenRouter',
+    baseURL: 'https://openrouter.ai/api/v1',
+    defaultTransport: 'chat_completions',
+    promptCaching: { mode: 'implicit', reportsCacheUsage: true },
+    modelIds: {
+      [FLASH]: 'deepseek/deepseek-v4-flash',
+      [PRO]: 'deepseek/deepseek-v4-pro',
+    },
+    documentation: 'https://openrouter.ai/deepseek',
+  }` | - |
+| `together` | `{
+    id: 'together',
+    displayName: 'Together AI',
+    baseURL: 'https://api.together.xyz/v1',
+    defaultTransport: 'chat_completions',
+    promptCaching: { mode: 'implicit', reportsCacheUsage: true },
+    modelIds: { [PRO]: 'deepseek-ai/DeepSeek-V4-Pro' },
+    modelLimits: { [PRO]: { inputTokens: 512_000 } },
+    documentation: 'https://docs.together.ai/docs/deepseek-v4-quickstart',
+  }` | - |
+| `fireworks` | `{
+    id: 'fireworks',
+    displayName: 'Fireworks AI',
+    baseURL: 'https://api.fireworks.ai/inference/v1',
+    defaultTransport: 'chat_completions',
+    promptCaching: { mode: 'implicit', reportsCacheUsage: true },
+    modelIds: {
+      [FLASH]: 'accounts/fireworks/models/deepseek-v4-flash',
+      [PRO]: 'accounts/fireworks/models/deepseek-v4-pro',
+    },
+    modelLimits: {
+      [FLASH]: { inputTokens: 1_048_576 },
+      [PRO]: { inputTokens: 1_048_576 },
+    },
+    documentation: 'https://fireworks.ai/models',
+  }` | - |
+| `deepinfra` | `{
+    id: 'deepinfra',
+    displayName: 'DeepInfra',
+    baseURL: 'https://api.deepinfra.com/v1/openai',
+    defaultTransport: 'chat_completions',
+    promptCaching: { mode: 'implicit', reportsCacheUsage: true },
+    modelIds: {
+      [FLASH]: 'deepseek-ai/DeepSeek-V4-Flash',
+      [PRO]: 'deepseek-ai/DeepSeek-V4-Pro',
+    },
+    modelLimits: {
+      [FLASH]: { inputTokens: 1_024_000 },
+      [PRO]: { inputTokens: 1_024_000 },
+    },
+    documentation: 'https://docs.deepinfra.com/api-reference/introduction',
+  }` | - |
+| `'nvidia-nim'` | `{
+    id: 'nvidia-nim',
+    displayName: 'NVIDIA NIM',
+    baseURL: 'https://integrate.api.nvidia.com/v1',
+    defaultTransport: 'chat_completions',
+    promptCaching: { mode: 'unsupported', reportsCacheUsage: false },
+    modelIds: {
+      [FLASH]: 'deepseek-ai/deepseek-v4-flash',
+      [PRO]: 'deepseek-ai/deepseek-v4-pro',
+    },
+    modelLimits: {
+      [FLASH]: { outputTokens: 16_384 },
+      [PRO]: { outputTokens: 16_384 },
+    },
+    documentation: 'https://docs.api.nvidia.com/nim/reference/llm-apis',
+  }` | - |
+| `'azure-foundry'` | `{
+    id: 'azure-foundry',
+    displayName: 'Azure AI Foundry',
+    requiresBaseURL: true,
+    defaultTransport: 'chat_completions',
+    promptCaching: { mode: 'unsupported', reportsCacheUsage: false },
+    modelIds: {},
+    documentation: 'https://learn.microsoft.com/azure/foundry/foundry-models/concepts/endpoints',
+  }` | - |
+| `custom` | `{
+    id: 'custom',
+    displayName: 'Custom OpenAI-compatible DeepSeek host',
+    requiresBaseURL: true,
+    defaultTransport: 'chat_completions',
+    promptCaching: { mode: 'unsupported', reportsCacheUsage: false },
+    modelIds: {},
+    documentation: 'https://api-docs.deepseek.com/',
+  }` | - |
+
+</details>
 
 ---
 

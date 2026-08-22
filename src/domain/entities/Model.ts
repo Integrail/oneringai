@@ -335,6 +335,14 @@ export const LLM_MODELS = {
     GROK_4_1_FAST_REASONING: 'grok-4-1-fast-reasoning',
     GROK_4_1_FAST_NON_REASONING: 'grok-4-1-fast-non-reasoning',
   },
+  [Vendor.DeepSeek]: {
+    // Current first-party models
+    DEEPSEEK_V4_FLASH: 'deepseek-v4-flash',
+    DEEPSEEK_V4_PRO: 'deepseek-v4-pro',
+    // Retired compatibility IDs (kept explicit; never silently remapped)
+    DEEPSEEK_CHAT: 'deepseek-chat',
+    DEEPSEEK_REASONER: 'deepseek-reasoner',
+  },
 } as const;
 
 /**
@@ -3220,7 +3228,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    endpoints: ['responses', 'chat_completions'],
+    endpoints: ['responses', 'chat_completions', 'messages', 'completions'],
     releaseDate: '2026-06-01',
     knowledgeCutoff: '2026-02-01',
     sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.5', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
@@ -3558,6 +3566,158 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
         text: true,
         cpm: 0.50,
       },
+    },
+  },
+
+  // ============================================================================
+  // DeepSeek Models (Verified from api-docs.deepseek.com - August 2026)
+  // ============================================================================
+
+  'deepseek-v4-flash': {
+    name: 'deepseek-v4-flash',
+    provider: Vendor.DeepSeek,
+    description: 'DeepSeek V4 Flash reasoning model with first-party Responses and Chat Completions support',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['responses', 'chat_completions'],
+    releaseDate: '2026-04-24',
+    sources: {
+      documentation: 'https://api-docs.deepseek.com/quick_start/pricing/',
+      pricing: 'https://api-docs.deepseek.com/quick_start/pricing/',
+      lastVerified: '2026-08-11',
+    },
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: false,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      parameters: {
+        temperature: true,
+        topP: true,
+        frequencyPenalty: true,
+        presencePenalty: true,
+      },
+      input: {
+        tokens: 1_000_000,
+        text: true,
+        cpm: 0.14,
+        cpmCached: 0.0028,
+      },
+      output: {
+        tokens: 384_000,
+        text: true,
+        cpm: 0.28,
+      },
+      pricing: {
+        text: { input: 0.14, cachedInput: 0.0028, output: 0.28 },
+      },
+    },
+  },
+
+  'deepseek-v4-pro': {
+    name: 'deepseek-v4-pro',
+    provider: Vendor.DeepSeek,
+    description: 'Highest-capability DeepSeek V4 reasoning model; first-party access uses Chat Completions',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['chat_completions', 'messages', 'completions'],
+    releaseDate: '2026-04-24',
+    sources: {
+      documentation: 'https://api-docs.deepseek.com/quick_start/pricing/',
+      pricing: 'https://api-docs.deepseek.com/quick_start/pricing/',
+      lastVerified: '2026-08-11',
+    },
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: false,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      parameters: {
+        temperature: true,
+        topP: true,
+        frequencyPenalty: true,
+        presencePenalty: true,
+      },
+      input: {
+        tokens: 1_000_000,
+        text: true,
+        cpm: 0.435,
+        cpmCached: 0.003625,
+      },
+      output: {
+        tokens: 384_000,
+        text: true,
+        cpm: 0.87,
+      },
+      pricing: {
+        text: { input: 0.435, cachedInput: 0.003625, output: 0.87 },
+      },
+    },
+  },
+
+  'deepseek-chat': {
+    name: 'deepseek-chat',
+    provider: Vendor.DeepSeek,
+    description: 'Retired DeepSeek compatibility model ID',
+    isActive: false,
+    lifecycle: 'retired',
+    availability: 'public',
+    retirementDate: '2026-07-24',
+    replacementModel: 'deepseek-v4-flash',
+    endpoints: ['chat_completions'],
+    sources: {
+      documentation: 'https://api-docs.deepseek.com/updates/',
+      lastVerified: '2026-08-11',
+    },
+    features: {
+      reasoning: false, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: false,
+      audio: false, video: false, batchAPI: false, promptCaching: true,
+      input: { tokens: 1_000_000, text: true, cpm: 0.14, cpmCached: 0.0028 },
+      output: { tokens: 384_000, text: true, cpm: 0.28 },
+    },
+  },
+
+  'deepseek-reasoner': {
+    name: 'deepseek-reasoner',
+    provider: Vendor.DeepSeek,
+    description: 'Retired DeepSeek reasoning compatibility model ID',
+    isActive: false,
+    lifecycle: 'retired',
+    availability: 'public',
+    retirementDate: '2026-07-24',
+    replacementModel: 'deepseek-v4-flash',
+    endpoints: ['chat_completions'],
+    sources: {
+      documentation: 'https://api-docs.deepseek.com/updates/',
+      lastVerified: '2026-08-11',
+    },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: false,
+      audio: false, video: false, batchAPI: false, promptCaching: true,
+      input: { tokens: 1_000_000, text: true, cpm: 0.14, cpmCached: 0.0028 },
+      output: { tokens: 384_000, text: true, cpm: 0.28 },
     },
   },
 };

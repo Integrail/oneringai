@@ -144,6 +144,14 @@ export class StreamState {
     return allReasoning.join('');
   }
 
+  /** Reasoning blocks with provider item IDs, used by stateless replay APIs. */
+  getReasoningEntries(): Array<{ itemId: string; thinking: string }> {
+    return Array.from(this.reasoningBuffers, ([itemId, chunks]) => ({
+      itemId,
+      thinking: chunks.join(''),
+    }));
+  }
+
   /**
    * Check if stream has any accumulated reasoning
    */

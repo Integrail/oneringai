@@ -16,6 +16,11 @@ import { AnthropicTextProvider } from '../infrastructure/providers/anthropic/Ant
 import { GoogleTextProvider } from '../infrastructure/providers/google/GoogleTextProvider.js';
 import { VertexAITextProvider } from '../infrastructure/providers/vertex/VertexAITextProvider.js';
 import { GenericOpenAIProvider } from '../infrastructure/providers/generic/GenericOpenAIProvider.js';
+import { DeepSeekTextProvider } from '../infrastructure/providers/deepseek/DeepSeekTextProvider.js';
+import type {
+  DeepSeekHost,
+  DeepSeekTransport,
+} from '../infrastructure/providers/deepseek/DeepSeekHostRegistry.js';
 
 // ---------------------------------------------------------------------------
 // Vendor default base URLs — hardcoded stable endpoints
@@ -96,12 +101,19 @@ export function createProvider(connector: Connector): ITextProvider {
         location: connector.getOptions().location as string || 'us-central1',
       });
 
+    case Vendor.DeepSeek:
+      return new DeepSeekTextProvider({
+        ...config,
+        connectorName: connector.name,
+        host: connector.getOptions().deepseekHost as DeepSeekHost | undefined,
+        transport: connector.getOptions().deepseekTransport as DeepSeekTransport | undefined,
+      });
+
     // OpenAI-compatible providers (use connector.name for unique identification)
     case Vendor.Groq:
     case Vendor.Together:
     case Vendor.Perplexity:
     case Vendor.Grok:
-    case Vendor.DeepSeek:
     case Vendor.Mistral:
     case Vendor.Ollama:
       return new GenericOpenAIProvider(connector.name, {

@@ -1,6 +1,6 @@
 # OneRingAI examples
 
-This directory contains 33 runnable TypeScript programs covering agents, tools,
+This directory contains 34 runnable TypeScript programs covering agents, tools,
 streaming, media, connectors, OAuth, search, and MCP. The examples import the
 repository source directly, so run them from the repository root after installing
 dependencies.
@@ -29,6 +29,7 @@ example without making network calls.
 | Google AI | `GOOGLE_API_KEY` |
 | Groq | `GROQ_API_KEY` |
 | Together AI | `TOGETHER_API_KEY` |
+| DeepSeek | `DEEPSEEK_API_KEY`; optional `DEEPSEEK_HOST` and `DEEPSEEK_BASE_URL` |
 | xAI | `XAI_API_KEY` (legacy `GROK_API_KEY` is also accepted) |
 | Search | `SERPER_API_KEY` or `SERPER_KEY`; optionally `BRAVE_API_KEY`, `RAPIDAPI_KEY`, and `SERPER_API_KEY_BACKUP` |
 | OAuth demos | Provider-specific client IDs/secrets as noted in the program; `OAUTH_ENCRYPTION_KEY` is recommended for persistent production storage |
@@ -44,7 +45,8 @@ example without making network calls.
 | [`basic-agent.ts`](./basic-agent.ts) | An agent using custom weather and restricted arithmetic tools, including the agentic tool-call loop. | `OPENAI_API_KEY`; `npm run example:agent` |
 | [`multi-turn-conversation.ts`](./multi-turn-conversation.ts) | Explicit conversation history with `runDirect()`, useful when the application—not `AgentContextNextGen`—owns the transcript. | `OPENAI_API_KEY`; `npm run example:conversation` |
 | [`interactive-chat.ts`](./interactive-chat.ts) | Interactive multi-provider chat, streaming, vision URLs/files, clipboard images, provider switching, Microsoft Graph access when configured, and approval-gated JavaScript execution. Type `/help` for commands and `/exit` to quit. | At least one supported provider key; `npm run example:chat` |
-| [`multi-provider-comparison.ts`](./multi-provider-comparison.ts) | Sends one prompt through every configured OpenAI, Anthropic, Google, Groq, Together, and xAI connector using one API shape. | At least one provider key; `npm run example:providers` |
+| [`multi-provider-comparison.ts`](./multi-provider-comparison.ts) | Sends one prompt through every configured OpenAI, Anthropic, Google, Groq, Together, DeepSeek, and xAI connector using one API shape. | At least one provider key; `npm run example:providers` |
+| [`deepseek-agent.ts`](./deepseek-agent.ts) | Current V4 model, dedicated adapter, host preset selection, reasoning, and JSON Schema output. | `DEEPSEEK_API_KEY`; `npx tsx examples/deepseek-agent.ts` |
 | [`json-manipulation-tool.ts`](./json-manipulation-tool.ts) | Agent-driven JSON add/replace/delete operations plus deterministic chaining of multiple `json_manipulate` calls. | `OPENAI_API_KEY`; `npm run example:json-tool` |
 | [`agent-with-hooks.ts`](./agent-with-hooks.ts) | Execution hooks, simulated approval, tool-result caching, metrics, and pause/resume control. | `OPENAI_API_KEY`; `npm run example:hooks` |
 | [`logging-demo.ts`](./logging-demo.ts) | Logger configuration and structured logs emitted by an agent and a custom calculation tool. | `OPENAI_API_KEY`; `npm run example:logging` |

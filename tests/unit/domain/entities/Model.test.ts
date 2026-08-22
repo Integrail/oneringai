@@ -19,6 +19,8 @@ describe('Model Registry', () => {
       expect(MODEL_REGISTRY['claude-opus-5']).toBeDefined();
       expect(MODEL_REGISTRY['gemini-3.6-flash']).toBeDefined();
       expect(MODEL_REGISTRY['grok-4.5']).toBeDefined();
+      expect(MODEL_REGISTRY['deepseek-v4-flash']).toBeDefined();
+      expect(MODEL_REGISTRY['deepseek-v4-pro']).toBeDefined();
     });
 
     it('should include the audited OpenAI models', () => {
@@ -47,6 +49,17 @@ describe('Model Registry', () => {
         (model) => model.provider === Vendor.Grok
       );
       expect(grokModels.length).toBeGreaterThanOrEqual(11);
+    });
+
+    it('should include current and migration-relevant DeepSeek models', () => {
+      const deepSeekModels = getModelsByVendor(Vendor.DeepSeek);
+      expect(deepSeekModels).toHaveLength(4);
+      expect(MODEL_REGISTRY['deepseek-v4-flash'].features.input.tokens).toBe(1_000_000);
+      expect(MODEL_REGISTRY['deepseek-v4-pro'].features.output.tokens).toBe(384_000);
+      expect(MODEL_REGISTRY['deepseek-chat']).toMatchObject({
+        lifecycle: 'retired',
+        replacementModel: 'deepseek-v4-flash',
+      });
     });
 
     it('should track active and deprecated models', () => {
@@ -140,11 +153,17 @@ describe('Model Registry', () => {
       expect(LLM_MODELS[Vendor.Grok].GROK_4_1_FAST_NON_REASONING).toBe('grok-4-1-fast-non-reasoning');
     });
 
+    it('should have DeepSeek model constants', () => {
+      expect(LLM_MODELS[Vendor.DeepSeek].DEEPSEEK_V4_FLASH).toBe('deepseek-v4-flash');
+      expect(LLM_MODELS[Vendor.DeepSeek].DEEPSEEK_V4_PRO).toBe('deepseek-v4-pro');
+    });
+
     it('should have all model constants registered in MODEL_REGISTRY', () => {
       const openAIModels = Object.values(LLM_MODELS[Vendor.OpenAI]);
       const anthropicModels = Object.values(LLM_MODELS[Vendor.Anthropic]);
       const googleModels = Object.values(LLM_MODELS[Vendor.Google]);
       const grokModels = Object.values(LLM_MODELS[Vendor.Grok]);
+      const deepSeekModels = Object.values(LLM_MODELS[Vendor.DeepSeek]);
 
       openAIModels.forEach((modelName) => {
         expect(getModelInfo(modelName)).toBeDefined();
@@ -159,6 +178,10 @@ describe('Model Registry', () => {
       });
 
       grokModels.forEach((modelName) => {
+        expect(getModelInfo(modelName)).toBeDefined();
+      });
+
+      deepSeekModels.forEach((modelName) => {
         expect(getModelInfo(modelName)).toBeDefined();
       });
     });

@@ -11,6 +11,7 @@ const {
   MockAnthropicTextProvider,
   MockGoogleTextProvider,
   MockVertexAITextProvider,
+  MockDeepSeekTextProvider,
   MockGenericOpenAIProvider,
 } = vi.hoisted(() => {
   const MockOpenAITextProvider = vi.fn().mockImplementation((config) => ({
@@ -33,6 +34,11 @@ const {
     config,
   }));
 
+  const MockDeepSeekTextProvider = vi.fn().mockImplementation((config) => ({
+    name: 'deepseek',
+    config,
+  }));
+
   const MockGenericOpenAIProvider = vi.fn().mockImplementation((name, config) => ({
     name,
     config,
@@ -43,6 +49,7 @@ const {
     MockAnthropicTextProvider,
     MockGoogleTextProvider,
     MockVertexAITextProvider,
+    MockDeepSeekTextProvider,
     MockGenericOpenAIProvider,
   };
 });
@@ -62,6 +69,10 @@ vi.mock('@/infrastructure/providers/google/GoogleTextProvider.js', () => ({
 
 vi.mock('@/infrastructure/providers/vertex/VertexAITextProvider.js', () => ({
   VertexAITextProvider: MockVertexAITextProvider,
+}));
+
+vi.mock('@/infrastructure/providers/deepseek/DeepSeekTextProvider.js', () => ({
+  DeepSeekTextProvider: MockDeepSeekTextProvider,
 }));
 
 vi.mock('@/infrastructure/providers/generic/GenericOpenAIProvider.js', () => ({
@@ -184,7 +195,7 @@ describe('createProvider', () => {
       expect(provider.name).toBe('grok-test');
     });
 
-    it('should create GenericOpenAIProvider for DeepSeek vendor', () => {
+    it('should create the dedicated DeepSeekTextProvider for DeepSeek vendor', () => {
       Connector.create({
         name: 'deepseek-test',
         vendor: Vendor.DeepSeek,
@@ -193,7 +204,54 @@ describe('createProvider', () => {
 
       const provider = createProvider(Connector.get('deepseek-test'));
 
-      expect(provider.name).toBe('deepseek-test');
+      expect(provider.name).toBe('deepseek');
+      expect(MockDeepSeekTextProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectorName: 'deepseek-test',
+          host: undefined,
+          transport: undefined,
+        }),
+      );
+    });
+
+    it('should pass DeepSeek host and transport options', () => {
+      Connector.create({
+        name: 'deepseek-openrouter',
+        vendor: Vendor.DeepSeek,
+        auth: { type: 'api_key', apiKey: 'openrouter-key' },
+        options: {
+          deepseekHost: 'openrouter',
+          deepseekTransport: 'chat_completions',
+        },
+      });
+
+      createProvider(Connector.get('deepseek-openrouter'));
+
+      expect(MockDeepSeekTextProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: 'openrouter',
+          transport: 'chat_completions',
+        }),
+      );
+    });
+
+    it('should pass a custom DeepSeek endpoint through the connector', () => {
+      Connector.create({
+        name: 'deepseek-custom',
+        vendor: Vendor.DeepSeek,
+        auth: { type: 'api_key', apiKey: 'custom-key' },
+        baseURL: 'https://deepseek.example.com/v1',
+        options: { deepseekHost: 'custom' },
+      });
+
+      createProvider(Connector.get('deepseek-custom'));
+
+      expect(MockDeepSeekTextProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseURL: 'https://deepseek.example.com/v1',
+          host: 'custom',
+        }),
+      );
     });
 
     it('should create GenericOpenAIProvider for Mistral vendor', () => {

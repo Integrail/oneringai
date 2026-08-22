@@ -82,16 +82,16 @@ describe('createEmbeddingProvider', () => {
     expect(provider.name).toBe('test-together');
   });
 
-  it('should create OpenAI-compat provider for DeepSeek', () => {
+  it('should reject DeepSeek because the first-party API has no embeddings endpoint', () => {
     const connector = Connector.create({
       name: 'test-deepseek',
       vendor: Vendor.DeepSeek,
       auth: { type: 'api_key', apiKey: 'test-key' },
     });
 
-    const provider = createEmbeddingProvider(connector);
-    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
-    expect(provider.name).toBe('test-deepseek');
+    expect(() => createEmbeddingProvider(connector)).toThrow(
+      'No embedding provider available for vendor: deepseek',
+    );
   });
 
   it('should create OpenAI-compat provider for Groq', () => {

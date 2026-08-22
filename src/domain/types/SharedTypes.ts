@@ -28,6 +28,7 @@ export type ModelAvailability =
 export type ModelEndpoint =
   | 'responses'
   | 'chat_completions'
+  | 'completions'
   | 'messages'
   | 'generate_content'
   | 'interactions'

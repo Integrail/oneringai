@@ -236,22 +236,22 @@ User (messaging channel) --> Gateway (control plane) --> Agent/Provider --> LLM
 | Google Vertex | Native | Native | Via LiteLLM | Extension |
 | Groq | Generic OpenAI | Native | Via LiteLLM | Extension |
 | Together | Generic OpenAI | Native | Via LiteLLM | Extension |
-| DeepSeek | Generic OpenAI | Native | OpenAI-compat | Extension |
+| DeepSeek | Native Chat + Responses | Native | OpenAI-compat | Extension |
 | Mistral | Generic OpenAI | Native | Via LiteLLM | Extension |
 | Grok / xAI | Generic OpenAI | Native | Via LiteLLM | Extension |
 | Ollama | Generic OpenAI | Native | OpenAI-compat | Extension |
 | AWS Bedrock | — | Native | Native | Extension |
 | Azure OpenAI | — | Native | Native | Extension |
 | Cohere | — | Native | Via LiteLLM | — |
-| Fireworks | — | Native | Via LiteLLM | Extension |
-| OpenRouter | — | Native | Via LiteLLM | Extension |
-| NVIDIA | — | — | — | Extension |
+| Fireworks | DeepSeek host preset | Native | Via LiteLLM | Extension |
+| OpenRouter | DeepSeek host preset | Native | Via LiteLLM | Extension |
+| NVIDIA | DeepSeek NIM preset | — | — | Extension |
 | HuggingFace | — | — | — | Extension |
 | **Total Providers** | **11+** | **36+** | **20+ (with LiteLLM)** | **30+** |
 
 **Provider Architecture Notes:**
 
-- **OneRingAI:** Uses a converter-based multi-vendor system. OpenAI, Anthropic, and Google have dedicated converters. All other compatible providers route through `GenericOpenAIProvider`. Vendor-agnostic `thinking` config maps to Anthropic budgets, OpenAI reasoning effort, and Google thinkingLevel.
+- **OneRingAI:** Uses a converter-based multi-vendor system. OpenAI, Anthropic, Google, and DeepSeek have dedicated converters; DeepSeek includes Chat/Responses transport routing and hosted-provider presets. Other compatible providers route through `GenericOpenAIProvider`. Vendor-agnostic `thinking` maps to each provider's native reasoning controls.
 - **LangChain.js:** Each provider gets a dedicated `@langchain/{provider}` npm package with full `BaseChatModel` implementation. Unified `bindTools()` and `ToolCall` format across all providers.
 - **CrewAI:** Uses a factory pattern in `LLM.__new__()` routing to native SDK implementations for major providers. LiteLLM serves as catch-all fallback (now optional dependency).
 - **OpenClaw:** All providers are extensions loaded at runtime, with auth profile rotation and failover policies.

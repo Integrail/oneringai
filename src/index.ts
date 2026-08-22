@@ -219,6 +219,7 @@ export type {
   IncomingCallInfo,
   OutboundCallConfig,
   TwilioAdapterConfig,
+  OpenAIRealtimeConnectOptions,
   OpenAIRealtimeSessionOptions,
   OpenAIRealtimeSessionEvents,
   CreateRealtimeClientSecretOptions,
@@ -968,6 +969,26 @@ export { BaseTextProvider } from './infrastructure/providers/base/BaseTextProvid
 export { BaseMediaProvider } from './infrastructure/providers/base/BaseMediaProvider.js';
 export { ProviderErrorMapper } from './infrastructure/providers/base/ProviderErrorMapper.js';
 export { resolveModelCapabilities, resolveMaxContextTokens } from './infrastructure/providers/base/ModelCapabilityResolver.js';
+
+// DeepSeek provider, host presets, and first-party APIs
+export {
+  DeepSeekAPI,
+  DEEPSEEK_HOSTS,
+  DEEPSEEK_HOST_REGISTRY,
+  resolveDeepSeekHost,
+  resolveDeepSeekModel,
+} from './infrastructure/providers/deepseek/index.js';
+export type {
+  DeepSeekBalance,
+  DeepSeekFimRequest,
+  DeepSeekFimResponse,
+  DeepSeekHost,
+  DeepSeekHostProfile,
+  DeepSeekTransport,
+  ResolvedDeepSeekHost,
+  ResolvedDeepSeekModel,
+  ResolveDeepSeekHostOptions,
+} from './infrastructure/providers/deepseek/index.js';
 
 // Shared types for multi-modal
 export type {

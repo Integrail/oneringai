@@ -24,7 +24,6 @@ import { AgentEvents } from '../capabilities/agents/types/EventTypes.js';
 import { IDisposable, assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
 import { TextGenerateOptions } from '../domain/interfaces/ITextProvider.js';
 import type { ThinkingConfig } from '../domain/interfaces/ITextProvider.js';
-import { Vendor } from './Vendor.js';
 import type { IContextStorage } from '../domain/interfaces/IContextStorage.js';
 import type { PermissionCheckContext } from './permissions/types.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
@@ -1356,17 +1355,20 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
     // Add thinking content if reasoning was accumulated
     if (streamState.hasReasoning()) {
-      const reasoning = streamState.getAllReasoning();
-      if (reasoning) {
-        // Use actual connector vendor for reliable detection
-        const isAnthropic = this.connector.vendor === Vendor.Anthropic;
+      for (const { itemId, thinking } of streamState.getReasoningEntries()) {
+        if (!thinking) continue;
+        const historyPolicy =
+          this._provider.getAdvancedCapabilities?.(this.model).reasoningHistory ?? 'discard';
+        const persistInHistory = historyPolicy === 'always' ||
+          (historyPolicy === 'when_tools_configured' && this.getEnabledToolDefinitions().length > 0);
         assistantContent.push({
           type: ContentType.THINKING,
-          thinking: reasoning,
+          thinking,
+          providerItemId: itemId,
           // Streaming doesn't carry Anthropic signatures, so signature is undefined here.
           // Non-streaming responses (via convertResponse) capture signatures correctly.
           signature: undefined,
-          persistInHistory: isAnthropic,
+          persistInHistory,
         });
       }
     }

@@ -290,6 +290,7 @@ export class AnthropicTextProvider extends BaseTextProvider {
     const supportsNativeSchema = supportsAnthropicNativeStructuredOutput(model);
     const nativeTools = info ? getAnthropicNativeTools(model) : [];
     return {
+      reasoningHistory: 'always',
       promptCaching: {
         mode: supportsPromptCaching ? 'request_controlled' : 'unsupported',
         ttlModes: supportsPromptCaching ? ['short', 'extended'] : [],

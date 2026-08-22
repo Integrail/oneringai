@@ -431,8 +431,12 @@ Under the hood:
 ### Embedder setup in detail
 
 **Supported vendors** (via `createEmbeddingProvider`): OpenAI, Google, Ollama,
-Groq, Together, Mistral, DeepSeek, Grok, plus `Vendor.Custom` for an
+Groq, Together, Mistral, Grok, plus `Vendor.Custom` for an
 OpenAI-compatible endpoint with an explicit `baseURL`.
+
+DeepSeek's first-party API does not expose embeddings. A DeepSeek profile agent
+therefore needs a separate embedding connector (for example OpenAI, Google, or
+an embedding-capable hosted endpoint).
 
 **Choosing a model:**
 

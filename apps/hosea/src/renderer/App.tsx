@@ -43,7 +43,7 @@ const DEFAULT_MODELS: Record<string, string> = {
   groq: 'llama-3.3-70b-versatile',
   together: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
   mistral: 'mistral-large-latest',
-  deepseek: 'deepseek-chat',
+  deepseek: 'deepseek-v4-flash',
 };
 
 // ============ Connector Version Context ============

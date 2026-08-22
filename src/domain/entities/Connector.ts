@@ -178,6 +178,10 @@ export interface ConnectorConfig {
     anthropicVersion?: string;
     location?: string; // Google Vertex
     projectId?: string; // Google Vertex
+    /** Built-in DeepSeek host preset; defaults to the first-party API. */
+    deepseekHost?: 'official' | 'openrouter' | 'together' | 'fireworks' | 'deepinfra' | 'nvidia-nim' | 'azure-foundry' | 'custom';
+    /** DeepSeek API transport; auto routes first-party Flash to Responses and Pro to Chat. */
+    deepseekTransport?: 'auto' | 'responses' | 'chat_completions';
     [key: string]: unknown;
   };
 

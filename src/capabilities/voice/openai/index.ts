@@ -1,6 +1,7 @@
 export { OpenAIRealtimeSession } from './OpenAIRealtimeSession.js';
 export { OpenAIRealtimeAPI } from './OpenAIRealtimeAPI.js';
 export type {
+  OpenAIRealtimeConnectOptions,
   OpenAIRealtimeSessionOptions,
   OpenAIRealtimeSessionEvents,
 } from './OpenAIRealtimeSession.js';

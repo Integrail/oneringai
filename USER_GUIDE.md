@@ -1369,6 +1369,67 @@ Vendor.Ollama        // Ollama (local models)
 Vendor.Custom        // Custom OpenAI-compatible endpoints
 ```
 
+### DeepSeek connectors and hosted providers
+
+`Vendor.DeepSeek` uses a dedicated provider with current model metadata,
+reasoning/tool history handling, and both Chat Completions and Responses
+transports. The official connector automatically uses Responses for
+`deepseek-v4-flash` and Chat Completions for `deepseek-v4-pro` because the
+first-party Responses endpoint currently supports Flash only.
+
+```typescript
+import {
+  Agent,
+  Connector,
+  DEEPSEEK_HOSTS,
+  LLM_MODELS,
+  Vendor,
+} from '@everworker/oneringai';
+
+Connector.create({
+  name: 'deepseek-main',
+  vendor: Vendor.DeepSeek,
+  auth: { type: 'api_key', apiKey: process.env.DEEPSEEK_API_KEY! },
+});
+
+const official = Agent.create({
+  connector: 'deepseek-main',
+  model: LLM_MODELS[Vendor.DeepSeek].DEEPSEEK_V4_FLASH,
+});
+
+Connector.create({
+  name: 'deepseek-deepinfra',
+  vendor: Vendor.DeepSeek,
+  auth: { type: 'api_key', apiKey: process.env.DEEPINFRA_API_KEY! },
+  options: { deepseekHost: DEEPSEEK_HOSTS.DeepInfra },
+});
+```
+
+Available presets are `official`, `openrouter`, `together`, `fireworks`,
+`deepinfra`, `nvidia-nim`, and `azure-foundry`. Azure needs its resource
+endpoint in `baseURL`. For another OpenAI-compatible deployment, select
+`custom` and provide `baseURL`. You may force `deepseekTransport` to
+`responses` or `chat_completions`; `auto` is recommended. A canonical model
+name is mapped to the selected host's model ID, while a host-specific deployment
+ID passes through unchanged.
+
+The connector-backed `DeepSeekAPI` facade exposes `listModels()`,
+`createFimCompletion()`, and `getBalance()` without introducing a second source
+of credentials:
+
+```typescript
+import { DeepSeekAPI } from '@everworker/oneringai';
+
+const api = DeepSeekAPI.for('deepseek-main');
+const models = await api.listModels();
+const balance = await api.getBalance();
+api.destroy();
+```
+
+FIM and balance are first-party account APIs and intentionally reject
+third-party host presets. DeepSeek does not expose a first-party embeddings
+endpoint; choose a separate embedding connector for memory and RAG.
+
 ---
 
 ## Agent Features
@@ -15800,7 +15861,7 @@ await agent.run('Show me my recent emails');
 
 ## Model Registry
 
-The library includes registry schema v2 metadata for 88 text/realtime models,
+The library includes registry schema v2 metadata for 92 text/realtime models,
 plus separate TTS, STT, image, video, and embedding registries.
 
 ### Using the Model Registry

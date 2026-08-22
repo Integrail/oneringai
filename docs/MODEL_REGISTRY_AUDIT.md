@@ -1,8 +1,8 @@
-# Model Registry and Provider API Audit — 2026-08-08
+# Model Registry and Provider API Audit — 2026-08-11
 
 **Release:** 1.0.0
 
-This audit covers the first-party OpenAI, Anthropic, Google, and xAI model and
+This audit covers the first-party OpenAI, Anthropic, Google, xAI, and DeepSeek model and
 provider surfaces in OneRingAI. It includes text, realtime voice, TTS/STT,
 image, video, and embeddings. Official vendor documentation was treated as the
 source of truth; floating aliases and preview lifecycle notices were checked
@@ -19,6 +19,7 @@ against release notes as well as model pages.
 | Anthropic | Registry stopped before the current Claude 5 family | Missing Opus 5/Mythos 5/Fable 5 metadata, current 1M/128K limits, adaptive effort, and fast mode |
 | Google | `generateContent` only; older Gemini/media/embedding records | Missing Gemini 3.6/3.5 families, GA Interactions `steps` API, native 3.1 image models, current Veo/Omni/TTS, and multimodal Gemini Embedding 2 |
 | xAI | Text plus older Grok image/video adapters | Missing Grok 4.5/4.3/Build, current image/video pricing and request restrictions, dedicated TTS/STT, streaming audio, and Voice Agent Realtime/SIP credential helpers |
+| DeepSeek | Routed through the generic OpenAI Responses adapter with no registry entries | Chat-only models could be sent to an unsupported endpoint; full Responses reasoning was discarded; tool turns did not replay reasoning; current V4 models, hosted endpoints, FIM/balance, and real limits were absent |
 | Tests/docs | Exact counts and retired preview ids were embedded in tests and guides | Tests rewarded stale facts; README/User Guide described superseded model families and only OpenAI/Groq audio |
 
 ## Implemented status
@@ -57,6 +58,13 @@ Provider implementation now covers:
   documented 8–48 kHz PCM rate without weakening OpenAI's 24 kHz session type.
   Buffered TTS format metadata follows xAI's response content type when a
   provider-specific `output_format` overrides the normalized default.
+- DeepSeek now has a dedicated Chat Completions and Responses adapter. It
+  auto-routes first-party V4 Flash/Pro, preserves full reasoning through tool
+  loops, supports streaming, structured output, native web search, model
+  listing, FIM, balance, and strict beta tools, and reports cache/reasoning
+  usage. Host presets cover OpenRouter, Together, Fireworks, DeepInfra, NVIDIA
+  NIM, and Azure Foundry while keeping host limits separate from canonical
+  first-party metadata. The false first-party embeddings capability was removed.
 
 The library now requires Node.js 22 or newer. This matches the upgraded current
 OpenAI, Anthropic, and Google SDK baseline and is a deliberate package-level API
@@ -64,8 +72,8 @@ compatibility change.
 
 ## Current registry snapshot
 
-The text/realtime registry contains 88 records: OpenAI 48, Anthropic 15,
-Google 14, and xAI 11. Dedicated registries separately cover current image,
+The text/realtime registry contains 92 records: OpenAI 48, Anthropic 15,
+Google 14, xAI 11, and DeepSeek 4. Dedicated registries separately cover current image,
 video, TTS, STT, and embedding models, so those are not inflated into the text
 count.
 
@@ -79,6 +87,8 @@ Notable preferred/current families are:
   image/TTS, Veo/Omni, and Gemini Embedding 2.
 - xAI: Grok 4.5, Grok 4.3, Grok Build 0.1, Grok Imagine Image Quality,
   Grok Imagine Video 1.5, xAI TTS/STT, and Grok Voice Think Fast 2.0.
+- DeepSeek: V4 Flash and V4 Pro, plus explicit retired records for
+  `deepseek-chat` and `deepseek-reasoner` with migration targets.
 
 ## API migration notes
 
@@ -108,11 +118,16 @@ not missing model support.
 
 ## Validation completed
 
-- 6,381 unit tests across 284 files.
+- 6,408 unit tests across 288 files, including DeepSeek Chat, Responses,
+  streaming, host resolution, factory routing, reasoning replay, and registry
+  contracts.
 - 21 authenticated live checks: seven OpenAI Realtime protocols plus current
   GPT-5.6, Claude 5, Google Interactions/continuity/named-tool paths, native
   image/video/embedding media, Grok 4.5, Google/xAI STT, xAI TTS, and a 32 kHz
   PCM xAI Voice Agent credential/WebSocket flow.
+- DeepSeek authenticated integration calls remain credential-gated; the
+  default validation path uses deterministic SDK wire-contract tests and does
+  not print or require secrets.
 - Strict TypeScript, ESLint, ESM/CJS/declaration build, and public API reference
   generation.
 
@@ -140,3 +155,8 @@ not missing model support.
   [Voice Agent API](https://docs.x.ai/developers/model-capabilities/audio/voice-agent),
   [TTS](https://docs.x.ai/developers/model-capabilities/audio/text-to-speech),
   and [STT](https://docs.x.ai/developers/model-capabilities/audio/speech-to-text).
+- DeepSeek: [models and pricing](https://api-docs.deepseek.com/quick_start/pricing/),
+  [Responses API](https://api-docs.deepseek.com/guides/responses_api/),
+  [thinking mode](https://api-docs.deepseek.com/guides/thinking_mode/),
+  [context caching](https://api-docs.deepseek.com/guides/kv_cache/), and
+  [release updates](https://api-docs.deepseek.com/updates/).

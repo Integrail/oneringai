@@ -55,9 +55,9 @@ const TABLE: Array<Omit<VendorEntry, 'connectorName'>> = [
   {
     vendor: Vendor.DeepSeek,
     envVar: 'DEEPSEEK_API_KEY',
-    chatModel: 'deepseek-chat',
-    extractModel: 'deepseek-chat',
-    profileModel: 'deepseek-chat',
+    chatModel: 'deepseek-v4-flash',
+    extractModel: 'deepseek-v4-flash',
+    profileModel: 'deepseek-v4-flash',
   },
   {
     vendor: Vendor.Mistral,

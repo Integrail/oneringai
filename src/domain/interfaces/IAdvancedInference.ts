@@ -77,6 +77,8 @@ export type NativeToolRequest =
   | { capability: 'remote_mcp'; server: RemoteMcpDescriptor; options?: Record<string, unknown> };
 
 export interface AdvancedTextCapabilities {
+  /** Whether normalized reasoning must be replayed in stateless conversation history. */
+  reasoningHistory?: 'discard' | 'always' | 'when_tools_configured';
   promptCaching: {
     mode: PromptCachingMode;
     ttlModes: Array<'short' | 'extended'>;

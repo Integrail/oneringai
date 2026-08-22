@@ -28,7 +28,6 @@ export function createEmbeddingProvider(connector: Connector): IEmbeddingProvide
     case Vendor.Groq:
     case Vendor.Together:
     case Vendor.Mistral:
-    case Vendor.DeepSeek:
     case Vendor.Grok: {
       const config = extractOpenAICompatConfig(connector, vendor);
       config.baseURL = config.baseURL || getVendorDefaultBaseURL(vendor);
@@ -48,7 +47,7 @@ export function createEmbeddingProvider(connector: Connector): IEmbeddingProvide
     default:
       throw new Error(
         `No embedding provider available for vendor: ${vendor}. ` +
-        `Supported vendors: openai, google, ollama, groq, together, mistral, deepseek, grok, custom`
+        `Supported vendors: openai, google, ollama, groq, together, mistral, grok, custom`
       );
   }
 }

@@ -113,6 +113,43 @@ describe('OpenAI Realtime GA support', () => {
     expect(socket.sent[2]).toMatchObject({ type: 'conversation.item.create' });
   });
 
+  it('cancels an in-flight connection when close is called before token resolution', async () => {
+    const connector = createConnector();
+    let resolveToken!: (token: string) => void;
+    vi.spyOn(connector, 'getToken').mockReturnValue(new Promise((resolve) => {
+      resolveToken = resolve;
+    }));
+    const factory = vi.fn();
+    const client = new OpenAIRealtimeSession({ connector, webSocketFactory: factory });
+
+    const connecting = client.connect();
+    client.close(1000, 'Caller disconnected');
+    resolveToken('test-key');
+
+    await expect(connecting).rejects.toMatchObject({ name: 'AbortError' });
+    expect(factory).not.toHaveBeenCalled();
+  });
+
+  it('aborts immediately and closes a socket returned by a late async factory', async () => {
+    const socket = new MockSocket();
+    let resolveSocket!: (socket: MockSocket) => void;
+    const factory = vi.fn(() => new Promise<MockSocket>((resolve) => {
+      resolveSocket = resolve;
+    }));
+    const client = new OpenAIRealtimeSession({
+      connector: createConnector(),
+      webSocketFactory: factory,
+    });
+    const controller = new AbortController();
+    const connecting = client.connect({ signal: controller.signal });
+    await vi.waitFor(() => expect(factory).toHaveBeenCalledOnce());
+
+    controller.abort();
+    await expect(connecting).rejects.toMatchObject({ name: 'AbortError' });
+    resolveSocket(socket);
+    await vi.waitFor(() => expect(socket.close).toHaveBeenCalledWith(1000, 'Connect cancelled'));
+  });
+
   it('uses connector-defined WebSocket authentication', async () => {
     const headerConnector = Connector.create({
       name: 'realtime-custom-header',
