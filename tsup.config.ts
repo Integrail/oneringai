@@ -8,6 +8,8 @@ export default defineConfig([
       'shared/index': 'src/shared/index.ts',
       'capabilities/agents/index': 'src/capabilities/agents/index.ts',
       'capabilities/images/index': 'src/capabilities/images/index.ts',
+      'agent-runtime/index': 'src/agent-runtime/index.ts',
+      'agent-runtime/codex': 'src/agent-runtime/codex.ts',
     },
     format: ['esm', 'cjs'],
     dts: true,
@@ -18,7 +20,7 @@ export default defineConfig([
     target: 'node22',
     platform: 'node',
     outDir: 'dist',
-    external: ['cross-spawn'],
+    external: ['cross-spawn', '@openai/codex-sdk'],
     // Bundle MCP SDK to avoid subpath import resolution issues in Meteor
     noExternal: [
       '@modelcontextprotocol/sdk',

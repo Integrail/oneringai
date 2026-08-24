@@ -1,7 +1,7 @@
 {
   "name": "@everworker/oneringai",
-  "version": "1.0.1",
-  "description": "Unified AI agent library with multi-vendor text, image, video, speech, realtime voice, and agentic workflows",
+  "version": "1.1.0",
+  "description": "Unified TypeScript AI agent library with multi-vendor models, tools, memory, media, and pluggable OneRingAI/Codex agent runtimes",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -31,6 +31,16 @@
       "types": "./dist/capabilities/images/index.d.ts",
       "import": "./dist/capabilities/images/index.js",
       "require": "./dist/capabilities/images/index.cjs"
+    },
+    "./agent-runtime": {
+      "types": "./dist/agent-runtime/index.d.ts",
+      "import": "./dist/agent-runtime/index.js",
+      "require": "./dist/agent-runtime/index.cjs"
+    },
+    "./agent-runtime/codex": {
+      "types": "./dist/agent-runtime/codex.d.ts",
+      "import": "./dist/agent-runtime/codex.js",
+      "require": "./dist/agent-runtime/codex.cjs"
     }
   },
   "typesVersions": {
@@ -46,6 +56,12 @@
       ],
       "images": [
         "./dist/capabilities/images/index.d.ts"
+      ],
+      "agent-runtime": [
+        "./dist/agent-runtime/index.d.ts"
+      ],
+      "agent-runtime/codex": [
+        "./dist/agent-runtime/codex.d.ts"
       ]
     }
   },
@@ -63,6 +79,8 @@
     "docs/MEMORY_PREDICATES.md",
     "docs/MEMORY_SIGNALS.md",
     "docs/MODEL_REGISTRY_AUDIT.md",
+    "docs/designs/AGENT_RUNTIME.md",
+    "examples/agent-runtime-local.ts",
     "CHANGELOG.md",
     "LICENSE"
   ],
@@ -93,6 +111,7 @@
     "release:minor": "npm version minor --git-tag-version=true -m 'Release %s'",
     "release:major": "npm version major --git-tag-version=true -m 'Release %s'",
     "example:agent": "tsx examples/basic-agent.ts",
+    "example:agent-runtime": "tsx examples/agent-runtime-local.ts",
     "example:text": "tsx examples/simple-text.ts",
     "example:conversation": "tsx examples/multi-turn-conversation.ts",
     "example:chat": "tsx examples/interactive-chat.ts",
@@ -121,6 +140,7 @@
     "llm",
     "agents",
     "openai",
+    "codex",
     "anthropic",
     "claude",
     "gpt",
@@ -140,6 +160,8 @@
     "tool-calling",
     "function-calling",
     "agentic",
+    "agent-runtime",
+    "agent-sdk",
     "multi-vendor",
     "mcp",
     "model-context-protocol",
@@ -165,6 +187,7 @@
     "@google/genai": "^2.16.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@mozilla/readability": "^0.6.0",
+    "ajv": "^8.20.0",
     "cheerio": "^1.1.2",
     "clipboardy": "^5.0.2",
     "dotenv": "^17.2.3",
@@ -185,12 +208,13 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^9.9.0",
-    "@typescript-eslint/eslint-plugin": "^7.18.0",
-    "@typescript-eslint/parser": "^7.18.0",
+    "@openai/codex-sdk": "^0.149.0",
     "@types/jsdom": "^27.0.0",
     "@types/node": "^22.10.0",
     "@types/pngjs": "^6.0.5",
     "@types/turndown": "^5.0.6",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
     "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^8.56.0",
     "ts-morph": "^27.0.2",
@@ -200,10 +224,14 @@
     "vitest": "^1.2.0"
   },
   "peerDependencies": {
+    "@openai/codex-sdk": "^0.149.0",
     "@nut-tree-fork/nut-js": ">=4.0.0",
     "mongodb": ">=5.0.0"
   },
   "peerDependenciesMeta": {
+    "@openai/codex-sdk": {
+      "optional": true
+    },
     "@nut-tree-fork/nut-js": {
       "optional": true
     },

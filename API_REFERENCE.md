@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-08-11
+**Generated:** 2026-08-24
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -16,9 +16,10 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (11 items)
 - [Image Generation](#image-generation) (25 items)
 - [Video Generation](#video-generation) (23 items)
+- [Agent Runtime](#agent-runtime) (70 items)
 - [Task Agents](#task-agents) (115 items)
 - [Context Management](#context-management) (14 items)
-- [Session Management](#session-management) (56 items)
+- [Session Management](#session-management) (57 items)
 - [Tools & Function Calling](#tools-function-calling) (185 items)
 - [Streaming](#streaming) (30 items)
 - [Model Registry](#model-registry) (29 items)
@@ -6481,6 +6482,1691 @@ Video Model Registry
   }` | - |
 
 </details>
+
+---
+
+## Agent Runtime
+
+Run complete agent systems through vendor-neutral drivers, sessions, events, policies, and results
+
+### AgentBusyError `class`
+
+📍 [`src/agent-runtime/errors.ts:46`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(message: string = 'Agent session already has an active run')
+```
+
+**Parameters:**
+- `message`: `string` *(optional)* (default: `'Agent session already has an active run'`)
+
+</details>
+
+---
+
+### AgentCapabilityUnsupportedError `class`
+
+📍 [`src/agent-runtime/errors.ts:23`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(capability: string, reason?: string)
+```
+
+**Parameters:**
+- `capability`: `string`
+- `reason`: `string | undefined` *(optional)*
+
+</details>
+
+---
+
+### AgentDriverConfigurationError `class`
+
+📍 [`src/agent-runtime/errors.ts:17`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(message: string, cause?: Error)
+```
+
+**Parameters:**
+- `message`: `string`
+- `cause`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
+### AgentDriverNotFoundError `class`
+
+📍 [`src/agent-runtime/errors.ts:11`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(driverId: string)
+```
+
+**Parameters:**
+- `driverId`: `string`
+
+</details>
+
+---
+
+### AgentEventHistoryExpiredError `class`
+
+📍 [`src/agent-runtime/errors.ts:52`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(runId: string)
+```
+
+**Parameters:**
+- `runId`: `string`
+
+</details>
+
+---
+
+### AgentEventSubscriberOverflowError `class`
+
+📍 [`src/agent-runtime/errors.ts:58`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(runId: string)
+```
+
+**Parameters:**
+- `runId`: `string`
+
+</details>
+
+---
+
+### AgentNativeExecutionError `class`
+
+📍 [`src/agent-runtime/errors.ts:75`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(driverId: string, message: string, cause?: Error)
+```
+
+**Parameters:**
+- `driverId`: `string`
+- `message`: `string`
+- `cause`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
+### AgentPolicyUnsupportedError `class`
+
+📍 [`src/agent-runtime/errors.ts:34`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(message: string)
+```
+
+**Parameters:**
+- `message`: `string`
+
+</details>
+
+---
+
+### AgentRuntime `class`
+
+📍 [`src/agent-runtime/AgentRuntime.ts:17`](src/agent-runtime/AgentRuntime.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(options: AgentRuntimeOptions)
+```
+
+**Parameters:**
+- `options`: `AgentRuntimeOptions`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `agent()`
+
+```typescript
+agent(spec: RuntimeAgentSpec): RuntimeAgent
+```
+
+**Parameters:**
+- `spec`: `RuntimeAgentSpec`
+
+**Returns:** `RuntimeAgent`
+
+#### `destroy()`
+
+```typescript
+async destroy(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `backend` | `backend: AgentExecutionBackend` | - |
+| `ownsBackend` | `ownsBackend: boolean` | - |
+| `sessions` | `sessions: Set&lt;AgentSession&gt;` | - |
+
+</details>
+
+---
+
+### AgentRuntimeDependencyError `class`
+
+📍 [`src/agent-runtime/errors.ts:81`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(dependency: string, message?: string, cause?: Error)
+```
+
+**Parameters:**
+- `dependency`: `string`
+- `message`: `string | undefined` *(optional)*
+- `cause`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
+### AgentRunTimeoutError `class`
+
+📍 [`src/agent-runtime/errors.ts:69`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(timeoutMs: number)
+```
+
+**Parameters:**
+- `timeoutMs`: `number`
+
+</details>
+
+---
+
+### AgentStructuredOutputError `class`
+
+📍 [`src/agent-runtime/errors.ts:93`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(message: string, cause?: Error)
+```
+
+**Parameters:**
+- `message`: `string`
+- `cause`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
+### AgentWorkspaceError `class`
+
+📍 [`src/agent-runtime/errors.ts:40`](src/agent-runtime/errors.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(message: string, cause?: Error)
+```
+
+**Parameters:**
+- `message`: `string`
+- `cause`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
+### CodexSdkDriver `class`
+
+📍 [`src/agent-runtime/drivers/CodexSdkDriver.ts:83`](src/agent-runtime/drivers/CodexSdkDriver.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(private readonly options: CodexSdkDriverOptions =
+```
+
+**Parameters:**
+- `options`: `CodexSdkDriverOptions` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `inspect()`
+
+```typescript
+async inspect(context: Parameters&lt;AgentDriver['inspect']&gt;[0]): Promise&lt;DriverDescriptor&gt;
+```
+
+**Parameters:**
+- `context`: `DriverInspectionContext`
+
+**Returns:** `Promise&lt;DriverDescriptor&gt;`
+
+#### `openSession()`
+
+```typescript
+async openSession(request: DriverOpenSessionRequest): Promise&lt;DriverSession&gt;
+```
+
+**Parameters:**
+- `request`: `DriverOpenSessionRequest`
+
+**Returns:** `Promise&lt;DriverSession&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: "openai.codex.sdk"` | - |
+| `modelReasoningEfforts` | `modelReasoningEfforts: Readonly&lt;Record&lt;string, ReadonlySet&lt;ModelReasoningEffort&gt;&gt;&gt;` | - |
+
+</details>
+
+---
+
+### LocalExecutionBackend `class`
+
+📍 [`src/agent-runtime/LocalExecutionBackend.ts:51`](src/agent-runtime/LocalExecutionBackend.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(options: LocalExecutionBackendOptions)
+```
+
+**Parameters:**
+- `options`: `LocalExecutionBackendOptions`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `inspect()`
+
+```typescript
+async inspect(
+    spec: Readonly&lt;RuntimeAgentSpec&gt;,
+    request: AgentInspectionRequest =
+```
+
+**Parameters:**
+- `spec`: `Readonly&lt;RuntimeAgentSpec&gt;`
+- `request`: `AgentInspectionRequest` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;ResolvedAgentCapabilities&gt;`
+
+#### `openSession()`
+
+```typescript
+async openSession(
+    spec: Readonly&lt;RuntimeAgentSpec&gt;,
+    options: OpenAgentSessionOptions,
+  ): Promise&lt;AgentSession&gt;
+```
+
+**Parameters:**
+- `spec`: `Readonly&lt;RuntimeAgentSpec&gt;`
+- `options`: `OpenAgentSessionOptions`
+
+**Returns:** `Promise&lt;AgentSession&gt;`
+
+#### `destroy()`
+
+```typescript
+async destroy(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `drivers` | `drivers: Map&lt;string, AgentDriver&gt;` | - |
+| `connectorRegistry` | `connectorRegistry: IConnectorRegistry` | - |
+| `maxSessionJournalBytes` | `maxSessionJournalBytes: number` | - |
+| `sessions` | `sessions: Set&lt;LocalAgentSession&gt;` | - |
+| `workspaceLeases` | `workspaceLeases: Map&lt;string, string&gt;` | - |
+
+</details>
+
+---
+
+### OneRingAIDriver `class`
+
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:81`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(private readonly options: OneRingAIDriverOptions =
+```
+
+**Parameters:**
+- `options`: `OneRingAIDriverOptions` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `inspect()`
+
+```typescript
+async inspect(context: Parameters&lt;AgentDriver['inspect']&gt;[0]): Promise&lt;DriverDescriptor&gt;
+```
+
+**Parameters:**
+- `context`: `DriverInspectionContext`
+
+**Returns:** `Promise&lt;DriverDescriptor&gt;`
+
+#### `openSession()`
+
+```typescript
+async openSession(request: DriverOpenSessionRequest): Promise&lt;DriverSession&gt;
+```
+
+**Parameters:**
+- `request`: `DriverOpenSessionRequest`
+
+**Returns:** `Promise&lt;DriverSession&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: "oneringai.agent"` | - |
+| `activeBindings` | `activeBindings: Set&lt;string&gt;` | - |
+| `modelReasoningControls` | `modelReasoningControls: Readonly&lt;Record&lt;string, NormalizedReasoningControls&gt;&gt;` | - |
+
+</details>
+
+---
+
+### AgentCapability `interface`
+
+📍 [`src/agent-runtime/types.ts:40`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: AgentCapabilityId;` | - |
+| `support` | `support: CapabilitySupport;` | - |
+| `constraints?` | `constraints?: JsonObject;` | - |
+| `reason?` | `reason?: string;` | - |
+
+</details>
+
+---
+
+### AgentCapabilityRequirement `interface`
+
+📍 [`src/agent-runtime/types.ts:47`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: AgentCapabilityId;` | - |
+| `minimum?` | `minimum?: Exclude&lt;CapabilitySupport, 'unsupported'&gt;;` | - |
+
+</details>
+
+---
+
+### AgentDriver `interface`
+
+📍 [`src/agent-runtime/AgentDriver.ts:108`](src/agent-runtime/AgentDriver.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `inspect()`
+
+```typescript
+inspect(context: DriverInspectionContext): Promise&lt;DriverDescriptor&gt;;
+```
+
+**Parameters:**
+- `context`: `DriverInspectionContext`
+
+**Returns:** `Promise&lt;DriverDescriptor&gt;`
+
+#### `openSession()`
+
+```typescript
+openSession(request: DriverOpenSessionRequest): Promise&lt;DriverSession&gt;;
+```
+
+**Parameters:**
+- `request`: `DriverOpenSessionRequest`
+
+**Returns:** `Promise&lt;DriverSession&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `readonly id: string;` | - |
+
+</details>
+
+---
+
+### AgentEventSubscriptionOptions `interface`
+
+📍 [`src/agent-runtime/types.ts:225`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `afterSequence?` | `afterSequence?: number;` | Replay only events after this sequence. Throws when that history was evicted. |
+
+</details>
+
+---
+
+### AgentExecutionBackend `interface`
+
+📍 [`src/agent-runtime/AgentExecutionBackend.ts:10`](src/agent-runtime/AgentExecutionBackend.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `inspect()`
+
+```typescript
+inspect(
+    spec: Readonly&lt;RuntimeAgentSpec&gt;,
+    request?: AgentInspectionRequest,
+  ): Promise&lt;ResolvedAgentCapabilities&gt;;
+```
+
+**Parameters:**
+- `spec`: `Readonly&lt;RuntimeAgentSpec&gt;`
+- `request`: `AgentInspectionRequest | undefined` *(optional)*
+
+**Returns:** `Promise&lt;ResolvedAgentCapabilities&gt;`
+
+#### `openSession()`
+
+```typescript
+openSession(
+    spec: Readonly&lt;RuntimeAgentSpec&gt;,
+    options: OpenAgentSessionOptions,
+  ): Promise&lt;AgentSession&gt;;
+```
+
+**Parameters:**
+- `spec`: `Readonly&lt;RuntimeAgentSpec&gt;`
+- `options`: `OpenAgentSessionOptions`
+
+**Returns:** `Promise&lt;AgentSession&gt;`
+
+</details>
+
+---
+
+### AgentExecutionPolicy `interface`
+
+📍 [`src/agent-runtime/types.ts:110`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `filesystem` | `filesystem: 'denied' | 'read-only' | 'workspace-write';` | - |
+| `commands` | `commands: 'denied' | 'sandboxed';` | - |
+| `sandboxNetwork` | `sandboxNetwork: 'denied' | 'allowed';` | - |
+| `providerWebSearch` | `providerWebSearch: 'denied' | 'allowed';` | - |
+| `approvals` | `approvals: 'deny' | 'interactive';` | - |
+| `limits?` | `limits?: {
+    wallTimeMs?: number;
+    eventBufferBytes?: number;
+    outputBytes?: number;
+    artifactBytes?: number;
+  };` | - |
+
+</details>
+
+---
+
+### AgentInspectionRequest `interface`
+
+📍 [`src/agent-runtime/types.ts:124`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `context?` | `context?: TrustedRuntimeContext;` | - |
+| `workspace?` | `workspace?: WorkspaceRequest;` | - |
+| `policy?` | `policy?: AgentExecutionPolicy;` | - |
+| `requiredCapabilities?` | `requiredCapabilities?: AgentCapabilityRequirement[];` | - |
+
+</details>
+
+---
+
+### AgentInteractionResponse `interface`
+
+📍 [`src/agent-runtime/types.ts:230`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `decision?` | `decision?: 'accept' | 'accept-for-session' | 'decline' | 'cancel';` | - |
+| `value?` | `value?: JsonValue;` | - |
+
+</details>
+
+---
+
+### AgentObservationOptions `interface`
+
+📍 [`src/agent-runtime/types.ts:145`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `mode?` | `mode?: 'live' | 'final-only';` | Drivers are always pumped internally; this controls which events callers receive and retain. |
+| `detail?` | `detail?: 'status' | 'activity' | 'reasoning';` | `reasoning` includes every reasoning event the vendor makes available. |
+
+</details>
+
+---
+
+### AgentRun `interface`
+
+📍 [`src/agent-runtime/types.ts:284`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `events()`
+
+```typescript
+events(options?: AgentEventSubscriptionOptions): AsyncIterable&lt;AgentRunEvent&gt;;
+```
+
+**Parameters:**
+- `options`: `AgentEventSubscriptionOptions | undefined` *(optional)*
+
+**Returns:** `AsyncIterable&lt;AgentRunEvent&gt;`
+
+#### `cancel()`
+
+```typescript
+cancel(reason?: string): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `reason`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `steer()`
+
+```typescript
+steer(input: AgentRunInput): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `input`: `AgentRunInput`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `respondToInteraction()`
+
+```typescript
+respondToInteraction(interactionId: string, response: AgentInteractionResponse): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `interactionId`: `string`
+- `response`: `AgentInteractionResponse`
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `readonly id: string;` | - |
+| `sessionId` | `readonly sessionId: string;` | - |
+| `result` | `readonly result: Promise&lt;AgentRunResult&gt;;` | - |
+
+</details>
+
+---
+
+### AgentRunErrorInfo `interface`
+
+📍 [`src/agent-runtime/types.ts:245`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `code` | `code: string;` | - |
+| `message` | `message: string;` | - |
+| `retryable?` | `retryable?: boolean;` | - |
+| `details?` | `details?: JsonObject;` | - |
+
+</details>
+
+---
+
+### AgentRunEvent `interface`
+
+📍 [`src/agent-runtime/types.ts:216`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `runId` | `readonly runId: string;` | - |
+| `sessionId` | `readonly sessionId: string;` | - |
+| `sequence` | `readonly sequence: number;` | - |
+| `timestamp` | `readonly timestamp: string;` | - |
+| `type` | `readonly type: AgentRunEventType;` | - |
+| `data` | `readonly data: Readonly&lt;JsonObject&gt;;` | - |
+
+</details>
+
+---
+
+### AgentRunOptions `interface`
+
+📍 [`src/agent-runtime/types.ts:173`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `signal?` | `signal?: AbortSignal;` | - |
+| `model?` | `model?: string;` | Per-run override. The driver must advertise run.model_override. |
+| `reasoning?` | `reasoning?: RuntimeReasoningConfig;` | Per-run override. The driver must advertise run.reasoning_override. |
+| `responseFormat?` | `responseFormat?: RuntimeResponseFormat;` | JSON Schema output requires the driver to advertise run.structured_output. |
+| `metadata?` | `metadata?: JsonObject;` | - |
+
+</details>
+
+---
+
+### AgentRunResult `interface`
+
+📍 [`src/agent-runtime/types.ts:266`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `runId` | `runId: string;` | - |
+| `sessionId` | `sessionId: string;` | - |
+| `status` | `status: AgentRunStatus;` | - |
+| `outputText` | `outputText: string;` | - |
+| `outputParsed?` | `outputParsed?: JsonValue;` | - |
+| `artifacts` | `artifacts: AgentArtifact[];` | - |
+| `usage?` | `usage?: RuntimeUsage;` | - |
+| `finishReason?` | `finishReason?: string;` | - |
+| `error?` | `error?: AgentRunErrorInfo;` | - |
+| `configuration?` | `configuration?: ResolvedAgentConfiguration;` | - |
+| `enforcement?` | `enforcement?: Record&lt;string, 'native' | 'emulated'&gt;;` | - |
+| `native?` | `native?: {
+    driver: string;
+    sanitized: JsonValue;
+  };` | - |
+
+</details>
+
+---
+
+### AgentRuntimeOptions `interface`
+
+📍 [`src/agent-runtime/AgentRuntime.ts:12`](src/agent-runtime/AgentRuntime.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `backend` | `backend: AgentExecutionBackend;` | - |
+| `backendOwnership?` | `backendOwnership?: 'owned' | 'borrowed';` | - |
+
+</details>
+
+---
+
+### AgentSession `interface`
+
+📍 [`src/agent-runtime/types.ts:295`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `run()`
+
+```typescript
+run(input: AgentRunInput, options?: AgentRunOptions): Promise&lt;AgentRun&gt;;
+```
+
+**Parameters:**
+- `input`: `AgentRunInput`
+- `options`: `AgentRunOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;AgentRun&gt;`
+
+#### `cancelActiveRun()`
+
+```typescript
+cancelActiveRun(reason?: string): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `reason`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `readonly id: string;` | - |
+| `agentId` | `readonly agentId: string;` | - |
+| `capabilities` | `readonly capabilities: ResolvedAgentCapabilities;` | - |
+| `state` | `readonly state: AgentSessionState;` | - |
+
+</details>
+
+---
+
+### CodexSdkDriverOptions `interface`
+
+📍 [`src/agent-runtime/drivers/CodexSdkDriver.ts:68`](src/agent-runtime/drivers/CodexSdkDriver.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `loadSdk?` | `loadSdk?: () =&gt; Promise&lt;{ Codex: CodexConstructor }&gt;;` | Test/embedding seam. Ordinary applications should use the bundled SDK loader. |
+| `modelReasoningEfforts?` | `modelReasoningEfforts?: Readonly&lt;Record&lt;string, readonly ModelReasoningEffort[]&gt;&gt;;` | Verified model/effort combinations for models newer than the bundled map.
+Explicit efforts fail closed when a model has no verified entry. |
+
+</details>
+
+---
+
+### DriverDescriptor `interface`
+
+📍 [`src/agent-runtime/AgentDriver.ts:32`](src/agent-runtime/AgentDriver.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `capabilities` | `capabilities: ResolvedAgentCapabilities;` | - |
+
+</details>
+
+---
+
+### DriverEvent `interface`
+
+📍 [`src/agent-runtime/AgentDriver.ts:55`](src/agent-runtime/AgentDriver.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type:
+    | 'agent.message.delta'
+    | 'agent.message.completed'
+    | 'reasoning.delta'
+    | 'reasoning.completed'
+    | 'plan.updated'
+    | 'agent.iteration.completed'
+    | 'command.started'
+    | 'command.output.delta'
+    | 'command.completed'
+    | 'file.change.started'
+    | 'file.changed'
+    | 'tool.started'
+    | 'tool.progress'
+    | 'tool.completed'
+    | 'interaction.requested'
+    | 'interaction.resolved'
+    | 'usage.updated'
+    | 'diagnostic';` | - |
+| `data` | `data: JsonObject;` | - |
+| `timestamp?` | `timestamp?: string;` | - |
+
+</details>
+
+---
+
+### DriverInspectionContext `interface`
+
+📍 [`src/agent-runtime/AgentDriver.ts:23`](src/agent-runtime/AgentDriver.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `spec` | `spec: Readonly&lt;RuntimeAgentSpec&gt;;` | - |
+| `context?` | `context?: TrustedRuntimeContext;` | - |
+| `workspace?` | `workspace?: ResolvedWorkspace;` | - |
+| `policy?` | `policy?: AgentExecutionPolicy;` | - |
+| `requiredCapabilities` | `requiredCapabilities: AgentCapabilityRequirement[];` | - |
+| `connectorRegistry` | `connectorRegistry: IConnectorRegistry;` | - |
+
+</details>
+
+---
+
+### DriverOpenSessionRequest `interface`
+
+📍 [`src/agent-runtime/AgentDriver.ts:36`](src/agent-runtime/AgentDriver.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `spec` | `spec: Readonly&lt;RuntimeAgentSpec&gt;;` | - |
+| `context` | `context: TrustedRuntimeContext;` | - |
+| `workspace?` | `workspace?: ResolvedWorkspace;` | - |
+| `policy` | `policy: AgentExecutionPolicy;` | - |
+| `requiredCapabilities` | `requiredCapabilities: AgentCapabilityRequirement[];` | - |
+| `connectorRegistry` | `connectorRegistry: IConnectorRegistry;` | - |
+| `metadata?` | `metadata?: JsonObject;` | - |
+
+</details>
+
+---
+
+### DriverRun `interface`
+
+📍 [`src/agent-runtime/AgentDriver.ts:92`](src/agent-runtime/AgentDriver.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `cancel()`
+
+Requests cancellation; callers confirm termination through `result` and event completion.
+
+```typescript
+cancel(reason?: string): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `reason`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `steer()?`
+
+```typescript
+steer?(input: AgentRunInput): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `input`: `AgentRunInput`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `respondToInteraction()?`
+
+```typescript
+respondToInteraction?(interactionId: string, response: AgentInteractionResponse): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `interactionId`: `string`
+- `response`: `AgentInteractionResponse`
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `events` | `readonly events: AsyncIterable&lt;DriverEvent&gt;;` | - |
+| `result` | `readonly result: Promise&lt;DriverRunResult&gt;;` | Settles only after native execution is terminal and can no longer mutate its workspace. |
+
+</details>
+
+---
+
+### DriverRunRequest `interface`
+
+📍 [`src/agent-runtime/AgentDriver.ts:46`](src/agent-runtime/AgentDriver.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `input` | `input: AgentRunInput;` | - |
+| `model?` | `model?: string;` | - |
+| `reasoning?` | `reasoning?: RuntimeReasoningConfig;` | - |
+| `responseFormat?` | `responseFormat?: RuntimeResponseFormat;` | - |
+| `signal` | `signal: AbortSignal;` | - |
+| `metadata?` | `metadata?: JsonObject;` | - |
+
+</details>
+
+---
+
+### DriverRunResult `interface`
+
+📍 [`src/agent-runtime/AgentDriver.ts:79`](src/agent-runtime/AgentDriver.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `status` | `status: AgentRunStatus;` | - |
+| `outputText` | `outputText: string;` | - |
+| `outputParsed?` | `outputParsed?: JsonValue;` | - |
+| `artifacts?` | `artifacts?: AgentArtifact[];` | - |
+| `usage?` | `usage?: RuntimeUsage;` | - |
+| `finishReason?` | `finishReason?: string;` | - |
+| `error?` | `error?: AgentRunErrorInfo;` | - |
+| `configuration?` | `configuration?: ResolvedAgentConfiguration;` | - |
+| `enforcement?` | `enforcement?: Record&lt;string, 'native' | 'emulated'&gt;;` | - |
+| `native?` | `native?: JsonValue;` | - |
+
+</details>
+
+---
+
+### DriverSession `interface`
+
+📍 [`src/agent-runtime/AgentDriver.ts:102`](src/agent-runtime/AgentDriver.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `run()`
+
+```typescript
+run(request: DriverRunRequest): Promise&lt;DriverRun&gt;;
+```
+
+**Parameters:**
+- `request`: `DriverRunRequest`
+
+**Returns:** `Promise&lt;DriverRun&gt;`
+
+#### `cancelActiveRun()`
+
+```typescript
+cancelActiveRun(reason?: string): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `reason`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `nativeSessionId?` | `readonly nativeSessionId?: string;` | - |
+
+</details>
+
+---
+
+### LocalAgentFactoryContext `interface`
+
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:47`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `spec` | `spec: Readonly&lt;RuntimeAgentSpec&gt;;` | - |
+| `context` | `context: TrustedRuntimeContext;` | - |
+| `workspaceRoot?` | `workspaceRoot?: string;` | - |
+| `policy` | `policy: DriverOpenSessionRequest['policy'];` | - |
+
+</details>
+
+---
+
+### LocalExecutionBackendOptions `interface`
+
+📍 [`src/agent-runtime/LocalExecutionBackend.ts:45`](src/agent-runtime/LocalExecutionBackend.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `drivers` | `drivers: AgentDriver[];` | - |
+| `connectorRegistry?` | `connectorRegistry?: IConnectorRegistry;` | - |
+| `maxSessionJournalBytes?` | `maxSessionJournalBytes?: number;` | - |
+
+</details>
+
+---
+
+### OneRingAgentBinding `interface`
+
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:54`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `agent` | `agent: Agent;` | - |
+| `ownership?` | `ownership?: 'borrowed' | 'owned';` | - |
+
+</details>
+
+---
+
+### OneRingAIDriverOptions `interface`
+
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:68`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `definitionStorage?` | `definitionStorage?: IAgentDefinitionStorage;` | - |
+| `bindings?` | `bindings?: Record&lt;string, OneRingAgentBinding&gt;;` | - |
+| `factories?` | `factories?: Record&lt;string, (context: LocalAgentFactoryContext) =&gt; Agent | Promise&lt;Agent&gt;&gt;;` | - |
+| `modelReasoningControls?` | `modelReasoningControls?: Readonly&lt;Record&lt;string, OneRingModelReasoningControls&gt;&gt;;` | Verified controls for models not covered by the bundled map. |
+| `trustAgentPolicy?` | `trustAgentPolicy?: boolean;` | Explicit host assertion that every supplied/stored agent's tools and
+PermissionPolicyManager already enforce the runtime policy. |
+
+</details>
+
+---
+
+### OneRingModelReasoningControls `interface`
+
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:59`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `efforts?` | `efforts?: readonly RuntimeReasoningEffort[];` | Verified model-specific effort values accepted by the underlying provider. |
+| `supportsDisabled?` | `supportsDisabled?: boolean;` | True only when `thinking.enabled: false` is natively enforceable. |
+| `supportsBudgetTokens?` | `supportsBudgetTokens?: boolean;` | True only when a fixed reasoning-token budget is natively enforced. |
+
+</details>
+
+---
+
+### OpenAgentSessionOptions `interface`
+
+📍 [`src/agent-runtime/types.ts:131`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `context` | `context: TrustedRuntimeContext;` | - |
+| `workspace?` | `workspace?: WorkspaceRequest;` | - |
+| `policy` | `policy: AgentExecutionPolicy;` | - |
+| `observation?` | `observation?: AgentObservationOptions;` | Live observation is independent from approvals and intervention. |
+| `controlMode?` | `controlMode?: AgentControlMode;` | Observe-only is the portable default; steerable sessions require run.steer. |
+| `requiredCapabilities?` | `requiredCapabilities?: AgentCapabilityRequirement[];` | - |
+| `metadata?` | `metadata?: JsonObject;` | - |
+
+</details>
+
+---
+
+### ResolvedAgentCapabilities `interface`
+
+📍 [`src/agent-runtime/types.ts:52`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `driverId` | `driverId: string;` | - |
+| `capabilities` | `capabilities: Record&lt;string, AgentCapability&gt;;` | - |
+| `configuration?` | `configuration?: ResolvedAgentConfiguration;` | - |
+
+</details>
+
+---
+
+### ResolvedAgentConfiguration `interface`
+
+📍 [`src/agent-runtime/types.ts:75`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `model?` | `model?: string;` | - |
+| `reasoning?` | `reasoning?: RuntimeReasoningConfig;` | - |
+
+</details>
+
+---
+
+### ResolvedWorkspace `interface`
+
+📍 [`src/agent-runtime/types.ts:104`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'local-directory';` | - |
+| `root` | `root: string;` | - |
+| `identity` | `identity: string;` | - |
+
+</details>
+
+---
+
+### RuntimeAgent `interface`
+
+📍 [`src/agent-runtime/types.ts:305`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `inspect()`
+
+```typescript
+inspect(request?: AgentInspectionRequest): Promise&lt;ResolvedAgentCapabilities&gt;;
+```
+
+**Parameters:**
+- `request`: `AgentInspectionRequest | undefined` *(optional)*
+
+**Returns:** `Promise&lt;ResolvedAgentCapabilities&gt;`
+
+#### `openSession()`
+
+```typescript
+openSession(options: OpenAgentSessionOptions): Promise&lt;AgentSession&gt;;
+```
+
+**Parameters:**
+- `options`: `OpenAgentSessionOptions`
+
+**Returns:** `Promise&lt;AgentSession&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `spec` | `readonly spec: Readonly&lt;RuntimeAgentSpec&gt;;` | - |
+
+</details>
+
+---
+
+### RuntimeAgentSpec `interface`
+
+📍 [`src/agent-runtime/types.ts:80`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+| `name?` | `name?: string;` | - |
+| `driver` | `driver: string;` | - |
+| `connector?` | `connector?: string;` | - |
+| `model?` | `model?: string;` | - |
+| `reasoning?` | `reasoning?: RuntimeReasoningConfig;` | - |
+| `instructions?` | `instructions?: string;` | - |
+| `driverConfig?` | `driverConfig?: JsonObject;` | - |
+| `requiredCapabilities?` | `requiredCapabilities?: AgentCapabilityRequirement[];` | - |
+| `metadata?` | `metadata?: JsonObject;` | - |
+
+</details>
+
+---
+
+### RuntimeReasoningConfig `interface`
+
+📍 [`src/agent-runtime/types.ts:68`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `enabled?` | `enabled?: boolean;` | Defaults to true when a reasoning object is supplied. |
+| `effort?` | `effort?: RuntimeReasoningEffort;` | - |
+| `budgetTokens?` | `budgetTokens?: number;` | - |
+
+</details>
+
+---
+
+### RuntimeUsage `interface`
+
+📍 [`src/agent-runtime/types.ts:235`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `inputTokens?` | `inputTokens?: number;` | - |
+| `cachedInputTokens?` | `cachedInputTokens?: number;` | - |
+| `cacheWriteInputTokens?` | `cacheWriteInputTokens?: number;` | - |
+| `outputTokens?` | `outputTokens?: number;` | - |
+| `reasoningTokens?` | `reasoningTokens?: number;` | - |
+| `totalTokens?` | `totalTokens?: number;` | - |
+| `native?` | `native?: JsonObject;` | - |
+
+</details>
+
+---
+
+### TrustedRuntimeContext `interface`
+
+📍 [`src/agent-runtime/types.ts:93`](src/agent-runtime/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `tenantId?` | `tenantId?: string;` | - |
+| `userId?` | `userId?: string;` | - |
+| `groupId?` | `groupId?: string;` | - |
+| `metadata?` | `metadata?: JsonObject;` | - |
+
+</details>
+
+---
+
+### AgentArtifact `type`
+
+📍 [`src/agent-runtime/types.ts:252`](src/agent-runtime/types.ts)
+
+```typescript
+type AgentArtifact = | {
+      type: 'workspace-change';
+      path: string;
+      change: 'created' | 'modified' | 'deleted';
+      patch?: string;
+    }
+  | {
+      type: 'reference';
+      name: string;
+      mediaType?: string;
+      reference: string;
+    }
+```
+
+---
+
+### AgentCapabilityId `type`
+
+📍 [`src/agent-runtime/types.ts:13`](src/agent-runtime/types.ts)
+
+```typescript
+type AgentCapabilityId = | 'session.continue'
+  | 'session.restore'
+  | 'run.cancel'
+  | 'run.structured_output'
+  | 'run.model_override'
+  | 'run.reasoning_override'
+  | 'run.interaction'
+  | 'run.approval'
+  | 'run.user_input'
+  | 'run.steer'
+  | 'input.image'
+  | 'event.live'
+  | 'event.message'
+  | 'event.reasoning'
+  | 'event.plan'
+  | 'event.command'
+  | 'event.command_output'
+  | 'event.file_change'
+  | 'event.tool'
+  | 'event.tool_progress'
+  | 'isolation.workspace'
+  | 'isolation.tenant'
+  | (string & {})
+```
+
+---
+
+### AgentControlMode `type`
+
+📍 [`src/agent-runtime/types.ts:143`](src/agent-runtime/types.ts)
+
+```typescript
+type AgentControlMode = 'observe-only' | 'steerable'
+```
+
+---
+
+### AgentInputPart `type`
+
+📍 [`src/agent-runtime/types.ts:159`](src/agent-runtime/types.ts)
+
+```typescript
+type AgentInputPart = | { type: 'text'; text: string }
+  /** Local image input; requires the driver to advertise input.image. */
+  | { type: 'workspace-file'; path: string; mediaType?: string }
+```
+
+---
+
+### AgentRunEventType `type`
+
+📍 [`src/agent-runtime/types.ts:194`](src/agent-runtime/types.ts)
+
+```typescript
+type AgentRunEventType = | 'run.started'
+  | 'agent.message.delta'
+  | 'agent.message.completed'
+  | 'reasoning.delta'
+  | 'reasoning.completed'
+  | 'plan.updated'
+  | 'agent.iteration.completed'
+  | 'command.started'
+  | 'command.output.delta'
+  | 'command.completed'
+  | 'file.change.started'
+  | 'file.changed'
+  | 'tool.started'
+  | 'tool.progress'
+  | 'tool.completed'
+  | 'interaction.requested'
+  | 'interaction.resolved'
+  | 'usage.updated'
+  | 'diagnostic'
+  | 'run.finished'
+```
+
+---
+
+### AgentRunInput `type`
+
+📍 [`src/agent-runtime/types.ts:152`](src/agent-runtime/types.ts)
+
+```typescript
+type AgentRunInput = | string
+  | {
+      parts: AgentInputPart[];
+      metadata?: JsonObject;
+    }
+```
+
+---
+
+### AgentRunStatus `type`
+
+📍 [`src/agent-runtime/types.ts:192`](src/agent-runtime/types.ts)
+
+```typescript
+type AgentRunStatus = 'completed' | 'failed' | 'cancelled' | 'incomplete'
+```
+
+---
+
+### AgentSessionState `type`
+
+📍 [`src/agent-runtime/types.ts:184`](src/agent-runtime/types.ts)
+
+```typescript
+type AgentSessionState = | 'opening'
+  | 'ready'
+  | 'running'
+  | 'failed'
+  | 'destroying'
+  | 'destroyed'
+```
+
+---
+
+### CapabilitySupport `type`
+
+📍 [`src/agent-runtime/types.ts:38`](src/agent-runtime/types.ts)
+
+```typescript
+type CapabilitySupport = 'native' | 'emulated' | 'unsupported'
+```
+
+---
+
+### JsonObject `type`
+
+📍 [`src/agent-runtime/types.ts:11`](src/agent-runtime/types.ts)
+
+```typescript
+type JsonObject = { [key: string]: JsonValue }
+```
+
+---
+
+### JsonValue `type`
+
+📍 [`src/agent-runtime/types.ts:3`](src/agent-runtime/types.ts)
+
+```typescript
+type JsonValue = | null
+  | boolean
+  | number
+  | string
+  | JsonValue[]
+  | { [key: string]: JsonValue }
+```
+
+---
+
+### OneRingAgentSource `type`
+
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:42`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+
+```typescript
+type OneRingAgentSource = | { type: 'stored-definition'; agentId: string }
+  | { type: 'binding'; name: string }
+  | { type: 'factory'; name: string }
+```
+
+---
+
+### RuntimeReasoningEffort `type`
+
+📍 [`src/agent-runtime/types.ts:58`](src/agent-runtime/types.ts)
+
+```typescript
+type RuntimeReasoningEffort = | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max'
+  | 'ultra'
+```
+
+---
+
+### RuntimeResponseFormat `type`
+
+📍 [`src/agent-runtime/types.ts:164`](src/agent-runtime/types.ts)
+
+```typescript
+type RuntimeResponseFormat = | { type: 'text' }
+  | {
+      type: 'json_schema';
+      name?: string;
+      schema: JsonObject;
+      strict?: boolean;
+    }
+```
+
+---
+
+### WorkspaceRequest `type`
+
+📍 [`src/agent-runtime/types.ts:100`](src/agent-runtime/types.ts)
+
+```typescript
+type WorkspaceRequest = | { type: 'local-directory'; path: string }
+  | { type: 'managed'; reference: string }
+```
 
 ---
 
@@ -16991,7 +18677,7 @@ override updateSession(
 
 ### OpenAIRealtimeSession `class`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:57`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:64`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
 
 Connector-first, server-side WebSocket client for OpenAI's GA Realtime API.
 It intentionally exposes the raw event stream while providing helpers for
@@ -17017,8 +18703,11 @@ constructor(options: OpenAIRealtimeSessionOptions)
 #### `connect()`
 
 ```typescript
-async connect(): Promise&lt;OpenAIRealtimeServerEvent&gt;
+async connect(options: OpenAIRealtimeConnectOptions =
 ```
+
+**Parameters:**
+- `options`: `OpenAIRealtimeConnectOptions` *(optional)* (default: `{}`)
 
 **Returns:** `Promise&lt;OpenAIRealtimeServerEvent&gt;`
 
@@ -17172,6 +18861,7 @@ on&lt;K extends keyof OpenAIRealtimeSessionEvents&gt;(event: K, handler: OpenAIR
 | `options` | `options: OpenAIRealtimeSessionOptions` | - |
 | `socket` | `socket: WebSocketLike | null` | - |
 | `connected` | `connected: boolean` | - |
+| `connectAbortController` | `connectAbortController: AbortController | null` | - |
 | `inputAudioTransport` | `inputAudioTransport: "json" | "binary"` | - |
 
 </details>
@@ -17879,6 +19569,21 @@ Unified agent storage interface
 
 ---
 
+### OpenAIRealtimeConnectOptions `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:47`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `signal?` | `signal?: AbortSignal;` | - |
+
+</details>
+
+---
+
 ### OpenAIRealtimeSessionConfig `interface`
 
 📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:101`](src/capabilities/voice/openai/RealtimeTypes.ts)
@@ -17934,7 +19639,7 @@ Unified agent storage interface
 
 ### OpenAIRealtimeSessionEvents `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:44`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:51`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -17971,7 +19676,10 @@ Unified agent storage interface
 | `safetyIdentifier?` | `safetyIdentifier?: string;` | Stable, privacy-preserving end-user identifier sent as a header. |
 | `headers?` | `headers?: Record&lt;string, string&gt;;` | - |
 | `connectTimeoutMs?` | `connectTimeoutMs?: number;` | - |
-| `webSocketFactory?` | `webSocketFactory?: (url: string, options: { headers: Record&lt;string, string&gt; }) =&gt; Promise&lt;WebSocketLike&gt; | WebSocketLike;` | Test/custom-runtime hook. Normal callers should leave this unset. |
+| `webSocketFactory?` | `webSocketFactory?: (
+    url: string,
+    options: { headers: Record&lt;string, string&gt;; signal: AbortSignal },
+  ) =&gt; Promise&lt;WebSocketLike&gt; | WebSocketLike;` | Test/custom-runtime hook. Normal callers should leave this unset. |
 
 </details>
 
@@ -37086,6 +38794,20 @@ static create(config: AgentContextNextGenConfig): AgentContextNextGen
 <details>
 <summary><strong>Methods</strong></summary>
 
+#### `setModel()`
+
+Keep managed-context model metadata synchronized with the owning Agent.
+Explicit maxContextTokens overrides remain fixed across model changes.
+
+```typescript
+setModel(model: string): void
+```
+
+**Parameters:**
+- `model`: `string`
+
+**Returns:** `void`
+
 #### `setCompactionStrategy()`
 
 Set the compaction strategy.
@@ -39816,7 +41538,7 @@ destroy(): void
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: string` | - |
-| `config` | `config: Required&lt;Omit&lt;MCPServerConfig, "permissions" | "displayName" | "description" | "toolNamespace" | "connectorBindings"&gt;&gt; & { displayName?: string | undefined; description?: string | undefined; permissions?: { defaultScope?: "session" | "once" | "always" | "never" | undefined; defaultRiskLevel?: "critical" | "high" | "low" | "medium" | undefined; } | undefined; toolNamespace: string; connectorBindings?: Record&lt;string, string&gt; | undefined; }` | - |
+| `config` | `config: Required&lt;Omit&lt;MCPServerConfig, "permissions" | "displayName" | "description" | "toolNamespace" | "connectorBindings"&gt;&gt; & { displayName?: string | undefined; description?: string | undefined; permissions?: { defaultScope?: "session" | "once" | "always" | "never" | undefined; defaultRiskLevel?: "low" | "medium" | "high" | "critical" | undefined; } | undefined; toolNamespace: string; connectorBindings?: Record&lt;string, string&gt; | undefined; }` | - |
 | `client` | `client: Client&lt;{ method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; "io.modelcontextprotocol/related-task"?: { taskId: string; } | undefined; } | undefined; } | undefined; }, { method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; "io.modelcontextprotocol/related-task"?: { taskId: string; } | undefined; } | undefined; } | undefined; }, { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; "io.modelcontextprotocol/related-task"?: { taskId: string; } | undefined; } | undefined; }&gt; | null` | - |
 | `transport` | `transport: Transport | null` | - |
 | `reconnectAttempts` | `reconnectAttempts: number` | - |

@@ -7,8 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-08-24
+
+Version 1.1.0 introduces OneRingAI's preview Agent Runtime: one generic,
+observable execution layer for complete native OneRingAI and OpenAI Codex SDK
+agents. It also ships the dedicated current DeepSeek provider accumulated since
+1.0.1. The release is additive; existing `Agent` applications continue to use
+the same connector-first API.
+
+### Highlights
+
+- **Run complete agent systems through one API.** Applications can select a
+  native OneRingAI agent or Codex SDK agent, inspect capabilities, open a
+  session, stream autonomous work, cancel it, and consume one normalized result
+  without replacing either driver's native agent loop.
+- **Autonomous does not mean opaque.** Live observation is independent from
+  approvals and steering. The runtime publishes every driver-available message,
+  reasoning summary, tool/command/file update, usage event, and terminal state
+  selected by the observation policy.
+- **Fail closed at the native boundary.** Model/reasoning combinations,
+  structured output, image input, workspace access, policy, and optional
+  interaction features are capability-gated. Unconfirmed native termination
+  fails the session and quarantines its workspace lease.
+- **Ready for more drivers and isolated placement.** Driver and execution
+  backend interfaces are separate, leaving room for Claude and other agent SDKs,
+  Codex App Server, and remote container/microVM workers without changing the
+  application-facing lifecycle.
+
 ### Added
 
+- **Vendor-neutral Agent Runtime subpath.** Added
+  `@everworker/oneringai/agent-runtime` with immutable runtime specifications,
+  capability negotiation, trusted context, explicit execution policy, local
+  workspaces, sessions, runs, structured results, typed errors, cancellation,
+  and lifecycle ownership.
+- **Native OneRingAI driver.** Added stored-definition, registered-binding, and
+  factory sources while preserving OneRingAI's connector ownership, context
+  plugins, permission pipeline, and single shared `ToolManager`.
+- **Optional Codex SDK driver.** Added
+  `@everworker/oneringai/agent-runtime/codex` as a lazy optional peer integration
+  with native threads, structured output, image input, workspace sandboxing,
+  isolated child environments, connector-derived API authentication, and
+  project-configuration safeguards.
+- **Model and thinking selection.** Added model and reasoning configuration at
+  specification and per-run scope. Both local drivers validate explicit effort
+  levels against verified model maps rather than passing unknown combinations
+  optimistically.
+- **Live event journal.** Added bounded sequence-numbered events, late-subscriber
+  replay, multiple observers, observation detail levels, immutable event data,
+  and completion that never depends on an application consuming the stream.
+- **Structured result enforcement.** Added JSON Schema validation with explicit
+  native/emulated enforcement reporting and automatic capability gates for
+  structured output and workspace image inputs.
+- **Agent Runtime documentation and example.** Added a prominent README
+  overview, a detailed User Guide chapter, the architectural/server roadmap,
+  agent-facing documentation routing, and a runnable local OneRingAI/Codex
+  example.
 - **Dedicated DeepSeek provider.** Added current V4 Flash/Pro registry records,
   Chat Completions and Responses transports, streaming, reasoning replay for
   tool loops, structured output, native web search, model listing, FIM,
@@ -19,14 +73,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- DeepSeek now routes through its dedicated adapter instead of inheriting the
-  OpenAI Responses-only implementation. Retired `deepseek-chat` and
+- **Agent model changes now synchronize managed context.** `Agent.setModel()`
+  updates context model metadata and registry-derived context limits while
+  preserving an explicitly configured token limit.
+- **DeepSeek has a dedicated adapter.** DeepSeek no longer inherits the OpenAI
+  Responses-only implementation; retired `deepseek-chat` and
   `deepseek-reasoner` records point to current migration targets.
+- **npm metadata highlights complete-agent execution.** The package description,
+  keywords, exports, optional peer metadata, bundled docs, and example scripts
+  now expose the Agent Runtime as a first-class library capability.
 
 ### Fixed
 
-- Removed DeepSeek from the embedding-provider factory because its first-party
-  API does not expose an embeddings endpoint.
+- **Native cancellation and workspace reuse.** Synchronous cancellation errors,
+  cancellation during startup, timeout, and post-start event-pump failures are
+  contained. A workspace is not released until native result and event
+  termination are both confirmed.
+- **Event and capability correctness.** Intermediate OneRingAI messages no
+  longer claim to be final, unsupported reasoning controls fail before an API
+  call, and structured/image features cannot bypass capability preflight.
+- **Secret and configuration boundaries.** Codex command environments filter
+  connector credentials, event/error redaction handles streamed fragments, and
+  repository Codex configuration is rejected by default and rechecked each turn.
+- **DeepSeek embeddings boundary.** Removed DeepSeek from the embedding-provider
+  factory because its first-party API does not expose an embeddings endpoint.
 
 ## [1.0.1] — 2026-08-09
 

@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 1.0.0
-**Last Updated:** 2026-08-09
+**Version:** 1.1.0
+**Last Updated:** 2026-08-24
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -10,6 +10,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 ## Table of Contents
 
 - [Upgrading to 1.0.0](#upgrading-to-100) — runtime requirements, breaking changes, compatibility guarantees, and migration checklist
+- [Agent Runtime (preview)](#agent-runtime-preview) — run complete OneRingAI and Codex SDK agents through one observable, capability-gated API
 1. [Getting Started](#getting-started)
 2. [Core Concepts](#core-concepts)
 3. [Basic Text Generation](#basic-text-generation)
@@ -17334,6 +17335,316 @@ const response = await agent.run(`
 
 ---
 
+## Agent Runtime (preview)
+
+The Agent Runtime is a vendor-neutral surface for executing complete agent systems.
+It sits above `Agent`: OneRingAI retains its context/tool loop, while Codex retains
+its coding-agent loop, shell, workspace, and native thread. Drivers normalize both
+into the same specifications, capabilities, sessions, runs, live events, and results.
+
+This is the correct surface when a workflow needs to plug in a pre-built agent harness,
+select its model and reasoning level, observe its autonomous work, and receive one
+normalized result. It is deliberately separate from model-provider adapters.
+
+### Choose the right agent surface
+
+| Goal | Use | Why |
+|---|---|---|
+| Build a OneRingAI-native assistant with OneRingAI tools, context, memory, and persistence | `Agent.create()` | `Agent` owns the native OneRingAI loop and is the simplest direct API |
+| Coordinate multiple OneRingAI-native agents | `createOrchestrator()` | Adds delegation and shared-workspace tools around regular `Agent` instances |
+| Run interchangeable complete agent systems such as OneRingAI and Codex | `AgentRuntime` | Normalizes driver selection, sessions, policy, events, cancellation, and results without replacing native loops |
+
+Do not implement Codex, Claude Agent SDK, or another complete harness as an
+`ITextProvider`: those systems already own an agent loop and tool/session semantics.
+They belong behind an `AgentDriver`. Likewise, use an execution backend—not a driver—to
+choose whether work runs locally or in a future isolated server worker.
+
+### Current implementation and roadmap
+
+| Component | Status | Notes |
+|---|---|---|
+| Native OneRingAI driver | Implemented locally | Stored definition, registered binding, or factory source |
+| OpenAI Codex TypeScript SDK driver | Implemented locally | Optional peer dependency; SDK-managed local CLI process |
+| Live autonomous observation | Implemented locally | Messages, vendor-exposed reasoning, and driver-specific activity |
+| Interactive approvals, user questions, and steering | Capability-defined, not implemented locally | Planned for drivers with a bidirectional native protocol, such as Codex App Server |
+| Remote container/microVM execution | Designed, not implemented | Future execution backend with per-active-run isolation leases |
+| Claude Agent SDK and other agent harnesses | Designed, not implemented | Add drivers without changing application lifecycle code |
+| A2A interoperability | Designed, not implemented | External protocol adapter, not the internal worker protocol |
+
+The local preview supports native OneRingAI agents and the OpenAI Codex TypeScript
+SDK. Install the optional peer only when using the Codex driver:
+
+```bash
+npm install @openai/codex-sdk
+```
+
+The complete local example can run either backend through the same workflow:
+
+```bash
+npx tsx examples/agent-runtime-local.ts oneringai
+npx tsx examples/agent-runtime-local.ts codex
+```
+
+### Create a local runtime
+
+The generic API is published separately from the optional Codex driver:
+
+```typescript
+import { Agent } from '@everworker/oneringai';
+import {
+  AgentRuntime,
+  LocalExecutionBackend,
+  OneRingAIDriver,
+  type AgentRun,
+  type RuntimeAgentSpec,
+}
+  from '@everworker/oneringai/agent-runtime';
+import { CodexSdkDriver }
+  from '@everworker/oneringai/agent-runtime/codex';
+
+const runtime = new AgentRuntime({
+  backend: new LocalExecutionBackend({
+    drivers: [
+      new OneRingAIDriver({
+        // This asserts that every supplied native Agent's tools and permission
+        // pipeline enforce the runtime policy passed below.
+        trustAgentPolicy: true,
+        factories: {
+          assistant: ({ context }) => Agent.create({
+            connector: 'openai-main',
+            model: 'gpt-5.3-codex',
+            userId: context.userId,
+          }),
+        },
+      }),
+      new CodexSdkDriver(),
+    ],
+  }),
+});
+```
+
+### Select an agent, model, and reasoning level
+
+A OneRingAI source is a stored definition, registered binding, or factory. Its native
+source owns connector and instructions. Model and reasoning selection use the same
+generic fields as every other runtime driver:
+
+```typescript
+const oneRingSpec: RuntimeAgentSpec = {
+  id: 'support-agent',
+  driver: 'oneringai.agent',
+  model: 'gpt-5.3-codex',
+  reasoning: { effort: 'medium' },
+  driverConfig: { source: { type: 'factory', name: 'assistant' } },
+};
+```
+
+A Codex source uses a named OpenAI API-key connector, an active OpenAI model from the
+registry, and an explicit local workspace:
+
+```typescript
+const codexSpec: RuntimeAgentSpec = {
+  id: 'coding-agent',
+  driver: 'openai.codex.sdk',
+  connector: 'openai-main',
+  model: 'gpt-5.3-codex',
+  reasoning: { effort: 'medium' },
+  instructions: 'Make focused changes and run relevant tests.',
+  driverConfig: {
+    skipGitRepoCheck: false,
+    allowProjectConfig: false,
+  },
+};
+```
+
+Both local drivers fail closed on model-specific reasoning controls. The Codex driver
+uses `modelReasoningEfforts`; the OneRingAI driver uses richer
+`modelReasoningControls` entries because native agents may also support disabling
+reasoning or fixed token budgets. New models require explicit verified metadata rather
+than optimistic passthrough:
+
+```typescript
+const codexDriver = new CodexSdkDriver({
+  modelReasoningEfforts: {
+    'new-codex-model': ['low', 'medium', 'high'],
+  },
+});
+
+const oneRingDriver = new OneRingAIDriver({
+  trustAgentPolicy: true,
+  modelReasoningControls: {
+    'new-provider-model': {
+      efforts: ['low', 'medium', 'high'],
+      supportsDisabled: false,
+      supportsBudgetTokens: true,
+    },
+  },
+});
+```
+
+The bundled Codex and OneRingAI maps verify `low`, `medium`, `high`, and `xhigh` for
+`gpt-5.2-codex` and `gpt-5.3-codex`. Unsupported efforts, disable requests, and token
+budgets fail before an API call. Known models marked as non-reasoning reject reasoning
+configuration in both drivers. For OneRingAI agents, model overrides also update the
+managed context's model and registry-derived context limit; an explicit
+`context.maxContextTokens` remains fixed.
+
+Model and thinking controls are available both on the specification and per run. A
+per-run value overrides the specification for that turn and requires the corresponding
+`run.model_override` or `run.reasoning_override` capability:
+
+```typescript
+const agent = runtime.agent(codexSpec);
+
+const session = await agent.openSession({
+  context: { tenantId, userId },
+  workspace: { type: 'local-directory', path: repositoryPath },
+  policy: {
+    filesystem: 'workspace-write',
+    commands: 'sandboxed',
+    sandboxNetwork: 'denied',
+    providerWebSearch: 'denied',
+    approvals: 'deny',
+    limits: { wallTimeMs: 300_000, outputBytes: 256_000 },
+  },
+  observation: { mode: 'live', detail: 'reasoning' },
+  controlMode: 'observe-only',
+});
+
+const run = await session.run('Implement the approved change.', {
+  model: 'gpt-5.3-codex',
+  reasoning: { effort: 'high' },
+});
+
+const renderEvents = async (activeRun: AgentRun) => {
+  for await (const event of activeRun.events()) {
+    // Forward every visible thought summary, message, plan, command/output,
+    // file change, tool update, usage update, and terminal event to the UI.
+    render(event);
+  }
+};
+
+await renderEvents(run);
+const result = await run.result;
+console.log(result.configuration); // effective model and reasoning configuration
+```
+
+### Inputs and structured results
+
+JSON Schema response formats and workspace image parts are also automatically
+capability-gated as `run.structured_output` and `input.image`; callers do not need to
+duplicate those requirements manually.
+
+### Observation, autonomy, and control are separate
+
+The runtime deliberately avoids one ambiguous “interactive mode” flag:
+
+| Concern | Configuration | Current local support |
+|---|---|---|
+| Autonomous versus approval-gated execution | `policy.approvals` | Autonomous with `deny`; interactive approvals are unsupported |
+| Live versus final-only observation | `observation.mode` | Both |
+| Amount of visible activity | `observation.detail` | `status`, `activity`, or `reasoning` |
+| Observe-only versus steerable control | `controlMode` | Observe-only; steering is capability-gated and currently unsupported |
+
+The default observation is `{ mode: 'live', detail: 'reasoning' }`. Autonomous users
+therefore see the agent working without having to approve or interfere. “Reasoning”
+means every readable reasoning event exposed by the selected vendor/model; it does not
+promise private chain-of-thought.
+
+Use `activity` to stream messages, plans, commands, command output, file changes, and
+tools without reasoning events. Use `status` or `final-only` when only essential/final
+updates are wanted. Filtering affects delivery and retention, never native execution.
+
+Representative event types include:
+
+```text
+run.started
+agent.message.delta / agent.message.completed
+reasoning.delta / reasoning.completed
+plan.updated / agent.iteration.completed
+command.started / command.output.delta / command.completed
+file.change.started / file.changed
+tool.started / tool.progress / tool.completed
+usage.updated / diagnostic / run.finished
+```
+
+Both current local drivers report message `phase: 'unknown'`: their native streams do
+not reliably distinguish an intermediate tool-producing message from the final answer.
+Use `run.finished` and `run.result` for terminal state.
+
+Events are sequence-numbered and retained in a bounded in-process journal. A client
+can reconnect with `run.events({ afterSequence })` while that history remains. Event
+consumption is optional: the backend pumps native events itself and `run.result`
+settles even when nobody subscribes. Events are deeply cloned and frozen before
+publication, so one UI subscriber cannot modify another subscriber's data or replay
+history. OneRingAI structured-output runs remain on this streamed path and validate
+the completed output against the requested schema.
+
+### Capability inspection
+
+Inspect before opening a session when a workflow has hard requirements:
+
+```typescript
+const capabilities = await agent.inspect({
+  workspace: { type: 'local-directory', path: repositoryPath },
+  policy,
+  requiredCapabilities: [
+    { id: 'event.live', minimum: 'native' },
+    { id: 'event.reasoning' },
+    { id: 'run.model_override' },
+    { id: 'run.reasoning_override' },
+  ],
+});
+
+console.log(capabilities.configuration);
+```
+
+Support is `native`, `emulated`, or `unsupported`. Unsupported requirements fail in
+preflight instead of silently degrading. The current Codex SDK and OneRingAI drivers
+both expose live model/reasoning-aware autonomous runs, but their event categories and
+enforcement strength differ.
+
+### Local and server boundaries
+
+The Codex SDK driver launches an SDK-managed local CLI process; it does not call a
+hosted Codex App Server. It uses a session-owned Codex home, minimal environment,
+non-login shell policy, connector-secret filtering/redaction, `approvalPolicy:
+'never'`, and the requested Codex sandbox. Repository `.codex/config.toml` is rejected
+before every turn unless `allowProjectConfig: true` explicitly trusts it.
+
+Codex App Server is a separate process that the host starts and supervises. It is a
+future driver for richer bidirectional approvals, questions, and steering. It is not
+needed merely to stream autonomous work; the SDK driver already publishes messages,
+reasoning summaries, plans, commands/output, file changes, and tool activity.
+
+The local backend is for trusted development and is not multi-tenant isolation. A
+future server backend should keep this API but schedule an isolated container or
+microVM lease per active run, optionally retaining warm session affinity for a short
+TTL. A permanent VM per tenant/session is a deployment choice, not a runtime
+requirement. Durable events/checkpoints, credential leasing, and A2A adapters remain
+separate future phases.
+
+Cancellation, timeout, and post-start driver failures attempt bounded native cleanup.
+Synchronous driver cancellation errors are contained. If the native result and event
+pump cannot both be confirmed terminal within the cleanup window, the run still
+returns its normalized result, but the session fails and the local backend quarantines
+that workspace lease until backend teardown; it never starts a second writer over
+possibly live native work.
+
+Always clean up sessions and the runtime:
+
+```typescript
+try {
+  // open and run sessions
+} finally {
+  await session.destroy();
+  await runtime.destroy();
+}
+```
+
+See the [full design](./docs/designs/AGENT_RUNTIME.md) and runnable
+[`agent-runtime-local.ts`](./examples/agent-runtime-local.ts) example.
+
 ## Support & Resources
 
 - **GitHub:** https://github.com/aantich/oneringai
@@ -17349,5 +17660,5 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Last Updated:** 2026-08-08
-**Version:** 1.0.0
+**Last Updated:** 2026-08-24
+**Version:** 1.1.0

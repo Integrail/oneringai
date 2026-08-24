@@ -613,10 +613,35 @@ describe('Agent', () => {
     describe('setModel()', () => {
       it('should change the model', () => {
         expect(agent.model).toBe('gpt-4');
+        expect(agent.context.model).toBe('gpt-4');
 
         agent.setModel('gpt-4-turbo');
 
         expect(agent.model).toBe('gpt-4-turbo');
+        expect(agent.context.model).toBe('gpt-4-turbo');
+      });
+
+      it('should preserve an explicit context limit while synchronizing context model metadata', () => {
+        const custom = Agent.create({
+          connector: 'test-openai',
+          model: 'gpt-4o',
+          context: { model: 'gpt-4o', maxContextTokens: 77_777 },
+        });
+
+        custom.setModel('gpt-4.1');
+
+        expect(custom.context.model).toBe('gpt-4.1');
+        expect(custom.context.maxContextTokens).toBe(77_777);
+        custom.destroy();
+      });
+
+      it('should not partially update the model after destruction', () => {
+        const originalModel = agent.model;
+        agent.destroy();
+
+        expect(() => agent.setModel('gpt-4-turbo')).toThrow(/destroyed/i);
+        expect(agent.model).toBe(originalModel);
+        expect(agent.context.model).toBe(originalModel);
       });
 
       it('should use new model in subsequent runs', async () => {

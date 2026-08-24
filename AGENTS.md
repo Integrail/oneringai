@@ -128,6 +128,7 @@ const claudeAgent = Agent.create({
 | Embeddings | `Embeddings` |
 | Multiple cooperating agents | `createOrchestrator()` |
 | External MCP servers | `MCPRegistry` |
+| Pre-built OneRingAI or Codex agent runtime | `@everworker/oneringai/agent-runtime`; select `model`/`reasoning`, observe with `run.events()` |
 
 ## Connectors and external tools
 
@@ -433,6 +434,8 @@ during application shutdown.
 | Memory API / security / predicates / ingestion | `docs/MEMORY_API.md`, `docs/MEMORY_PERMISSIONS.md`, `docs/MEMORY_PREDICATES.md`, `docs/MEMORY_SIGNALS.md` |
 | Release migration | `CHANGELOG.md` and the upgrade section in `USER_GUIDE.md` |
 | Runnable examples | `examples/README.md` and `examples/*.ts` |
+| Pre-built agent runtime usage | `USER_GUIDE.md#agent-runtime-preview` and `examples/agent-runtime-local.ts` |
+| Agent runtime architecture and server roadmap | `docs/designs/AGENT_RUNTIME.md` |
 
 When documentation and source disagree, verify the public export and tests,
 then fix the stale documentation in the same change.
@@ -448,6 +451,7 @@ src/capabilities/            Search, scrape, images, video, speech, embeddings
 src/infrastructure/          Providers, resilience, storage implementations
 src/tools/                   Built-in and connector tool implementations
 src/connectors/              OAuth, vendor templates, connector storage
+src/agent-runtime/           Vendor-neutral sessions, local backend, drivers
 examples/                    Runnable integration examples
 apps/amos/                   Terminal agent reference application
 ```
@@ -482,5 +486,5 @@ path. Never add or print secrets to make them pass.
 
 ---
 
-Version: 1.0.0 | Runtime: Node.js 22+ | Architecture: Connector-first +
+Version: 1.1.0 | Runtime: Node.js 22+ | Architecture: Connector-first +
 NextGen context

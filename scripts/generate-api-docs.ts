@@ -68,6 +68,11 @@ const CATEGORIES: CategoryConfig[] = [
     patterns: ['video/', 'VideoModel', 'Video', 'createVideoProvider'],
   },
   {
+    name: 'Agent Runtime',
+    description: 'Run complete agent systems through vendor-neutral drivers, sessions, events, policies, and results',
+    patterns: ['agent-runtime/'],
+  },
+  {
     name: 'Task Agents',
     description: 'Autonomous agents with planning and memory',
     patterns: ['taskAgent/', 'Task.ts', 'Memory.ts', 'Plan'],
@@ -485,29 +490,32 @@ function extractVariableAsConst(node: any, sourceFile: SourceFile): DocItem | nu
 // Public API Extraction (from index.ts exports)
 // =============================================================================
 
-function getPublicExports(project: Project, indexPath: string): Set<string> {
+function getPublicExports(project: Project, indexPaths: readonly string[]): Set<string> {
   const publicNames = new Set<string>();
-  const indexFile = project.getSourceFile(indexPath);
+  for (const indexPath of indexPaths) {
+    const indexFile = project.getSourceFile(indexPath);
 
-  if (!indexFile) {
-    console.error(`Could not find index file: ${indexPath}`);
-    return publicNames;
-  }
-
-  // Get all export declarations
-  for (const exportDecl of indexFile.getExportDeclarations()) {
-    for (const namedExport of exportDecl.getNamedExports()) {
-      publicNames.add(namedExport.getName());
+    if (!indexFile) {
+      console.error(`Could not find public entry file: ${indexPath}`);
+      continue;
     }
-  }
 
-  // Get direct exports (export { X } from ...)
-  for (const stmt of indexFile.getStatements()) {
-    const text = stmt.getText();
-    const matches = text.matchAll(/export\s+(?:type\s+)?{\s*([^}]+)\s*}/g);
-    for (const match of matches) {
-      const names = match[1].split(',').map((n) => n.trim().split(' as ')[0].trim());
-      names.forEach((n) => publicNames.add(n));
+    // Get all named export declarations from each documented package subpath.
+    for (const exportDecl of indexFile.getExportDeclarations()) {
+      for (const namedExport of exportDecl.getNamedExports()) {
+        publicNames.add(namedExport.getName());
+      }
+    }
+
+    // Preserve support for direct export statements handled by older ts-morph
+    // versions and formatting variants.
+    for (const stmt of indexFile.getStatements()) {
+      const text = stmt.getText();
+      const matches = text.matchAll(/export\s+(?:type\s+)?{\s*([^}]+)\s*}/g);
+      for (const match of matches) {
+        const names = match[1].split(',').map((n) => n.trim().split(' as ')[0].trim());
+        names.forEach((n) => publicNames.add(n));
+      }
     }
   }
 
@@ -774,7 +782,11 @@ async function generateApiDocs(config: GeneratorConfig): Promise<void> {
 
   const projectRoot = path.resolve(__dirname, '..');
   const srcPath = path.join(projectRoot, 'src');
-  const indexPath = path.join(srcPath, 'index.ts');
+  const publicEntryPaths = [
+    path.join(srcPath, 'index.ts'),
+    path.join(srcPath, 'agent-runtime', 'index.ts'),
+    path.join(srcPath, 'agent-runtime', 'codex.ts'),
+  ];
 
   // Initialize ts-morph project
   const project = new Project({
@@ -782,7 +794,7 @@ async function generateApiDocs(config: GeneratorConfig): Promise<void> {
   });
 
   // Get public exports if in public mode
-  const publicExports = config.mode === 'public' ? getPublicExports(project, indexPath) : null;
+  const publicExports = config.mode === 'public' ? getPublicExports(project, publicEntryPaths) : null;
 
   if (publicExports) {
     console.log(`📦 Found ${publicExports.size} public exports\n`);

@@ -17,6 +17,9 @@ export default defineConfig({
         '**/*.d.ts',
         'tests/**',
         '**/index.ts', // Export files
+        'src/agent-runtime/types.ts', // Type-only public contract
+        'src/agent-runtime/AgentDriver.ts', // Type-only driver contract
+        'src/agent-runtime/AgentExecutionBackend.ts', // Type-only backend contract
         'src/agents/ProviderConfigAgent.ts', // AI agent (hard to test)
       ],
       thresholds: {

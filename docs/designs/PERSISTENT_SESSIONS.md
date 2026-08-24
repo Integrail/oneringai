@@ -1,5 +1,11 @@
 # Persistent Sessions Design
 
+> **Scope:** This document concerns persistence of a native OneRingAI `Agent` context.
+> It does not provide durable restore for `AgentRuntime` sessions or native Codex/
+> third-party agent state. Runtime-level `session.restore`, checkpoints, and remote
+> worker affinity are separately designed in
+> [Vendor-Neutral Agent Runtime](./AGENT_RUNTIME.md#future-server-architecture).
+
 ## Overview
 
 This document describes the design for opt-in persistent sessions that automatically store and restore full agent context, enabling users to resume conversations seamlessly.

@@ -1,6 +1,6 @@
 # OneRingAI examples
 
-This directory contains 34 runnable TypeScript programs covering agents, tools,
+This directory contains 35 runnable TypeScript programs covering agents, tools,
 streaming, media, connectors, OAuth, search, and MCP. The examples import the
 repository source directly, so run them from the repository root after installing
 dependencies.
@@ -35,6 +35,19 @@ example without making network calls.
 | OAuth demos | Provider-specific client IDs/secrets as noted in the program; `OAUTH_ENCRYPTION_KEY` is recommended for persistent production storage |
 | Remote MCP | `MCP_SERVER_URL`, optional `MCP_SERVER_TOKEN`, plus `OPENAI_API_KEY` |
 | Logging | Optional `LOG_LEVEL`, `LOG_FILE`, and `LOG_PRETTY` |
+
+## Agent Runtime
+
+The Agent Runtime example executes either a native OneRingAI agent or an OpenAI
+Codex SDK agent through the same specification/session/run workflow. It demonstrates
+model and reasoning selection, observable autonomous execution, explicit local policy,
+capability-aware behavior, and teardown. Start with the
+[detailed guide](../USER_GUIDE.md#agent-runtime-preview) and use the
+[design document](../docs/designs/AGENT_RUNTIME.md) for architecture and server plans.
+
+| Program | What it shows | Requirements and how to run |
+|---|---|---|
+| [`agent-runtime-local.ts`](./agent-runtime-local.ts) | Interchangeable local OneRingAI/Codex SDK drivers with generic model/reasoning controls, live autonomous reasoning/activity events, explicit policy, and Codex workspace sandboxing. | `OPENAI_API_KEY`; `npx tsx examples/agent-runtime-local.ts oneringai` or `npx tsx examples/agent-runtime-local.ts codex` |
 
 ## Text, agents, tools, and infrastructure
 

@@ -3053,6 +3053,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   // ===== Configuration Methods =====
 
   setModel(model: string): void {
+    // Update the managed context first so a destroyed context cannot leave the
+    // Agent and its context reporting different models.
+    this._agentContext.setModel(model);
     (this as { model: string }).model = model;
     this._config.model = model;
   }

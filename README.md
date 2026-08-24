@@ -6,38 +6,38 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22+-green.svg)](https://nodejs.org/)
 
-## What's new in v1.0.0
+## What's new in v1.1.0
 
-Version 1.0.0 is the first major release of OneRingAI. It defines a stable
-connector-first API while bringing the first-party OpenAI, Anthropic, Google,
-and xAI integrations in line with their current text, image, video, embedding,
-speech, and realtime APIs.
+Version 1.1.0 introduces the preview **Agent Runtime**: a vendor-neutral layer
+for running complete, pre-built agent systems through one observable workflow
+API. Applications can now select native OneRingAI agents or OpenAI Codex SDK
+agents without flattening either system into a text-model provider or replacing
+its native loop, tools, context, and workspace semantics.
 
-| Area | 1.0.0 outcome |
+| Area | 1.1.0 outcome |
 |------|---------------|
-| Model registry | Schema v2 with lifecycle, availability, aliases, snapshots, endpoints, replacements, preferred choices, official sources, and current pricing dimensions |
-| OpenAI | GPT-5.6, GPT Image 2, current transcription and Sora metadata, plus complete GA Realtime voice/transcription/translation support |
-| Anthropic | Claude 5 family, current context/output limits, adaptive thinking/effort, fast mode, and portable structured output |
-| Google | Gemini 3.6/3.5, status-safe Interactions API streams by default for 3.5+, current native image, Veo/Omni, TTS/STT, and Gemini Embedding 2 |
-| xAI | Grok 4.5/4.3/Build, current image/video, native REST/WebSocket TTS and STT, and Voice Agent Realtime/SIP support |
-| Runtime | Node.js 22+, OpenAI SDK 7.4, Anthropic SDK 0.116, and Google Gen AI SDK 2.16 |
+| Agent Runtime API | Generic agent specifications, capability inspection, sessions, runs, cancellation, results, policy, and model/reasoning overrides |
+| Local drivers | Native OneRingAI agent sources and the optional OpenAI Codex TypeScript SDK behind the same application lifecycle |
+| Observable autonomy | Live messages, vendor-exposed reasoning, tools, commands/output, file activity, usage, and bounded replay—independent from approvals or steering |
+| Safety and correctness | Fail-closed capability checks, model-specific reasoning validation, structured-output/image gates, exclusive workspace leases, bounded cleanup, and quarantine after unconfirmed native termination |
+| DeepSeek | Dedicated current V4 provider with native transports, reasoning replay, structured output, web search, FIM/balance APIs, and hosted-provider presets |
+| Packaging | Separate `agent-runtime` and optional `agent-runtime/codex` exports, comprehensive documentation, deterministic tests, and real-provider integration coverage |
 
-### Before upgrading
+### Upgrade notes
 
-- Upgrade every application, CI runner, container, and serverless runtime to
-  Node.js 22 or newer.
-- Treat registry token limits as `number | null`; use
-  `resolveMaxContextTokens()` when a numeric fallback is required.
-- Use lookup helpers for floating aliases. Direct registry indexing remains
-  canonical-only.
-- Use `isActive` for callability and `lifecycle` for migration state.
-- Gemini 3.5+ now uses Google Interactions by default. Temporarily set
-  `vendorOptions.api = 'generateContent'` only when legacy wire compatibility
-  is required.
+- Version 1.1.0 is additive; existing connector-first `Agent` applications do
+  not need to migrate to `AgentRuntime`.
+- Install `@openai/codex-sdk` only when using the optional Codex driver.
+- The implemented backend is for trusted local development. Server containers,
+  Codex App Server interaction, Claude Agent SDK, and A2A are documented future
+  phases—not capabilities claimed by this release.
+- Node.js 22 remains required. The registry and provider compatibility baseline
+  established by 1.0 remains unchanged.
 
-Read the [complete 1.0.0 release notes](./CHANGELOG.md#100--2026-08-08),
-[upgrade guide](./USER_GUIDE.md#upgrading-to-100), and
-[official-source model audit](./docs/MODEL_REGISTRY_AUDIT.md) before deploying.
+Read the [complete 1.1.0 release notes](./CHANGELOG.md#110--2026-08-24),
+the [Agent Runtime guide](./USER_GUIDE.md#agent-runtime-preview), and the
+[architectural design](./docs/designs/AGENT_RUNTIME.md) before deploying the
+preview runtime.
 
 ## Built for coding agents
 
@@ -72,6 +72,56 @@ Custom agents can load the same file into their system/developer context. The
 guide is deliberately concise enough to load as context while linking to the
 full User Guide, API reference, connector/tool catalog, memory documentation,
 and runnable examples when deeper work is required.
+
+## Agent Runtime: run complete agents through one API
+
+The preview **Agent Runtime** is the integration layer for pre-built agent
+systems—not merely another text-model adapter. It lets an application or
+workflow select a native OneRingAI agent or an OpenAI Codex SDK agent through
+the same specification/session/run API while each driver keeps its own agent
+loop, tools, context, and workspace behavior.
+
+| What the runtime normalizes | Current local-preview behavior |
+|-----------------------------|--------------------------------|
+| Drivers | Native OneRingAI agents and the optional Codex TypeScript SDK |
+| Selection | Agent, model, and model-validated reasoning effort at spec or per-run scope |
+| Observation | Live messages, vendor-exposed reasoning, and tool/command/file activity when exposed by the selected driver, plus usage and terminal results |
+| Control | Autonomous, observable runs; approvals and steering are capability-gated and not yet implemented locally |
+| Safety | Explicit policy, bounded output/events, cancellation cleanup, one writer per workspace, and fail-closed workspace quarantine |
+| Placement | Trusted local execution today; isolated container/microVM execution is the planned server backend |
+
+The example below assumes an OpenAI connector named `openai-main`; install
+`@openai/codex-sdk` when enabling the optional Codex driver.
+
+```typescript
+import {
+  AgentRuntime,
+  LocalExecutionBackend,
+} from '@everworker/oneringai/agent-runtime';
+import { CodexSdkDriver }
+  from '@everworker/oneringai/agent-runtime/codex';
+
+const runtime = new AgentRuntime({
+  backend: new LocalExecutionBackend({ drivers: [new CodexSdkDriver()] }),
+});
+
+const codingAgent = runtime.agent({
+  id: 'coding-agent',
+  driver: 'openai.codex.sdk',
+  connector: 'openai-main',
+  model: 'gpt-5.3-codex',
+  reasoning: { effort: 'high' },
+});
+```
+
+Autonomous does not mean opaque: callers can consume `run.events()` to render
+the agent’s ongoing work without pausing it for approval. Unsupported features
+fail in capability preflight instead of silently degrading.
+
+Start with the **[detailed Agent Runtime guide](./USER_GUIDE.md#agent-runtime-preview)**,
+run the **[local OneRingAI/Codex example](./examples/agent-runtime-local.ts)**,
+and use the **[design document](./docs/designs/AGENT_RUNTIME.md)** for architectural
+decisions, security boundaries, and the server/App Server/Claude/A2A roadmap.
 
 ## Meet AMOS: a terminal agent built with OneRingAI
 
@@ -154,9 +204,10 @@ plugin lifecycle, stores, compaction, persistence, and custom plugins.
 
 ## Table of Contents
 
-- [What's new in v1.0.0](#whats-new-in-v100)
-- [Before upgrading](#before-upgrading)
+- [What's new in v1.1.0](#whats-new-in-v110)
+- [Upgrade notes](#upgrade-notes)
 - [Built for coding agents](#built-for-coding-agents)
+- [Agent Runtime: run complete agents through one API](#agent-runtime-run-complete-agents-through-one-api)
 - [Meet AMOS: a terminal agent built with OneRingAI](#meet-amos-a-terminal-agent-built-with-oneringai)
 - [Memory is a first-class subsystem](#memory-is-a-first-class-subsystem)
 - [Context plugins and tools are modular by design](#context-plugins-and-tools-are-modular-by-design)
@@ -222,6 +273,8 @@ plugin lifecycle, stores, compaction, persistence, and custom plugins.
 | Document | Description |
 |----------|-------------|
 | **[Agent Guide](./AGENTS.md)** | Canonical context file for Codex, Claude Code, and custom coding agents: architecture, recipes, capability routing, safety invariants, and documentation map |
+| **[Agent Runtime Guide](./USER_GUIDE.md#agent-runtime-preview)** | Detailed usage guide for interchangeable OneRingAI/Codex agents, model and reasoning controls, live observation, capabilities, policy, lifecycle, and cleanup |
+| **[Agent Runtime Design](./docs/designs/AGENT_RUNTIME.md)** | Implemented local preview for OneRingAI and Codex SDK agents: generic model/reasoning controls, live observable autonomous runs, capabilities, policy, and the isolated-server roadmap |
 | **[User Guide](./USER_GUIDE.md)** | Comprehensive guide covering every feature with examples — connectors, agents, context, plugins, audio, video, search, MCP, OAuth, and more |
 | **[API Reference](./API_REFERENCE.md)** | Auto-generated reference for all public exports — classes, interfaces, types, and functions with signatures |
 | **[Memory Layer Guide](./docs/MEMORY_GUIDE.md)** | Standalone entity/fact memory system: graph and vector retrieval, ingestion, resolution, profiles, adapters, scaling, and agent integration |
@@ -248,6 +301,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 ## Features
 
 - ✨ **Unified API** - One interface for 12 AI providers (OpenAI, Anthropic, Google, Vertex, Groq, Together, Perplexity, Grok, DeepSeek, Mistral, Ollama, Custom)
+- 🧩 **[Agent Runtime preview](./USER_GUIDE.md#agent-runtime-preview)** - Plug-compatible OneRingAI/Codex agent drivers with model and thinking selection, live reasoning/activity events, and capability-gated future interaction
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
 - 📊 **Model Registry v2** - Lifecycle, aliases, endpoints, official sources, and modality-aware pricing for 92 text/realtime models plus dedicated image, video, voice, STT, and embedding registries
 - 🎤 **Audio Capabilities** - Text-to-Speech and Speech-to-Text with OpenAI, Google, and xAI, including xAI WebSocket streaming
@@ -3371,4 +3425,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 1.0.0 | **Last Updated:** 2026-08-09 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 1.1.0 | **Last Updated:** 2026-08-24 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**

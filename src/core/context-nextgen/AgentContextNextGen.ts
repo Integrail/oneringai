@@ -145,7 +145,8 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   };
 
   /** Maximum context tokens for the model */
-  private readonly _maxContextTokens: number;
+  private _maxContextTokens: number;
+  private readonly _usesModelContextLimit: boolean;
 
   /** Compaction strategy */
   private _compactionStrategy: ICompactionStrategy;
@@ -251,6 +252,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
     // Resolve max context tokens from model
     const modelInfo = getModelInfo(config.model);
+    this._usesModelContextLimit = config.maxContextTokens === undefined;
     this._maxContextTokens = config.maxContextTokens ?? modelInfo?.features?.input?.tokens ?? 128000;
 
     // Build full config
@@ -666,6 +668,20 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   /** Get the model name */
   get model(): string {
     return this._config.model;
+  }
+
+  /**
+   * Keep managed-context model metadata synchronized with the owning Agent.
+   * Explicit maxContextTokens overrides remain fixed across model changes.
+   */
+  setModel(model: string): void {
+    this.assertNotDestroyed();
+    this._config.model = model;
+    if (this._usesModelContextLimit) {
+      this._maxContextTokens = getModelInfo(model)?.features?.input?.tokens ?? 128000;
+      this._config.maxContextTokens = this._maxContextTokens;
+    }
+    this._cachedBudget = null;
   }
 
   /** Get the agent ID */

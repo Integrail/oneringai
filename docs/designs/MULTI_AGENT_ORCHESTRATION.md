@@ -7,6 +7,14 @@
 
 ---
 
+> **Scope:** This design coordinates native OneRingAI `Agent` workers. The
+> vendor-neutral [Agent Runtime](./AGENT_RUNTIME.md) instead adapts complete external
+> agent harnesses such as Codex. Scheduling runtime-backed agents from an orchestrator
+> is a separate integration phase; the two layers should compose rather than merge
+> their loops or tool managers.
+
+---
+
 ## Table of Contents
 
 1. [Motivation](#1-motivation)
