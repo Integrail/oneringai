@@ -261,6 +261,33 @@ describe('AgentContextNextGen - History Journal Integration', () => {
     ctx.destroy();
   });
 
+  it('should preserve the full journal across semantic rollover', async () => {
+    const ctx = AgentContextNextGen.create({
+      model: 'gpt-4',
+      storage,
+      features: { workingMemory: false, inContextMemory: false },
+    });
+    await ctx.save('test-session-rollover');
+
+    for (let i = 0; i < 4; i++) {
+      ctx.addUserMessage(`Question ${i}`);
+      ctx.addAssistantResponse(makeAssistantOutput(`Answer ${i}`));
+    }
+    const before = await waitForJournalEntries(ctx, 'test-session-rollover', 8);
+
+    await ctx.rollover({
+      preserveRecentTurns: 1,
+      summarize: async () => 'The first three questions were answered.',
+      reason: 'provider-session-limit',
+    });
+    await ctx.save('test-session-rollover');
+
+    const after = await ctx.journal!.read('test-session-rollover');
+    expect(after).toEqual(before);
+    expect(ctx.getConversation()).toHaveLength(3);
+    ctx.destroy();
+  });
+
   it('should restore turn index on load', async () => {
     // Create and populate a session
     const ctx1 = AgentContextNextGen.create({

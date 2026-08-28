@@ -11,7 +11,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 
 ## Table of Contents
 
-- [Core](#core) (22 items)
+- [Core](#core) (23 items)
 - [Text-to-Speech (TTS)](#text-to-speech-tts-) (13 items)
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (11 items)
 - [Image Generation](#image-generation) (25 items)
@@ -29,7 +29,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (10 items)
 - [Interfaces](#interfaces) (78 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (740 items)
+- [Other](#other) (744 items)
 
 ## Core
 
@@ -37,7 +37,7 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:301`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:375`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
 
@@ -204,6 +204,27 @@ hasContext(): boolean
 ```
 
 **Returns:** `boolean`
+
+#### `rolloverContext()`
+
+Force a semantic rollover between provider sessions.
+
+This method owns the Agent's execution slot, so it cannot race run(),
+stream(), async continuation, or an active Realtime/external execution.
+By default it summarizes through the Agent's configured connector/model,
+keeps the eight most-recent user turns exact, preserves plugin state and
+the full history journal, and checkpoints when session storage is present.
+
+```typescript
+async rolloverContext(
+    options: AgentContextRolloverOptions = {},
+  ): Promise&lt;ContextRolloverResult&gt;
+```
+
+**Parameters:**
+- `options`: `AgentContextRolloverOptions` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;ContextRolloverResult&gt;`
 
 #### `beginExternalExecution()`
 
@@ -1721,7 +1742,7 @@ isDisposed(): boolean
 
 ### AgentConfig `interface`
 
-📍 [`src/core/Agent.ts:67`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:73`](src/core/Agent.ts)
 
 Agent configuration - extends BaseAgentConfig with Agent-specific options
 
@@ -1776,6 +1797,29 @@ Example: `toolExecutionTimeout: 300000` (5 minutes hard cap per tool call) |
     /** Max backoff delay ms (default: 5000) */
     maxDelayMs?: number;
   };` | Configuration for retrying empty/incomplete LLM responses |
+
+</details>
+
+---
+
+### AgentContextRolloverOptions `interface`
+
+📍 [`src/core/Agent.ts:200`](src/core/Agent.ts)
+
+Options for {@link Agent.rolloverContext}.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `preserveRecentTurns?` | `preserveRecentTurns?: number;` | Number of most-recent user turns to retain verbatim. Default: 8. |
+| `summarize?` | `summarize?: ContextRolloverSummarizer;` | Optional trusted summarizer. When omitted, the Agent makes a tool-free
+direct call through its configured connector and model. |
+| `maxSummaryTokens?` | `maxSummaryTokens?: number;` | Maximum output tokens for the built-in summarizer. Default: 2048. |
+| `checkpoint?` | `checkpoint?: boolean;` | Persist the rolled-over context immediately. Defaults to true when the
+Agent has session storage and false otherwise. |
+| `reason?` | `reason?: string;` | Optional reason included in observability data. |
 
 </details>
 
@@ -1915,7 +1959,7 @@ Fetch options with additional connector-specific settings
 
 ### ExternalExecutionOptions `interface`
 
-📍 [`src/core/Agent.ts:194`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:224`](src/core/Agent.ts)
 
 Options for a non-LLM execution owned by an external transport.
 
@@ -1932,7 +1976,7 @@ Options for a non-LLM execution owned by an external transport.
 
 ### ExternalExecutionResult `interface`
 
-📍 [`src/core/Agent.ts:207`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:237`](src/core/Agent.ts)
 
 Terminal data supplied when an external execution is completed.
 
@@ -1952,7 +1996,7 @@ Terminal data supplied when an external execution is completed.
 
 ### ExternalToolCall `interface`
 
-📍 [`src/core/Agent.ts:200`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:230`](src/core/Agent.ts)
 
 A function call received from an external model transport.
 
@@ -1971,7 +2015,7 @@ A function call received from an external model transport.
 
 ### RunOptions `interface`
 
-📍 [`src/core/Agent.ts:167`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:173`](src/core/Agent.ts)
 
 Per-call options for run() and stream().
 These override the agent-level config for this single invocation.
@@ -2010,7 +2054,7 @@ type AgentEventListener = (agentId: string, agentName: string, event: string, da
 
 ### AgentRuntimeConfigSnapshot `type`
 
-📍 [`src/core/Agent.ts:147`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:153`](src/core/Agent.ts)
 
 Agent runtime options exposed by getRuntimeConfigSnapshot().
 
@@ -2036,7 +2080,7 @@ type AgentRuntimeConfigSnapshot = Pick&lt;AgentConfig,
 
 ### AgentSessionConfig `type`
 
-📍 [`src/core/Agent.ts:62`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:68`](src/core/Agent.ts)
 
 Session configuration for Agent (same as BaseSessionConfig)
 
@@ -39361,7 +39405,7 @@ destroy(): void
 
 ### AgentContextNextGen `class`
 
-📍 [`src/core/context-nextgen/AgentContextNextGen.ts:134`](src/core/context-nextgen/AgentContextNextGen.ts)
+📍 [`src/core/context-nextgen/AgentContextNextGen.ts:136`](src/core/context-nextgen/AgentContextNextGen.ts)
 
 Next-generation context manager for AI agents.
 
@@ -39728,6 +39772,30 @@ async consolidate(): Promise&lt;ConsolidationResult&gt;
 ```
 
 **Returns:** `Promise&lt;ConsolidationResult&gt;`
+
+#### `rollover()`
+
+Force a semantic context rollover, independently of token thresholds.
+
+The older conversation prefix is summarized by the caller, while recent
+user turns and provider-opaque compaction items remain exact. Plugin state
+is never compacted by this operation, and the append-only history journal
+is untouched. The live conversation changes only after the summarizer has
+returned a non-empty result and only if no concurrent context mutation was
+observed.
+
+This is intended for provider-session boundaries (for example, a Realtime
+session approaching its hard lifetime), not emergency token compaction.
+Call it only between agent executions, when there is no pending input.
+
+```typescript
+async rollover(options: ContextRolloverOptions): Promise&lt;ContextRolloverResult&gt;
+```
+
+**Parameters:**
+- `options`: `ContextRolloverOptions`
+
+**Returns:** `Promise&lt;ContextRolloverResult&gt;`
 
 #### `save()`
 
@@ -47104,7 +47172,7 @@ Options for the default SentenceChunkingStrategy
 
 ### CompactionContext `interface`
 
-📍 [`src/core/context-nextgen/types.ts:1044`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:1118`](src/core/context-nextgen/types.ts)
 
 Read-only context passed to compaction strategies.
 Provides access to data needed for compaction decisions and
@@ -47206,7 +47274,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:1011`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:1014`](src/core/context-nextgen/types.ts)
 
 Result of compact() operation.
 
@@ -47459,7 +47527,7 @@ truncate profile generation. See feedback_no_output_limits.md. |
 
 ### ConsolidationResult `interface`
 
-📍 [`src/core/context-nextgen/types.ts:1028`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:1031`](src/core/context-nextgen/types.ts)
 
 Result of consolidate() operation.
 
@@ -47534,6 +47602,7 @@ Events emitted by AgentContextNextGen
 | `'input:oversized'` | `'input:oversized': { result: OversizedInputResult };` | Emitted when current input is too large |
 | `'message:added'` | `'message:added': { role: string; index: number };` | Emitted when a message is added |
 | `'conversation:cleared'` | `'conversation:cleared': { reason?: string };` | Emitted when conversation is cleared |
+| `'context:rolled_over'` | `'context:rolled_over': { result: ContextRolloverResult; timestamp: number };` | Emitted after an explicit context rollover commits atomically. |
 
 </details>
 
@@ -47582,6 +47651,75 @@ are opt-in. Pass `tiers: 'minimal'` to suppress tasks + events for perf. |
 | `relatedTasksLimit?` | `relatedTasksLimit?: number;` | Limits on the task/event tiers. Defaults: 15 each. |
 | `relatedEventsLimit?` | `relatedEventsLimit?: number;` | - |
 | `recentEventsWindowDays?` | `recentEventsWindowDays?: number;` | How far back to look for "recent" events. Default 90 days. |
+
+</details>
+
+---
+
+### ContextRolloverOptions `interface`
+
+📍 [`src/core/context-nextgen/types.ts:1069`](src/core/context-nextgen/types.ts)
+
+Options for an explicit context rollover.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `preserveRecentTurns?` | `preserveRecentTurns?: number;` | Number of most-recent user turns to keep byte-for-byte. Tool calls and
+their results stay with their containing turn. Default: 8. |
+| `summarize` | `summarize: ContextRolloverSummarizer;` | Summarize the older prefix. The live context changes only after success. |
+| `reason?` | `reason?: string;` | Optional reason included in the result and rollover event. |
+
+</details>
+
+---
+
+### ContextRolloverResult `interface`
+
+📍 [`src/core/context-nextgen/types.ts:1084`](src/core/context-nextgen/types.ts)
+
+Result of an explicit context rollover.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `performed` | `performed: boolean;` | Whether an older prefix existed and was replaced by a summary capsule. |
+| `beforeTokens` | `beforeTokens: number;` | Estimated conversation tokens before rollover. |
+| `afterTokens` | `afterTokens: number;` | Estimated conversation tokens after rollover. |
+| `tokensFreed` | `tokensFreed: number;` | Net estimated tokens freed (may be negative for an unusually long summary). |
+| `itemsSummarized` | `itemsSummarized: number;` | Number of older message items represented by the summary. |
+| `itemsRetained` | `itemsRetained: number;` | Number of exact recent/opaque items retained alongside the summary. |
+| `retainedTurns` | `retainedTurns: number;` | Number of recent user turns retained verbatim. |
+| `summaryTokens` | `summaryTokens: number;` | Estimated token size of the generated summary capsule. |
+| `reason?` | `reason?: string;` | Optional host-provided reason. |
+
+</details>
+
+---
+
+### ContextRolloverSummaryInput `interface`
+
+📍 [`src/core/context-nextgen/types.ts:1049`](src/core/context-nextgen/types.ts)
+
+Input passed to a context-rollover summarizer.
+
+`items` is a detached clone of the older conversation prefix. Mutating it
+cannot mutate the live context. Recent turns are intentionally excluded
+because they remain verbatim after rollover.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `items` | `readonly items: ReadonlyArray&lt;InputItem&gt;;` | Older conversation items that must be represented by the summary. |
+| `estimatedTokens` | `readonly estimatedTokens: number;` | Estimated size of `items`, using the context's configured estimator. |
+| `preservedRecentTurns` | `readonly preservedRecentTurns: number;` | Number of recent user turns that will remain verbatim. |
+| `reason?` | `readonly reason?: string;` | Optional host-provided reason for observability or prompt selection. |
 
 </details>
 
@@ -50250,7 +50388,7 @@ reset(): void;
 
 ### ICompactionStrategy `interface`
 
-📍 [`src/core/context-nextgen/types.ts:1106`](src/core/context-nextgen/types.ts)
+📍 [`src/core/context-nextgen/types.ts:1180`](src/core/context-nextgen/types.ts)
 
 Compaction strategy interface.
 
@@ -58399,6 +58537,20 @@ for externally registered plugins (via PluginRegistry).
 
 ```typescript
 type ContextFeatures = KnownContextFeatures & { [key: string]: boolean | undefined }
+```
+
+---
+
+### ContextRolloverSummarizer `type`
+
+📍 [`src/core/context-nextgen/types.ts:1064`](src/core/context-nextgen/types.ts)
+
+Host-supplied summarizer used by an explicit context rollover.
+
+```typescript
+type ContextRolloverSummarizer = (
+  input: ContextRolloverSummaryInput,
+) =&gt; Promise&lt;string&gt; | string
 ```
 
 ---

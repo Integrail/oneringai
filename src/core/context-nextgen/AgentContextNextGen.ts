@@ -55,6 +55,8 @@ import type {
   ICompactionStrategy,
   CompactionContext,
   ConsolidationResult,
+  ContextRolloverOptions,
+  ContextRolloverResult,
 } from './types.js';
 import type { ToolCategoryScope } from '../ToolCatalogRegistry.js';
 import type {
@@ -203,6 +205,9 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
   /** Callback for beforeCompaction hook (set by Agent) */
   private _beforeCompactionCallback: BeforeCompactionCallback | null = null;
+
+  /** Prevent overlapping async rollover summaries from racing each other. */
+  private _rolloverInProgress = false;
 
   /**
    * Monotonically increasing turn counter for history journal.
@@ -1752,6 +1757,216 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
     const context = this.buildCompactionContext();
     return this._compactionStrategy.consolidate(context);
+  }
+
+  /**
+   * Force a semantic context rollover, independently of token thresholds.
+   *
+   * The older conversation prefix is summarized by the caller, while recent
+   * user turns and provider-opaque compaction items remain exact. Plugin state
+   * is never compacted by this operation, and the append-only history journal
+   * is untouched. The live conversation changes only after the summarizer has
+   * returned a non-empty result and only if no concurrent context mutation was
+   * observed.
+   *
+   * This is intended for provider-session boundaries (for example, a Realtime
+   * session approaching its hard lifetime), not emergency token compaction.
+   * Call it only between agent executions, when there is no pending input.
+   */
+  async rollover(options: ContextRolloverOptions): Promise<ContextRolloverResult> {
+    this.assertNotDestroyed();
+
+    if (!options || typeof options.summarize !== 'function') {
+      throw new TypeError('rollover() requires a summarize callback');
+    }
+    const preserveRecentTurns = options.preserveRecentTurns ?? 8;
+    if (!Number.isInteger(preserveRecentTurns) || preserveRecentTurns < 0) {
+      throw new RangeError('preserveRecentTurns must be a non-negative integer');
+    }
+    if (options.reason !== undefined && typeof options.reason !== 'string') {
+      throw new TypeError('reason must be a string when provided');
+    }
+    if (this._currentInput.length > 0) {
+      throw new Error('Cannot roll over context while input is pending; finish the active turn first');
+    }
+    if (this._rolloverInProgress) {
+      throw new Error('A context rollover is already in progress');
+    }
+
+    const beforeTokens = this.calculateConversationTokens();
+    const turnStarts = this.findUserTurnStarts(this._conversation);
+    const retainedTurns = Math.min(preserveRecentTurns, turnStarts.length);
+    let cutoff = preserveRecentTurns === 0
+      ? this._conversation.length
+      : turnStarts.length > preserveRecentTurns
+        ? turnStarts[turnStarts.length - preserveRecentTurns]!
+        : 0;
+    cutoff = this.adjustRolloverBoundaryForToolPairs(cutoff);
+
+    if (cutoff === 0) {
+      return {
+        performed: false,
+        beforeTokens,
+        afterTokens: beforeTokens,
+        tokensFreed: 0,
+        itemsSummarized: 0,
+        itemsRetained: this._conversation.length,
+        retainedTurns,
+        summaryTokens: 0,
+        ...(options.reason === undefined ? {} : { reason: options.reason }),
+      };
+    }
+
+    const conversationSnapshot = [...this._conversation];
+    const currentInputSnapshot = [...this._currentInput];
+    const olderPrefix = conversationSnapshot.slice(0, cutoff);
+    const opaqueItems = olderPrefix.filter((item) => item.type === 'compaction');
+    const summarizableItems = olderPrefix.filter((item) => item.type === 'message');
+
+    if (summarizableItems.length === 0) {
+      return {
+        performed: false,
+        beforeTokens,
+        afterTokens: beforeTokens,
+        tokensFreed: 0,
+        itemsSummarized: 0,
+        itemsRetained: this._conversation.length,
+        retainedTurns,
+        summaryTokens: 0,
+        ...(options.reason === undefined ? {} : { reason: options.reason }),
+      };
+    }
+
+    this._rolloverInProgress = true;
+    try {
+      const detachedItems = structuredClone(summarizableItems) as InputItem[];
+      const estimatedTokens = summarizableItems.reduce(
+        (total, item) => total + this.estimateItemTokens(item),
+        0,
+      );
+      const summaryValue = await options.summarize({
+        items: detachedItems,
+        estimatedTokens,
+        preservedRecentTurns: retainedTurns,
+        ...(options.reason === undefined ? {} : { reason: options.reason }),
+      });
+      if (typeof summaryValue !== 'string') {
+        throw new TypeError('Context rollover summarizer must return a string');
+      }
+      const summary = summaryValue.trim();
+
+      if (!summary) {
+        throw new Error('Context rollover summarizer returned an empty summary');
+      }
+      this.assertNotDestroyed();
+
+      const conversationUnchanged =
+        this._conversation.length === conversationSnapshot.length
+        && this._conversation.every((item, index) => item === conversationSnapshot[index]);
+      const currentInputUnchanged =
+        this._currentInput.length === currentInputSnapshot.length
+        && this._currentInput.every((item, index) => item === currentInputSnapshot[index]);
+      if (!conversationUnchanged || !currentInputUnchanged) {
+        throw new Error('Context changed while rollover summary was being generated');
+      }
+
+      const capsule: Message = {
+        type: 'message',
+        id: `context_rollover_${this.generateId()}`,
+        role: MessageRole.DEVELOPER,
+        content: [{
+          type: ContentType.INPUT_TEXT,
+          text:
+            '# Prior Conversation Continuity Brief\n\n'
+            + 'This is a compact record of earlier conversation context. Preserve its facts, '
+            + 'decisions, commitments, unresolved work, and user preferences when continuing.\n\n'
+            + summary,
+        }],
+      };
+      const exactTail = conversationSnapshot.slice(cutoff);
+      this._conversation = [capsule, ...opaqueItems, ...exactTail];
+      this._cachedBudget = null;
+
+      const afterTokens = this.calculateConversationTokens();
+      const result: ContextRolloverResult = {
+        performed: true,
+        beforeTokens,
+        afterTokens,
+        tokensFreed: beforeTokens - afterTokens,
+        itemsSummarized: summarizableItems.length,
+        itemsRetained: opaqueItems.length + exactTail.length,
+        retainedTurns,
+        summaryTokens: this.estimateItemTokens(capsule),
+        ...(options.reason === undefined ? {} : { reason: options.reason }),
+      };
+
+      logger.info(
+        {
+          component: 'AgentContextNextGen',
+          beforeTokens,
+          afterTokens,
+          tokensFreed: result.tokensFreed,
+          itemsSummarized: result.itemsSummarized,
+          retainedTurns,
+        },
+        'context rollover completed',
+      );
+      this.emit('context:rolled_over', { result, timestamp: Date.now() });
+      return result;
+    } finally {
+      this._rolloverInProgress = false;
+    }
+  }
+
+  /** Return indices of real user-turn starts (tool-result messages do not start turns). */
+  private findUserTurnStarts(items: ReadonlyArray<InputItem>): number[] {
+    const starts: number[] = [];
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      if (item?.type !== 'message' || item.role !== MessageRole.USER) continue;
+      if (item.content.some((content) => content.type !== ContentType.TOOL_RESULT)) {
+        starts.push(index);
+      }
+    }
+    return starts;
+  }
+
+  /** Move a rollover boundary left if unusual seeded history would split a tool pair. */
+  private adjustRolloverBoundaryForToolPairs(initialCutoff: number): number {
+    if (initialCutoff <= 0 || initialCutoff >= this._conversation.length) return initialCutoff;
+
+    const positions = new Map<string, number[]>();
+    for (let index = 0; index < this._conversation.length; index++) {
+      const item = this._conversation[index];
+      if (item?.type !== 'message') continue;
+      for (const content of item.content) {
+        const id = content.type === ContentType.TOOL_USE
+          ? content.id
+          : content.type === ContentType.TOOL_RESULT
+            ? content.tool_use_id
+            : undefined;
+        if (!id) continue;
+        const indices = positions.get(id) ?? [];
+        indices.push(index);
+        positions.set(id, indices);
+      }
+    }
+
+    let cutoff = initialCutoff;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const indices of positions.values()) {
+        if (indices.some((index) => index < cutoff) && indices.some((index) => index >= cutoff)) {
+          const adjusted = Math.min(cutoff, ...indices);
+          if (adjusted < cutoff) {
+            cutoff = adjusted;
+            changed = true;
+          }
+        }
+      }
+    }
+    return cutoff;
   }
 
   /**

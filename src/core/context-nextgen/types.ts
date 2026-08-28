@@ -989,6 +989,9 @@ export interface ContextEvents {
 
   /** Emitted when conversation is cleared */
   'conversation:cleared': { reason?: string };
+
+  /** Emitted after an explicit context rollover commits atomically. */
+  'context:rolled_over': { result: ContextRolloverResult; timestamp: number };
 }
 
 /**
@@ -1034,6 +1037,77 @@ export interface ConsolidationResult {
 
   /** Description of actions taken */
   actions: string[];
+}
+
+/**
+ * Input passed to a context-rollover summarizer.
+ *
+ * `items` is a detached clone of the older conversation prefix. Mutating it
+ * cannot mutate the live context. Recent turns are intentionally excluded
+ * because they remain verbatim after rollover.
+ */
+export interface ContextRolloverSummaryInput {
+  /** Older conversation items that must be represented by the summary. */
+  readonly items: ReadonlyArray<InputItem>;
+
+  /** Estimated size of `items`, using the context's configured estimator. */
+  readonly estimatedTokens: number;
+
+  /** Number of recent user turns that will remain verbatim. */
+  readonly preservedRecentTurns: number;
+
+  /** Optional host-provided reason for observability or prompt selection. */
+  readonly reason?: string;
+}
+
+/** Host-supplied summarizer used by an explicit context rollover. */
+export type ContextRolloverSummarizer = (
+  input: ContextRolloverSummaryInput,
+) => Promise<string> | string;
+
+/** Options for an explicit context rollover. */
+export interface ContextRolloverOptions {
+  /**
+   * Number of most-recent user turns to keep byte-for-byte. Tool calls and
+   * their results stay with their containing turn. Default: 8.
+   */
+  preserveRecentTurns?: number;
+
+  /** Summarize the older prefix. The live context changes only after success. */
+  summarize: ContextRolloverSummarizer;
+
+  /** Optional reason included in the result and rollover event. */
+  reason?: string;
+}
+
+/** Result of an explicit context rollover. */
+export interface ContextRolloverResult {
+  /** Whether an older prefix existed and was replaced by a summary capsule. */
+  performed: boolean;
+
+  /** Estimated conversation tokens before rollover. */
+  beforeTokens: number;
+
+  /** Estimated conversation tokens after rollover. */
+  afterTokens: number;
+
+  /** Net estimated tokens freed (may be negative for an unusually long summary). */
+  tokensFreed: number;
+
+  /** Number of older message items represented by the summary. */
+  itemsSummarized: number;
+
+  /** Number of exact recent/opaque items retained alongside the summary. */
+  itemsRetained: number;
+
+  /** Number of recent user turns retained verbatim. */
+  retainedTurns: number;
+
+  /** Estimated token size of the generated summary capsule. */
+  summaryTokens: number;
+
+  /** Optional host-provided reason. */
+  reason?: string;
 }
 
 /**

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Explicit semantic context rollover.** `Agent.rolloverContext()` and
+  `AgentContextNextGen.rollover()` compact an older conversation prefix at a
+  provider-session boundary while preserving recent turns, tool pairs, plugin
+  state, and the append-only history journal. Agent-level rollover shares the
+  normal execution lease and checkpoints configured session storage.
+
 ## [1.1.1] — 2026-08-28
 
 ### Added

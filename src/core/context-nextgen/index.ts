@@ -42,6 +42,10 @@ export type {
   CompactionContext,
   CompactionResult,
   ConsolidationResult,
+  ContextRolloverSummaryInput,
+  ContextRolloverSummarizer,
+  ContextRolloverOptions,
+  ContextRolloverResult,
 } from './types.js';
 
 export {

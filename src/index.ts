@@ -36,6 +36,7 @@ export type {
   AgentRuntimeConfigSnapshot,
   AgentSessionConfig,
   RunOptions,
+  AgentContextRolloverOptions,
   ExternalExecutionOptions,
   ExternalToolCall,
   ExternalExecutionResult,
@@ -170,6 +171,10 @@ export type {
   CompactionContext,
   CompactionResult,
   ConsolidationResult,
+  ContextRolloverSummaryInput,
+  ContextRolloverSummarizer,
+  ContextRolloverOptions,
+  ContextRolloverResult,
   DefaultCompactionStrategyConfig,
   // Strategy Registry types
   StrategyInfo,

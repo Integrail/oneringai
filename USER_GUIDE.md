@@ -13350,6 +13350,15 @@ modality metadata used by the calculator.
   transport rejects new audio frames after `maxBufferedAmountBytes` (1 MiB by default).
 - Recreate or hand off the session when `session:expiring` fires. The default
   warning is at 55 minutes, before OpenAI's hard 60-minute session limit.
+- To carry semantic context across that boundary, first close the old
+  `OpenAIRealtimeAgentSession` (releasing its external-execution lease), then
+  call `agent.rolloverContext({ reason: 'realtime-session-expiring' })`, and
+  create the replacement session with the same Agent. The rollover preserves
+  eight recent user turns exactly by default, never splits tool-call pairs,
+  preserves plugin state and the full history journal, and checkpoints when
+  session storage is configured. If the Agent's configured model cannot make a
+  normal text generation call, pass a trusted `summarize` callback backed by a
+  text-capable Agent or server proxy.
 - Stop local playback when cancelling a response; keep server conversation state
   aligned with `truncateItem()`.
 - For translation, send `closeTranslation()`, continue reading until

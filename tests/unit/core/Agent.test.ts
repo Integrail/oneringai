@@ -1227,6 +1227,112 @@ describe('Agent', () => {
     });
   });
 
+  describe('rolloverContext()', () => {
+    const addTurn = (agent: Agent, user: string, reply: string) => {
+      agent.context.addUserMessage(user);
+      agent.context.addAssistantResponse([{
+        type: 'message',
+        role: MessageRole.ASSISTANT,
+        content: [{ type: ContentType.OUTPUT_TEXT, text: reply }],
+      }]);
+    };
+
+    it('uses a tool-free direct provider call and rolls over under one execution lease', async () => {
+      mockGenerate.mockResolvedValue({
+        id: 'summary_response',
+        object: 'response',
+        created_at: Date.now(),
+        status: 'completed',
+        model: 'gpt-4',
+        output: [],
+        output_text: 'The first two questions were answered.',
+        usage: { input_tokens: 20, output_tokens: 8, total_tokens: 28 },
+      });
+      const agent = Agent.create({ connector: 'test-openai', model: 'gpt-4' });
+      addTurn(agent, 'Question 1', 'Answer 1');
+      addTurn(agent, 'Question 2', 'Answer 2');
+      addTurn(agent, 'Question 3', 'Answer 3');
+
+      const result = await agent.rolloverContext({
+        preserveRecentTurns: 1,
+        checkpoint: false,
+        reason: 'realtime-session-expiring',
+      });
+
+      expect(result).toMatchObject({
+        performed: true,
+        itemsSummarized: 4,
+        retainedTurns: 1,
+        reason: 'realtime-session-expiring',
+      });
+      expect(mockGenerate).toHaveBeenCalledOnce();
+      expect(mockGenerate).toHaveBeenCalledWith(expect.objectContaining({
+        input: expect.stringContaining('Question 1'),
+        instructions: expect.stringContaining('compact continuity brief'),
+        tools: undefined,
+        max_output_tokens: 2048,
+      }));
+      expect(JSON.stringify(agent.context.getConversation())).toContain(
+        'The first two questions were answered.',
+      );
+      expect(agent.isRunning()).toBe(false);
+      agent.destroy();
+    });
+
+    it('cannot race an active external Realtime execution', async () => {
+      const agent = Agent.create({ connector: 'test-openai', model: 'gpt-4' });
+      addTurn(agent, 'Question 1', 'Answer 1');
+      await agent.beginExternalExecution({ source: 'realtime' });
+
+      await expect(agent.rolloverContext({
+        checkpoint: false,
+        summarize: async () => 'summary',
+      })).rejects.toThrow('active external execution');
+
+      await agent.completeExternalExecution();
+      await expect(agent.rolloverContext({
+        preserveRecentTurns: 0,
+        checkpoint: false,
+        summarize: async () => 'summary',
+      })).resolves.toMatchObject({ performed: true });
+      agent.destroy();
+    });
+
+    it('checkpoints automatically when session storage is configured', async () => {
+      const mockStorage = {
+        save: vi.fn().mockResolvedValue(undefined),
+        load: vi.fn().mockResolvedValue(null),
+        delete: vi.fn().mockResolvedValue(undefined),
+        exists: vi.fn().mockResolvedValue(false),
+        list: vi.fn().mockResolvedValue([]),
+        getPath: vi.fn().mockReturnValue('/mock/storage'),
+      };
+      const agent = Agent.create({
+        connector: 'test-openai',
+        model: 'gpt-4',
+        session: { storage: mockStorage },
+      });
+      addTurn(agent, 'Question 1', 'Answer 1');
+      addTurn(agent, 'Question 2', 'Answer 2');
+
+      await agent.rolloverContext({
+        preserveRecentTurns: 1,
+        summarize: async () => 'Question 1 was answered.',
+      });
+
+      expect(mockStorage.save).toHaveBeenCalledOnce();
+      expect(mockStorage.save).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          conversation: expect.arrayContaining([
+            expect.objectContaining({ role: MessageRole.DEVELOPER }),
+          ]),
+        }),
+      );
+      agent.destroy();
+    });
+  });
+
   describe('clearConversation()', () => {
     it('should clear conversation history while preserving plugins', () => {
       const agent = Agent.create({

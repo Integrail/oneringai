@@ -161,6 +161,31 @@ No standard provider key is sent to the renderer. A deployment may choose an
 ephemeral client secret instead, but connector credentials remain outside the
 portable package.
 
+### Provider-session rollover
+
+OpenAI Realtime sessions have a hard lifetime, while the logical OneRingAI Agent
+may continue. On `session:expiring`, the Agent owner must finish or cancel the
+active response, close the old `OpenAIRealtimeAgentSession`, call
+`agent.rolloverContext({ reason: 'realtime-session-expiring' })`, and only then
+create the replacement provider session. Execution ownership rejects rollover
+while the old Realtime session still owns the Agent.
+
+The explicit rollover is not threshold-gated compaction. It summarizes the
+older conversation prefix, preserves the eight most-recent user turns and all
+of their tool pairs exactly, retains provider-opaque compaction items, leaves
+context-plugin state unchanged, and does not rewrite the append-only history
+journal. The replacement Realtime session obtains the continuity brief, exact
+tail, current instructions, tools, and plugin contents from the same Agent's
+normal context preparation path.
+
+By default the Agent uses a tool-free direct call through its configured
+connector/model. A desktop host whose Realtime model cannot perform ordinary
+text generation supplies the `summarize` callback and may route that one call
+through its authenticated LLM proxy or a separate trusted text Agent. The
+callback receives only a detached copy of the older prefix. The live context is
+committed only after a non-empty summary succeeds; configured session storage
+is checkpointed before `rolloverContext()` resolves.
+
 Official protocol references:
 
 - [OpenAI Realtime WebRTC](https://developers.openai.com/api/docs/guides/realtime-webrtc)

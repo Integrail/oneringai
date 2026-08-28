@@ -1324,7 +1324,7 @@ const agent = Agent.create({
 - **Smart compaction** - Happens once, right before LLM call
 
 **Compaction strategy:**
-- **algorithmic** (default) - Moves large tool results to Working Memory, limits tool pairs, applies rolling window. Triggers at 75% context usage.
+- **algorithmic** (default) - Moves large tool results to Working Memory, limits tool pairs, and applies a rolling window after the configured critical threshold is crossed.
 
 **Context preparation:**
 ```typescript
@@ -1334,6 +1334,25 @@ console.log(budget.totalUsed);           // Total tokens used
 console.log(budget.available);           // Remaining tokens
 console.log(budget.utilizationPercent);  // Usage percentage
 ```
+
+**Forced provider-session rollover:** automatic compaction is token-triggered;
+`rolloverContext()` is an explicit semantic checkpoint for a provider lifetime
+boundary such as OpenAI Realtime's 60-minute limit:
+
+```typescript
+const result = await agent.rolloverContext({
+  preserveRecentTurns: 8, // exact messages, including complete tool pairs
+  reason: 'provider-session-expiring',
+});
+```
+
+The Agent summarizes the older prefix with a tool-free direct call, replaces it
+atomically with a continuity brief, leaves plugin state and the append-only
+history journal untouched, and checkpoints automatically when session storage
+is configured. It cannot race `run()`, `stream()`, async continuation, or an
+active Realtime execution. A host may provide `summarize` to use a separate
+trusted summarizer or proxy. Standalone contexts expose the lower-level
+`ctx.rollover({ summarize, preserveRecentTurns })` API.
 
 ### 9. InContextMemory
 
