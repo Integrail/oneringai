@@ -63,6 +63,10 @@ exist before restoring state.
 Plugin-owned executable tools are not written into the package. The receiving
 context recreates them against its own restored plugin state, preventing a
 remote proxy from overwriting `store_*` or another plugin-local function.
+Hydration checks the complete trusted tool set before registering package
+tools. A portable tool that collides with a context, identity, or other
+host-installed tool rejects the package rather than replacing trusted
+behavior.
 
 Plugin state is application data and may be private, but it must never be used
 as credential storage. A custom plugin that currently serializes a key or token
@@ -91,6 +95,13 @@ in-flight/completed response, while reuse for different arguments is rejected.
 The host transport authenticates and authorizes each request before passing it
 to `AgentPackageToolServer.execute()`. Client-supplied tenant, actor, connector,
 or ACL fields must never be accepted as trusted input.
+
+Remote requests and responses use exact, branch-specific JSON DTOs. Unknown
+fields and values that cannot survive a JSON wire round trip are rejected
+before execution. Arguments and successful results are each limited to
+1,000,000 UTF-8 bytes, and one server session admits at most 1,000 distinct
+request IDs. Closing a tool server is a shared asynchronous operation:
+concurrent callers all wait for the same in-flight execution drain.
 
 ## Desktop text flow
 
@@ -142,7 +153,9 @@ partial setup and terminal peer failure also release exactly once. The browser
 peer retains a bounded, ordered event backlog until a channel bridge attaches;
 the channel transport retains that backlog until `connect()` has consumers.
 This prevents creation, transcript, tool, response, error, and usage events
-from being lost during the renderer/main attachment gap.
+from being lost during the renderer/main attachment gap. Each layer defaults
+to 256 events and 1 MiB; exceeding either bound fails or closes the session
+rather than discarding an older ordered event.
 
 No standard provider key is sent to the renderer. A deployment may choose an
 ephemeral client secret instead, but connector credentials remain outside the
@@ -181,9 +194,15 @@ identities, tools, instructions, memory, or context plugins.
 - Incompatible or expired packages fail before Agent creation.
 - Missing connector, plugin, local tool, or remote transport dependencies fail
   closed.
+- Portable tool names cannot replace tools installed by trusted host context or
+  identity policy.
 - WebRTC setup closes tracks, peer connections, data channels, and Agent
   sessions after partial failure and releases a created provider call.
+- Explicit WebRTC shutdown and concurrent `closeAndRelease()` callers wait for
+  the same provider-release promise.
 - Cross-package and non-allowlisted remote tool calls are rejected.
+- Remote DTOs reject unexpected fields, non-JSON values, and oversized
+  arguments or results.
 - Remote errors expose bounded codes and safe messages, never internal stacks or
   credentials.
 - Provider usage is authoritative. Client-reported metrics are observational.

@@ -1,6 +1,6 @@
 # Connector & Tool Catalog
 
-**Version:** 1.0.0 | **Last verified against source:** 2026-08-09
+**Version:** 1.1.1 | **Last verified against source:** 2026-08-28
 
 This is the canonical map of how tools enter a OneRingAI agent. It answers
 three questions that are easy to conflate:

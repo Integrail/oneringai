@@ -6,38 +6,41 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22+-green.svg)](https://nodejs.org/)
 
-## What's new in v1.1.0
+## What's new in v1.1.1
 
-Version 1.1.0 introduces the preview **Agent Runtime**: a vendor-neutral layer
-for running complete, pre-built agent systems through one observable workflow
-API. Applications can now select native OneRingAI agents or OpenAI Codex SDK
-agents without flattening either system into a text-model provider or replacing
-its native loop, tools, context, and workspace semantics.
+Version 1.1.1 adds portable native-Agent execution and completes the
+Agent-aware OpenAI Realtime path. A trusted server can export a data-only Agent
+package, hydrate it under desktop-owned connector and permission policy, and
+keep browser audio on WebRTC while the hydrated Agent handles context and
+tools.
 
-| Area | 1.1.0 outcome |
+| Area | 1.1.1 outcome |
 |------|---------------|
-| Agent Runtime API | Generic agent specifications, capability inspection, sessions, runs, cancellation, results, policy, and model/reasoning overrides |
-| Local drivers | Native OneRingAI agent sources and the optional OpenAI Codex TypeScript SDK behind the same application lifecycle |
-| Observable autonomy | Live messages, vendor-exposed reasoning, tools, commands/output, file activity, usage, and bounded replay—independent from approvals or steering |
-| Safety and correctness | Fail-closed capability checks, model-specific reasoning validation, structured-output/image gates, exclusive workspace leases, bounded cleanup, and quarantine after unconfirmed native termination |
-| DeepSeek | Dedicated current V4 provider with native transports, reasoning replay, structured output, web search, FIM/balance APIs, and hosted-provider presets |
-| Packaging | Separate `agent-runtime` and optional `agent-runtime/codex` exports, comprehensive documentation, deterministic tests, and real-provider integration coverage |
+| Portable Agents | Versioned, JSON-only Agent packages with trusted-host hydration and explicit local/remote tool placement |
+| Realtime voice | One Agent-aware session for context, local tools, hosted MCP approval, usage, WebRTC sideband, and telephony |
+| Browser/desktop bridge | Browser-safe `realtime-browser` export plus an ordered, bounded data-channel transport for Electron-style process boundaries |
+| Per-call isolation | `VoiceBridge` can create a fresh Agent for each call so tenant, user, tools, and context are never shared accidentally |
+| Safety and correctness | Credentials and host policy stay out of packages; wire DTOs, sizes, tool collisions, execution ownership, and cleanup fail closed |
+| Packaging | Every declared ESM, CJS, type, Agent Runtime, and browser export is verified after each build |
 
 ### Upgrade notes
 
-- Version 1.1.0 is additive; existing connector-first `Agent` applications do
-  not need to migrate to `AgentRuntime`.
-- Install `@openai/codex-sdk` only when using the optional Codex driver.
-- The implemented backend is for trusted local development. Server containers,
-  Codex App Server interaction, Claude Agent SDK, and A2A are documented future
-  phases—not capabilities claimed by this release.
+- Version 1.1.1 is additive. Existing connector-first `Agent`,
+  `AgentRuntime`, and `createWebRTCCall()` applications keep their current
+  behavior.
+- Use `createWebRTCCallWithMetadata()` when sideband control or reliable
+  provider-call cleanup needs the opaque call ID.
+- Treat portable packages as editable client data, never authority. The
+  receiving host must supply connector/model authorization, permissions,
+  context/plugin policy, executable local tools, and remote transport access.
 - Node.js 22 remains required. The registry and provider compatibility baseline
   established by 1.0 remains unchanged.
 
-Read the [complete 1.1.0 release notes](./CHANGELOG.md#110--2026-08-24),
-the [Agent Runtime guide](./USER_GUIDE.md#agent-runtime-preview), and the
-[architectural design](./docs/designs/AGENT_RUNTIME.md) before deploying the
-preview runtime.
+Read the [complete 1.1.1 release notes](./CHANGELOG.md#111--2026-08-28),
+the [Realtime guide](./USER_GUIDE.md#openai-realtime-api), and the
+[distributed execution design](./docs/designs/DISTRIBUTED_AGENT_EXECUTION.md).
+The preview [Agent Runtime guide](./USER_GUIDE.md#agent-runtime-preview)
+continues to cover complete OneRingAI and Codex SDK agent runtimes.
 
 ## Built for coding agents
 
@@ -204,7 +207,7 @@ plugin lifecycle, stores, compaction, persistence, and custom plugins.
 
 ## Table of Contents
 
-- [What's new in v1.1.0](#whats-new-in-v110)
+- [What's new in v1.1.1](#whats-new-in-v111)
 - [Upgrade notes](#upgrade-notes)
 - [Built for coding agents](#built-for-coding-agents)
 - [Agent Runtime: run complete agents through one API](#agent-runtime-run-complete-agents-through-one-api)
@@ -2059,7 +2062,14 @@ trusted host to provide an authorized connector, model, permission policy, and
 `contextFactory`; mutable package feature flags never activate plugins or
 broaden tool scopes. Instruction templates are rendered again with the
 receiving host's user/model, and context-owned tools are recreated by the
-receiving context rather than exported as proxies.
+receiving context rather than exported as proxies. Hydration rejects any
+portable tool name that collides with a trusted context, identity, or
+host-provided tool.
+
+Remote tool requests and responses are exact, JSON-only protocol objects.
+Arguments and successful results are each limited to 1,000,000 UTF-8 bytes;
+unknown fields, non-JSON values, cross-package calls, and non-allowlisted tools
+fail closed.
 
 Pass `executionProfile: 'realtime'` when hydrating a voice runtime so the Agent
 uses the package's Realtime connector and model instead of its normal text
@@ -3456,4 +3466,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 1.1.0 | **Last Updated:** 2026-08-24 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 1.1.1 | **Last Updated:** 2026-08-28 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**

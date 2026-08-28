@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-08-28
+
 ### Added
 
 - **Agent-aware Realtime voice sessions.** Added
@@ -57,7 +59,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Portable wire and voice teardown validation.** Realtime session ending now
   has one published owner before synchronous state events fire. Portable
   packages and remote tool messages validate branch-specific DTOs, conversation
-  content, zero-valued runtime controls, JSON wire values, and UTF-8 byte limits.
+  content, zero-valued runtime controls, JSON wire values, unexpected fields,
+  and UTF-8 byte limits. Package tools cannot overwrite trusted host tools, and
+  remote results are bounded as well as arguments.
+- **Bounded ordered Realtime attachment.** The browser peer and main-process
+  channel transport retain creation and other early events until consumers
+  attach, enforce count and byte limits, and fail closed on overflow instead of
+  silently dropping an older event.
+- **Shared asynchronous cleanup.** Concurrent remote tool-server closes and
+  WebRTC `closeAndRelease()` calls await the same drain/provider-release work,
+  so no caller returns while cleanup owned by another caller remains pending.
+- **Runtime snapshot and thinking validation.** Trusted hydration overrides may
+  contain callbacks and other host-local references without structured-clone
+  failures, while enabled thinking configurations reject a zero token budget.
 
 ### Migration notes
 
@@ -3038,6 +3052,9 @@ StorageRegistry.setContext({ userId: currentUser.id });
 [0.1.2]: https://github.com/aantich/oneringai/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/aantich/oneringai/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aantich/oneringai/releases/tag/v0.1.0
-[Unreleased]: https://github.com/aantich/oneringai/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/aantich/oneringai/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/aantich/oneringai/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/aantich/oneringai/compare/v1.0.1...v1.1.0
+[1.0.1]: https://github.com/aantich/oneringai/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/aantich/oneringai/compare/v0.11.0...v1.0.0
 [0.11.0]: https://github.com/aantich/oneringai/compare/v0.10.3...v0.11.0

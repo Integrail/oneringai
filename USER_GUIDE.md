@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 1.1.0
-**Last Updated:** 2026-08-24
+**Version:** 1.1.1
+**Last Updated:** 2026-08-28
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -9,6 +9,8 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 
 ## Table of Contents
 
+- [Upgrading to 1.1.1](#upgrading-to-111) — portable Agents, Agent-aware Realtime, and WebRTC call metadata
+- [Portable Agent Packages](#portable-agent-packages) — trusted-host hydration with local and remote tools
 - [Upgrading to 1.0.0](#upgrading-to-100) — runtime requirements, breaking changes, compatibility guarantees, and migration checklist
 - [Agent Runtime (preview)](#agent-runtime-preview) — run complete OneRingAI and Codex SDK agents through one observable, capability-gated API
 1. [Getting Started](#getting-started)
@@ -151,6 +153,101 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 38. [Production Deployment](#production-deployment)
 
 ---
+
+## Upgrading to 1.1.1
+
+OneRingAI 1.1.1 is additive. Existing connector-first Agents, the preview Agent
+Runtime, and callers that use `createWebRTCCall()` for an SDP string do not
+need to migrate.
+
+Use the new surfaces when an application needs one of these flows:
+
+| Goal | 1.1.1 surface |
+|------|---------------|
+| Move one resolved native Agent to a trusted desktop runtime | `exportAgentPackage()` and `hydrateAgentPackage()` |
+| Keep selected tools on the source server | `AgentPackageToolServer` and `RemoteToolTransport` |
+| Run browser WebRTC media without importing Node dependencies | `@everworker/oneringai/realtime-browser` |
+| Bridge renderer Realtime events to a main-process Agent | `OpenAIRealtimeChannelTransport` |
+| Obtain the opaque WebRTC call ID for sideband control or cleanup | `createWebRTCCallWithMetadata()` |
+| Resolve call-specific identity, context, and permissions | `VoiceBridge({ agentFactory })` |
+
+Portable packages are editable data, not authorization. Keep connector
+credentials, source identity, permission policy, provider-native tools,
+`vendorOptions`, prompt caching, data-handling policy, and plugin factories in
+the trusted receiving host. Node.js 22 remains the minimum runtime.
+
+## Portable Agent Packages
+
+`exportAgentPackage()` captures the serializable state of an already-resolved
+native `Agent`: its unrendered instructions, portable runtime limits, context
+state, tool definitions and placement, plus optional Realtime metadata. It
+never serializes executable functions or connector credentials.
+
+```typescript
+import {
+  AgentPackageToolServer,
+  exportAgentPackage,
+  hydrateAgentPackage,
+} from '@everworker/oneringai';
+
+// Trusted source server
+const packageValue = exportAgentPackage(serverAgent, {
+  expiresAt: new Date(Date.now() + 10 * 60_000),
+  toolPlacement: (name) => name === 'read_desktop_file' ? 'local' : 'remote',
+  realtime: {
+    provider: 'openai',
+    connectorName: 'server-openai',
+    model: 'gpt-realtime-2.1',
+    voice: 'marin',
+  },
+});
+const toolServer = new AgentPackageToolServer(serverAgent, packageValue);
+
+// Trusted desktop main process
+const desktopAgent = await hydrateAgentPackage(packageValue, {
+  connector: 'desktop-openai',
+  model: 'gpt-5.6-terra',
+  userId: authenticatedUser.id,
+  permissions: desktopPermissionPolicy,
+  contextFactory: ({ package: pkg, model, userId, identities }) => ({
+    model,
+    agentId: pkg.agent.id,
+    systemPrompt: pkg.agent.instructions,
+    userId,
+    identities,
+    features: trustedContextFeatures,
+    plugins: trustedContextPlugins,
+  }),
+  localToolResolver: resolveAuthorizedDesktopTool,
+  remoteToolTransport: {
+    execute: (request) => authenticatedRpc.executeRemoteTool(request),
+  },
+  agentConfig: trustedProviderPolicy,
+});
+```
+
+The RPC host must authenticate and authorize each request before forwarding it
+to `toolServer.execute(request)`. Hydration also rejects a package tool whose
+name collides with a trusted context, identity, or host tool; package tools
+never overwrite host authority.
+
+The package and remote-tool protocol require exact JSON objects. A package is
+limited to 10,000,000 UTF-8 bytes. Remote arguments and successful results are
+limited to 1,000,000 UTF-8 bytes each, and one tool-server session accepts at
+most 1,000 distinct request IDs. Unknown fields, non-JSON values, expired or
+incompatible packages, cross-package requests, and non-allowlisted tools fail
+closed. Exact request retries are idempotent for the bounded server-session
+lifetime.
+
+Call `await toolServer.close()` and `desktopAgent.destroy()` when the session
+ends. Concurrent close callers share the same shutdown operation, so every
+caller waits for in-flight tool execution to settle.
+
+For a voice package, pass `executionProfile: 'realtime'` during hydration.
+The package's connector and model remain hints; an authorized
+`connectorResolver` may replace both. See
+[Distributed Agent Execution](./docs/designs/DISTRIBUTED_AGENT_EXECUTION.md)
+for ownership, Electron/WebRTC flow, and security boundaries.
 
 ## Upgrading to 1.0.0
 
@@ -13010,7 +13107,9 @@ const peer = new OpenAIRealtimeWebRTCPeer({
   exchangeSdp: (offer, { signal }) => appBackend.createRealtimeCall({ offer, signal }),
   releaseCall: (callId) => appBackend.hangupRealtimeCall({ callId }),
   onRemoteTrack: (streamOrTrack) => {
-    if (streamOrTrack instanceof MediaStream) audioElement.srcObject = streamOrTrack;
+    if (typeof MediaStream !== 'undefined' && streamOrTrack instanceof MediaStream) {
+      audioElement.srcObject = streamOrTrack;
+    }
   },
 });
 await peer.connect();
@@ -13020,11 +13119,15 @@ await peer.closeAndRelease();
 ```
 
 `exchangeSdp` must return `{ sdp, callId }`; the old string-only answer is not
-accepted because it cannot support reliable cleanup. The peer retains a bounded
-event backlog until the renderer/main bridge attaches, and
-`OpenAIRealtimeChannelTransport` replays the backlog when it connects. Bridges
-that implement their own channel should preserve the same ordering and may use
-`getSessionCreatedMessage()` for compatibility with creation-event replay.
+accepted because it cannot support reliable cleanup. Before the first message
+subscriber, the peer retains at most 256 events or 1 MiB by default. Before
+`connect()`, `OpenAIRealtimeChannelTransport` independently retains at most
+256 events or 1 MiB. Configure these with `maxPendingMessages`,
+`maxPendingMessageBytes`, `maxPendingEvents`, and `maxPendingEventBytes`.
+Overflow closes or fails the session instead of dropping an older ordered
+event. Bridges that implement their own channel should preserve the same
+ordering and may use `getSessionCreatedMessage()` for compatibility with
+creation-event replay.
 
 Never send the connector's standard API key to a browser or mobile application.
 Mint client secrets per session and associate the safety identifier when the
@@ -13370,6 +13473,7 @@ The package root exports:
   `VoiceBridge`;
 - session/API types: `OpenAIRealtimeSessionOptions`,
   `OpenAIRealtimeAgentSessionOptions`, `OpenAIRealtimeAgentTransport`,
+  `OpenAIRealtimeChannelTransportOptions`,
   `CreateRealtimeClientSecretOptions`, and
   `CreateRealtimeTranslationClientSecretOptions`, and
   `CreateRealtimeWebRTCCallOptions`, `OpenAIRealtimeWebRTCCall`, and
@@ -13386,6 +13490,11 @@ The package root exports:
   function/MCP tool types, voices, and model ids; and
 - telephony types: `RealtimePipelineConfig`, `VoiceBridgeConfig`, `VoiceAgentFactory`,
   `VoicePipelineEvents`, `TranscriptMessage`, and adapter/session types.
+
+The browser-only `@everworker/oneringai/realtime-browser` subpath exports
+`OpenAIRealtimeWebRTCPeer`, `OpenAIRealtimeWebRTCPeerOptions`, its event
+types, and the shared Realtime channel/event types without loading the Node.js
+SDK entry point.
 
 Run the complete server-side example with:
 
@@ -17825,5 +17934,5 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Last Updated:** 2026-08-24
-**Version:** 1.1.0
+**Last Updated:** 2026-08-28
+**Version:** 1.1.1
