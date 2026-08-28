@@ -25,6 +25,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { Agent } from '../../core/Agent.js';
 import { logger } from '../../infrastructure/observability/Logger.js';
 import { VoiceSession } from './VoiceSession.js';
 import { TextPipeline } from './pipelines/TextPipeline.js';
@@ -71,7 +72,8 @@ export class VoiceBridge extends EventEmitter {
   private callToSession = new Map<string, string>();
   private pendingOutbound = new Map<string, CallDirection>();
   private cleanupTimers = new Set<ReturnType<typeof setTimeout>>();
-  private endingSessions = new Set<string>();
+  private endingSessions = new Map<string, Promise<void>>();
+  private factoryAgents = new WeakSet<Agent>();
   private adapter: ITelephonyAdapter | null = null;
   private destroyed = false;
 
@@ -187,7 +189,28 @@ export class VoiceBridge extends EventEmitter {
       await this.onCallConnected(callId, info);
     } catch (error) {
       logger.error({ callId, error }, '[VoiceBridge] Error handling call connected');
-      this.emit('error', error instanceof Error ? error : new Error(String(error)), undefined);
+      const sessionId = this.callToSession.get(callId);
+      const session = sessionId ? this.sessions.get(sessionId) : undefined;
+      // A factory or pipeline may reject after its call/bridge was already
+      // torn down. Cleanup already owns that lifecycle; do not resurrect it or
+      // emit Node's special unhandled `error` event after listeners were removed.
+      if (this.destroyed || session?.state === 'ended') return;
+      if (session) {
+        session.setEndReason('error');
+        try {
+          await this.endSession(session);
+        } catch (cleanupError) {
+          logger.error({ callId, cleanupError }, '[VoiceBridge] Failed to clean up rejected call session');
+        }
+      }
+      if (this.adapter) {
+        try {
+          await this.adapter.hangup(callId);
+        } catch (hangupError) {
+          logger.error({ callId, hangupError }, '[VoiceBridge] Failed to hang up rejected call');
+        }
+      }
+      this.emit('error', error instanceof Error ? error : new Error(String(error)), sessionId);
     }
   };
 
@@ -266,6 +289,7 @@ export class VoiceBridge extends EventEmitter {
     session.transition('ringing');
 
     const accepted = await this.fireHook('onCallStart', session.getInfo());
+    if (!this.canInitialize(session)) return;
     if (accepted === false) {
       session.setEndReason('rejected');
       await this.endSession(session);
@@ -277,7 +301,24 @@ export class VoiceBridge extends EventEmitter {
 
     // Both pipelines use a full Agent so realtime gets the same permission,
     // identity, memory, connector-context, and tool behavior as text calls.
-    session.createAgent(this.config.agent);
+    // The factory path allows the host to resolve a fresh tenant/user-scoped
+    // Agent for this exact call without sharing it with another session.
+    if (this.config.agentFactory) {
+      const agent = await this.config.agentFactory(session.getInfo());
+      if (!this.canInitialize(session)) {
+        if (agent instanceof Agent && !agent.isDestroyed) agent.destroy();
+        return;
+      }
+      if (!(agent instanceof Agent)) throw new TypeError('agentFactory must return an Agent');
+      if (agent.isDestroyed) throw new Error('agentFactory returned a destroyed Agent');
+      if (this.factoryAgents.has(agent)) {
+        throw new Error('agentFactory must return a fresh Agent for every call');
+      }
+      this.factoryAgents.add(agent);
+      session.assignAgent(agent);
+    } else {
+      session.createAgent(this.config.agent);
+    }
 
     const pipeline = this.createPipeline(session);
     session.setPipeline(pipeline);
@@ -312,17 +353,36 @@ export class VoiceBridge extends EventEmitter {
     const maxDuration = this.config.maxCallDuration ?? DEFAULT_MAX_DURATION;
     session.setMaxDuration(maxDuration);
 
-    session.on('state:change', async (_prev: unknown, next: string) => {
-      if (next === 'ending' && session.state === 'ending') {
-        await this.endSession(session);
-        if (this.adapter) {
-          await this.adapter.hangup(callId);
-        }
-      }
+    session.on('state:change', (_prev: unknown, next: string) => {
+      if (next !== 'ending' || session.state !== 'ending') return;
+      // An explicit bridge operation already owns this teardown. The listener
+      // exists for session-originated endings such as the max-duration timer.
+      if (this.endingSessions.has(session.sessionId)) return;
+      void this.endSession(session)
+        .then(async () => {
+          if (this.adapter) await this.adapter.hangup(callId);
+        })
+        .catch((error) => {
+          const normalized = error instanceof Error ? error : new Error(String(error));
+          logger.error(
+            { sessionId: session.sessionId, error: normalized },
+            '[VoiceBridge] Session-originated teardown failed',
+          );
+          void this.fireHook('onError', normalized, session.getInfo());
+          if (!this.destroyed && this.listenerCount('error') > 0) {
+            this.emit('error', normalized, session.sessionId);
+          }
+        });
     });
 
     session.transition('connected');
     await pipeline.init(session.getInfo());
+    if (!this.canInitialize(session)) {
+      // Session teardown may have raced pipeline initialization. Destroy again
+      // after init settles so resources created late cannot survive the call.
+      await pipeline.destroy();
+      return;
+    }
 
     this.emit('session:created', session.getInfo());
     logger.info(
@@ -331,33 +391,62 @@ export class VoiceBridge extends EventEmitter {
     );
   }
 
-  private async endSession(session: VoiceSession): Promise<void> {
-    if (session.state === 'ended' || this.endingSessions.has(session.sessionId)) return;
-    this.endingSessions.add(session.sessionId);
-    try {
-      const summary = await session.end();
+  private canInitialize(session: VoiceSession): boolean {
+    return !this.destroyed
+      && session.state !== 'ending'
+      && session.state !== 'ended'
+      && this.sessions.get(session.sessionId) === session;
+  }
 
-      await this.fireHook('onCallEnd', session.getInfo(), summary);
+  private endSession(session: VoiceSession): Promise<void> {
+    const existing = this.endingSessions.get(session.sessionId);
+    if (existing) return existing;
+    if (session.state === 'ended') return Promise.resolve();
+    let resolveEnding!: () => void;
+    let rejectEnding!: (error: unknown) => void;
+    const ending = new Promise<void>((resolve, reject) => {
+      resolveEnding = resolve;
+      rejectEnding = reject;
+    });
+    // Publish the shared promise before finishEndSession() can synchronously
+    // emit `state:change(ending)` from VoiceSession.end().
+    this.endingSessions.set(session.sessionId, ending);
+    void this.finishEndSession(session).then(
+      () => {
+        if (this.endingSessions.get(session.sessionId) === ending) {
+          this.endingSessions.delete(session.sessionId);
+        }
+        resolveEnding();
+      },
+      (error) => {
+        if (this.endingSessions.get(session.sessionId) === ending) {
+          this.endingSessions.delete(session.sessionId);
+        }
+        rejectEnding(error);
+      },
+    );
+    return ending;
+  }
 
-      this.emit('session:ended', session.getInfo(), summary);
+  private async finishEndSession(session: VoiceSession): Promise<void> {
+    const summary = await session.end();
 
-      this.callToSession.delete(session.callId);
-      // Delay removal so late lookups can find the ended session
-      const timer = setTimeout(() => {
-        this.sessions.delete(session.sessionId);
-        this.endingSessions.delete(session.sessionId);
-        this.cleanupTimers.delete(timer);
-      }, 2000);
-      this.cleanupTimers.add(timer);
+    await this.fireHook('onCallEnd', session.getInfo(), summary);
 
-      logger.info(
-        { sessionId: session.sessionId, duration: summary.duration, turns: summary.turns, reason: summary.endReason },
-        '[VoiceBridge] Call ended'
-      );
-    } catch (error) {
-      this.endingSessions.delete(session.sessionId);
-      throw error;
-    }
+    this.emit('session:ended', session.getInfo(), summary);
+
+    this.callToSession.delete(session.callId);
+    // Delay removal so late lookups can find the ended session
+    const timer = setTimeout(() => {
+      this.sessions.delete(session.sessionId);
+      this.cleanupTimers.delete(timer);
+    }, 2000);
+    this.cleanupTimers.add(timer);
+
+    logger.info(
+      { sessionId: session.sessionId, duration: summary.duration, turns: summary.turns, reason: summary.endReason },
+      '[VoiceBridge] Call ended'
+    );
   }
 
   // ─── Pipeline Factory ────────────────────────────────────────────
@@ -452,14 +541,19 @@ export class VoiceBridge extends EventEmitter {
     if (this.destroyed) return;
     this.destroyed = true;
 
-    const endings: Promise<void>[] = [];
+    const endings: Promise<void>[] = [...this.endingSessions.values()];
+    const callsToHangUp: string[] = [];
     for (const session of this.sessions.values()) {
       if (session.state !== 'ended') {
         session.setEndReason('error');
         endings.push(this.endSession(session));
+        callsToHangUp.push(session.callId);
       }
     }
     await Promise.allSettled(endings);
+    if (this.adapter) {
+      await Promise.allSettled(callsToHangUp.map((callId) => this.adapter!.hangup(callId)));
+    }
 
     // Clear all pending cleanup timers
     for (const timer of this.cleanupTimers) {

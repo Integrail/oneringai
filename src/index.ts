@@ -33,12 +33,45 @@ export type { StorageConfig, StorageContext, ToolCategoryDefinition, CatalogTool
 export type { AgentStatus as RegistryAgentStatus } from './core/index.js';
 export type {
   AgentConfig,
+  AgentRuntimeConfigSnapshot,
   AgentSessionConfig,
   RunOptions,
   ExternalExecutionOptions,
   ExternalToolCall,
   ExternalExecutionResult,
 } from './core/index.js';
+
+// Portable agent packages and cross-runtime tool execution
+export {
+  AGENT_PACKAGE_PROTOCOL_VERSION,
+  AgentPackageCompatibilityError,
+  AgentPackageToolServer,
+  RemoteToolExecutionError,
+  assertAgentPackageCompatible,
+  createRemoteTool,
+  exportAgentPackage,
+  hydrateAgentPackage,
+} from './portable/index.js';
+export type {
+  AgentPackageContextFactory,
+  AgentPackageContextFactoryInput,
+  AgentPackageConnectorResolution,
+  AgentPackageProtocolVersion,
+  ExportAgentPackageOptions,
+  HydrateAgentPackageOptions,
+  LocalToolResolver,
+  PortableAgentContext,
+  PortableAgentRuntimeConfig,
+  PortableRealtimeProfile,
+  PortableToolDescriptor,
+  PortableToolPlacement,
+  PortableToolPlacementResolver,
+  RemoteToolError,
+  RemoteToolExecutionRequest,
+  RemoteToolExecutionResponse,
+  RemoteToolTransport,
+  SerializedAgentPackage,
+} from './portable/index.js';
 
 // Structured (JSON) output — vendor-agnostic
 export {
@@ -197,6 +230,7 @@ export {
   OpenAIRealtimeSession,
   OpenAIRealtimeAgentSession,
   OpenAIRealtimeAPI,
+  OpenAIRealtimeChannelTransport,
   GrokRealtimeAPI,
   GrokRealtimeSession,
   EnergyVAD,
@@ -215,6 +249,7 @@ export type {
   CallEndReason,
   CallSummary,
   VoiceBridgeConfig,
+  VoiceAgentFactory,
   TextPipelineConfig,
   RealtimePipelineConfig,
   PipelineConfig,
@@ -233,12 +268,15 @@ export type {
   OpenAIRealtimeAgentTransport,
   OpenAIRealtimeAgentSessionOptions,
   OpenAIRealtimeAgentSessionEvents,
+  OpenAIRealtimeChannelTransportOptions,
   OpenAIRealtimeAgentUsage,
   OpenAIRealtimeMCPApprovalRequest,
   OpenAIRealtimeMCPApprovalDecision,
   CreateRealtimeClientSecretOptions,
   CreateRealtimeTranslationClientSecretOptions,
   CreateRealtimeWebRTCCallOptions,
+  OpenAIRealtimeWebRTCCall,
+  RealtimeMessageChannel,
   OpenAIRealtimeModel,
   OpenAIRealtimeVoice,
   RealtimePCMSampleRate,

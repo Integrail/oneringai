@@ -437,6 +437,7 @@ during application shutdown.
 | Runnable examples | `examples/README.md` and `examples/*.ts` |
 | Pre-built agent runtime usage | `USER_GUIDE.md#agent-runtime-preview` and `examples/agent-runtime-local.ts` |
 | Agent runtime architecture and server roadmap | `docs/designs/AGENT_RUNTIME.md` |
+| Server/desktop Agent packages, remote tools, and WebRTC ownership | `docs/designs/DISTRIBUTED_AGENT_EXECUTION.md` |
 
 When documentation and source disagree, verify the public export and tests,
 then fix the stale documentation in the same change.

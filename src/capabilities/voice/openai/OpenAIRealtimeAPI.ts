@@ -6,6 +6,7 @@ import type {
   OpenAIRealtimeTranslationClientSessionConfig,
 } from './RealtimeTypes.js';
 import { assertOpenAIRealtimePCMRates } from './RealtimeTypes.js';
+import type { OpenAIRealtimeWebRTCCall } from './RealtimeChannel.js';
 
 export interface CreateRealtimeClientSecretOptions {
   session: OpenAIRealtimeSessionConfig | OpenAIRealtimeTranscriptionSessionConfig;
@@ -56,14 +57,42 @@ export class OpenAIRealtimeAPI {
     }, options.safetyIdentifier) as Promise<OpenAIRealtimeClientSecret>;
   }
 
-  /** Exchange a WebRTC SDP offer for OpenAI's SDP answer. */
+  /** Exchange a WebRTC SDP offer for the SDP answer (backward-compatible API). */
   async createWebRTCCall(options: CreateRealtimeWebRTCCallOptions): Promise<string> {
+    return (await this.exchangeWebRTCCall(options)).sdp;
+  }
+
+  /** Exchange a WebRTC SDP offer for the SDP answer and sideband call ID. */
+  async createWebRTCCallWithMetadata(
+    options: CreateRealtimeWebRTCCallOptions,
+  ): Promise<OpenAIRealtimeWebRTCCall> {
+    const { sdp, response } = await this.exchangeWebRTCCall(options);
+    const callId = parseCallId(response.headers.get('Location'));
+    if (!callId) {
+      throw new Error('OpenAI Realtime WebRTC response did not include a call ID in the Location header');
+    }
+    return { sdp, callId };
+  }
+
+  private async exchangeWebRTCCall(
+    options: CreateRealtimeWebRTCCallOptions,
+  ): Promise<{ sdp: string; response: Response }> {
     if (!options.sdp.trim()) throw new RangeError('sdp must not be empty');
     if (options.session) assertOpenAIRealtimePCMRates(options.session);
-    return this.request('/realtime/calls', {
-      sdp: options.sdp,
-      ...(options.session ? { session: { ...options.session, type: 'realtime' } } : {}),
-    }, options.safetyIdentifier, 'text') as Promise<string>;
+    const form = new FormData();
+    form.set('sdp', options.sdp);
+    if (options.session) {
+      form.set('session', JSON.stringify({ ...options.session, type: 'realtime' }));
+    }
+    const response = await this.requestResponse(
+      '/realtime/calls',
+      form,
+      options.safetyIdentifier,
+      'multipart',
+    );
+    const sdp = await response.text();
+    if (!sdp.trim()) throw new Error('OpenAI Realtime WebRTC response did not include an SDP answer');
+    return { sdp, response };
   }
 
   async acceptCall(callId: string, session: OpenAIRealtimeSessionConfig): Promise<void> {
@@ -93,23 +122,46 @@ export class OpenAIRealtimeAPI {
     safetyIdentifier?: string,
     responseType: 'json' | 'text' = 'json',
   ): Promise<unknown> {
+    const response = await this.requestResponse(path, body, safetyIdentifier);
+    if (response.status === 204) return undefined;
+    const text = await response.text();
+    if (responseType === 'text') return text;
+    return text ? JSON.parse(text) : undefined;
+  }
+
+  private async requestResponse(
+    path: string,
+    body?: Record<string, unknown> | FormData,
+    safetyIdentifier?: string,
+    encoding: 'json' | 'multipart' = 'json',
+  ): Promise<Response> {
     const base = this.connector.baseURL || 'https://api.openai.com/v1';
     const url = `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
     const response = await this.connector.fetch(url, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        ...(encoding === 'json' ? { 'Content-Type': 'application/json' } : {}),
         ...(safetyIdentifier ? { 'OpenAI-Safety-Identifier': safetyIdentifier } : {}),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(body === undefined ? {} : {
+        body: encoding === 'json' ? JSON.stringify(body) : body as FormData,
+      }),
     });
     if (!response.ok) {
       const detail = await response.text();
       throw new Error(`OpenAI Realtime API ${response.status}: ${detail || response.statusText}`);
     }
-    if (response.status === 204) return undefined;
-    const text = await response.text();
-    if (responseType === 'text') return text;
-    return text ? JSON.parse(text) : undefined;
+    return response;
+  }
+}
+
+function parseCallId(location: string | null): string | null {
+  if (!location) return null;
+  const match = location.match(/\/realtime\/calls\/([^/?#]+)/i);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
   }
 }

@@ -25,7 +25,7 @@ export interface OpenAIRealtimeSessionOptions {
   model?: OpenAIRealtimeModel;
   /** Dedicated translation sessions use `realtime/translations`. */
   endpoint?: 'realtime' | 'realtime/translations';
-  /** xAI SIP call to join. When set, the model query parameter is omitted. */
+  /** Existing OpenAI/xAI Realtime call to join over a server sideband connection. */
   callId?: string;
   /** xAI conversation ID to resume after reconnecting. */
   conversationId?: string;

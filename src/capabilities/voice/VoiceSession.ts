@@ -166,6 +166,18 @@ export class VoiceSession extends EventEmitter {
     return this._agent;
   }
 
+  /** Assign a factory-created Agent. VoiceSession assumes ownership and destroys it on end. */
+  assignAgent(agent: Agent): Agent {
+    if (this._state === 'ending' || this._state === 'ended') {
+      throw new Error('Cannot assign an Agent to an ending or ended session');
+    }
+    if (this._agent) {
+      throw new Error('Agent already created for this session');
+    }
+    this._agent = agent;
+    return this._agent;
+  }
+
   /**
    * Assign the voice pipeline for this call session.
    */
@@ -256,11 +268,15 @@ export class VoiceSession extends EventEmitter {
       this._maxDurationTimer = null;
     }
 
-    // Transition to ended (via ending if not already)
-    if (this._state !== 'ending') {
-      this.transition('ending');
+    // Pre-connect failures and rejected calls can end directly from idle or
+    // ringing. Active calls transition through ending so normal teardown hooks
+    // retain their existing state sequence.
+    if (this._state === 'idle' || this._state === 'ringing') {
+      this.transition('ended');
+    } else {
+      if (this._state !== 'ending') this.transition('ending');
+      this.transition('ended');
     }
-    this.transition('ended');
 
     // Destroy pipeline
     if (this._pipeline) {

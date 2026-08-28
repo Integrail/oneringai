@@ -2034,7 +2034,8 @@ realtime.appendAudio(pcm24Chunk);
 `OpenAIRealtimeAgentSession` refreshes Agent memory/context per turn and runs
 parallel local functions through the normal Agent hook, approval, permission,
 timeout, identity, event, and metrics path. Provider MCP approvals fail closed.
-`OpenAIRealtimeAPI` creates short-lived WebRTC client secrets, exchanges SDP,
+`OpenAIRealtimeAPI` creates short-lived WebRTC client secrets, exchanges SDP
+while preserving the sideband call ID,
 and accepts, rejects, transfers, or hangs up SIP calls. `VoiceBridge` uses the
 same semantics with PCMU telephony audio, VAD, barge-in truncation, tools, MCP,
 usage, tracing, and retention-ratio truncation. See
@@ -2042,6 +2043,27 @@ the [complete OpenAI Realtime API guide](./USER_GUIDE.md#openai-realtime-api)
 for voice-agent, transcription, translation, WebRTC, SIP, tool, event, pricing,
 and production examples. A runnable server-side example is also available at
 [`examples/openai-realtime.ts`](./examples/openai-realtime.ts).
+
+For local desktop execution, export the resolved Agent with
+`exportAgentPackage()`, hydrate it in the desktop main process with
+`hydrateAgentPackage()`, and connect its `OpenAIRealtimeAgentSession` to a
+renderer WebRTC peer through `OpenAIRealtimeChannelTransport`. The browser-safe
+peer is exported from `@everworker/oneringai/realtime-browser`. See the
+[distributed execution design](./docs/designs/DISTRIBUTED_AGENT_EXECUTION.md).
+
+Portable packages omit connector credentials, source identity, arbitrary
+`vendorOptions`, provider-hosted `nativeTools`, prompt-cache policy,
+data-handling policy, and open-ended Realtime session configuration. Supply
+trusted provider-local policy through `agentConfig`. Hydration requires the
+trusted host to provide an authorized connector, model, permission policy, and
+`contextFactory`; mutable package feature flags never activate plugins or
+broaden tool scopes. Instruction templates are rendered again with the
+receiving host's user/model, and context-owned tools are recreated by the
+receiving context rather than exported as proxies.
+
+Pass `executionProfile: 'realtime'` when hydrating a voice runtime so the Agent
+uses the package's Realtime connector and model instead of its normal text
+model.
 
 The provider-specific `GrokRealtimeSession` facade and the shared telephony
 pipeline support xAI's OpenAI-compatible Voice Agent API with `Vendor.Grok`,

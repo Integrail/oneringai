@@ -41,6 +41,11 @@
       "types": "./dist/agent-runtime/codex.d.ts",
       "import": "./dist/agent-runtime/codex.js",
       "require": "./dist/agent-runtime/codex.cjs"
+    },
+    "./realtime-browser": {
+      "types": "./dist/realtime-browser/index.d.ts",
+      "import": "./dist/realtime-browser/index.js",
+      "require": "./dist/realtime-browser/index.cjs"
     }
   },
   "typesVersions": {
@@ -62,6 +67,9 @@
       ],
       "agent-runtime/codex": [
         "./dist/agent-runtime/codex.d.ts"
+      ],
+      "realtime-browser": [
+        "./dist/realtime-browser/index.d.ts"
       ]
     }
   },
@@ -80,6 +88,7 @@
     "docs/MEMORY_SIGNALS.md",
     "docs/MODEL_REGISTRY_AUDIT.md",
     "docs/designs/AGENT_RUNTIME.md",
+    "docs/designs/DISTRIBUTED_AGENT_EXECUTION.md",
     "examples/agent-runtime-local.ts",
     "CHANGELOG.md",
     "LICENSE"
@@ -88,9 +97,11 @@
     "generate:tools": "tsx scripts/generate-tool-registry.ts",
     "generate:vendors": "tsx scripts/generate-vendor-registry.ts",
     "generate": "npm run generate:tools && npm run generate:vendors",
-    "build": "npm run generate && tsup",
+    "clean:dist": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build:verify-exports": "node scripts/verify-package-exports.mjs",
+    "build": "npm run generate && npm run clean:dist && tsup && npm run build:verify-exports",
     "build:all": "npm run build && npm run --prefix apps/amos build && npm run --prefix apps/hosea build && npm run --prefix apps/convert build",
-    "dev": "npm run generate && tsup --watch",
+    "dev": "npm run generate && npm run clean:dist && tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",

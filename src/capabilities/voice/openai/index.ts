@@ -1,6 +1,7 @@
 export { OpenAIRealtimeSession } from './OpenAIRealtimeSession.js';
 export { OpenAIRealtimeAgentSession } from './OpenAIRealtimeAgentSession.js';
 export { OpenAIRealtimeAPI } from './OpenAIRealtimeAPI.js';
+export { OpenAIRealtimeChannelTransport } from './OpenAIRealtimeChannelTransport.js';
 export type {
   OpenAIRealtimeConnectOptions,
   OpenAIRealtimeSessionOptions,
@@ -14,6 +15,8 @@ export type {
   OpenAIRealtimeMCPApprovalRequest,
   OpenAIRealtimeMCPApprovalDecision,
 } from './OpenAIRealtimeAgentSession.js';
+export type { OpenAIRealtimeChannelTransportOptions } from './OpenAIRealtimeChannelTransport.js';
+export type { OpenAIRealtimeWebRTCCall, RealtimeMessageChannel } from './RealtimeChannel.js';
 export type {
   CreateRealtimeClientSecretOptions,
   CreateRealtimeTranslationClientSecretOptions,

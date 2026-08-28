@@ -113,6 +113,24 @@ describe('OpenAI Realtime GA support', () => {
     expect(socket.sent[2]).toMatchObject({ type: 'conversation.item.create' });
   });
 
+  it('joins a WebRTC call through an authenticated server sideband connection', async () => {
+    const socket = new MockSocket();
+    let requestedURL = '';
+    const client = new OpenAIRealtimeSession({
+      connector: createConnector(),
+      callId: 'call/123',
+      webSocketFactory: async (url) => {
+        requestedURL = url;
+        return connectedFactory(socket)();
+      },
+    });
+    client.on('error', () => undefined);
+
+    await client.connect();
+
+    expect(requestedURL).toBe('wss://api.openai.com/v1/realtime?call_id=call%2F123');
+  });
+
   it('cancels an in-flight connection when close is called before token resolution', async () => {
     const connector = createConnector();
     let resolveToken!: (token: string) => void;
@@ -301,7 +319,10 @@ describe('OpenAI Realtime GA support', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         value: 'ek_test', expires_at: 123, session: { type: 'realtime' },
       }), { status: 200 }))
-      .mockResolvedValueOnce(new Response('v=0\r\ns=OpenAI Realtime\r\n', { status: 200 }))
+      .mockResolvedValueOnce(new Response('v=0\r\ns=OpenAI Realtime\r\n', {
+        status: 200,
+        headers: { Location: '/v1/realtime/calls/call_123' },
+      }))
       .mockResolvedValue(new Response(null, { status: 204 }));
     const api = new OpenAIRealtimeAPI(connector);
 
@@ -310,7 +331,7 @@ describe('OpenAI Realtime GA support', () => {
       expiresAfterSeconds: 600,
       safetyIdentifier: 'hashed-user-id',
     });
-    const sdpAnswer = await api.createWebRTCCall({
+    const sdpAnswer = await api.createWebRTCCallWithMetadata({
       sdp: 'v=0\r\ns=Browser offer\r\n',
       session: { model: 'gpt-realtime-2.1' },
       safetyIdentifier: 'hashed-user-id',
@@ -321,7 +342,10 @@ describe('OpenAI Realtime GA support', () => {
     await api.hangupCall('call/1');
 
     expect(secret.value).toBe('ek_test');
-    expect(sdpAnswer).toContain('OpenAI Realtime');
+    expect(sdpAnswer).toEqual({
+      sdp: 'v=0\r\ns=OpenAI Realtime\r\n',
+      callId: 'call_123',
+    });
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.openai.com/v1/realtime/client_secrets');
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       session: { type: 'realtime', model: 'gpt-realtime-2.1' },
@@ -331,13 +355,16 @@ describe('OpenAI Realtime GA support', () => {
       'OpenAI-Safety-Identifier': 'hashed-user-id',
     });
     expect(fetchMock.mock.calls[1]?.[0]).toBe('https://api.openai.com/v1/realtime/calls');
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
-      sdp: 'v=0\r\ns=Browser offer\r\n',
-      session: { type: 'realtime', model: 'gpt-realtime-2.1' },
+    const callBody = fetchMock.mock.calls[1]?.[1]?.body;
+    expect(callBody).toBeInstanceOf(FormData);
+    expect((callBody as FormData).get('sdp')).toBe('v=0\r\ns=Browser offer\r\n');
+    expect(JSON.parse(String((callBody as FormData).get('session')))).toMatchObject({
+      type: 'realtime', model: 'gpt-realtime-2.1',
     });
     expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({
       'OpenAI-Safety-Identifier': 'hashed-user-id',
     });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).not.toHaveProperty('Content-Type');
     expect(fetchMock.mock.calls[2]?.[0]).toBe(
       'https://api.openai.com/v1/realtime/calls/call%2F1/accept',
     );
@@ -350,6 +377,28 @@ describe('OpenAI Realtime GA support', () => {
     expect(fetchMock.mock.calls[5]?.[0]).toBe(
       'https://api.openai.com/v1/realtime/calls/call%2F1/hangup',
     );
+  });
+
+  it('rejects WebRTC setup when OpenAI omits the sideband call ID', async () => {
+    const connector = createConnector();
+    vi.spyOn(connector, 'fetch').mockResolvedValue(new Response('v=0\r\ns=answer\r\n', {
+      status: 200,
+    }));
+    const api = new OpenAIRealtimeAPI(connector);
+
+    await expect(api.createWebRTCCallWithMetadata({ sdp: 'v=0\r\ns=offer\r\n' }))
+      .rejects.toThrow('did not include a call ID');
+  });
+
+  it('keeps createWebRTCCall backward compatible with its SDP string return', async () => {
+    const connector = createConnector();
+    vi.spyOn(connector, 'fetch').mockResolvedValue(new Response('v=0\r\ns=answer\r\n', {
+      status: 200,
+    }));
+    const api = new OpenAIRealtimeAPI(connector);
+
+    await expect(api.createWebRTCCall({ sdp: 'v=0\r\ns=offer\r\n' }))
+      .resolves.toBe('v=0\r\ns=answer\r\n');
   });
 
   it('creates WebRTC client secrets for the dedicated translation endpoint', async () => {

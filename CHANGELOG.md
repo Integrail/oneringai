@@ -21,12 +21,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **WebRTC SDP helper and audio backpressure.** `OpenAIRealtimeAPI` now exchanges
   SDP offers through `/v1/realtime/calls`; WebSocket sessions bound queued audio
   with a configurable high-water mark.
+- **Distributed native-Agent packages.** Added versioned, data-only Agent
+  packages, trusted-host hydration, local/remote tool placement, and a bounded,
+  idempotent remote-tool protocol for desktop and browser execution.
+- **Browser-safe Realtime peer.** Added the
+  `@everworker/oneringai/realtime-browser` subpath for WebRTC media and Realtime
+  data-channel events without importing the Node.js SDK surface.
+- **Per-call Agent factories.** `VoiceBridge` can resolve a fresh asynchronous
+  `Agent` for every call, enabling tenant-, user-, and session-scoped voice
+  configuration without sharing execution state.
 
 ### Changed
 
 - **Telephony uses the shared Agent-aware layer.** OpenAI `RealtimePipeline`
   refreshes dynamic context before each response and exposes usage/MCP approval
   handling while preserving PCMU streaming and interruption truncation.
+- **WebRTC metadata without a breaking return change.** Existing
+  `createWebRTCCall()` consumers continue to receive the SDP answer string;
+  callers that also need OpenAI's call ID use
+  `createWebRTCCallWithMetadata()` and receive `{ sdp, callId }`.
 
 ### Fixed
 
@@ -41,6 +54,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   admission now enforces `maxToolCalls` without double-counting active calls.
 - **Generated API signatures.** The API documentation generator now slices at
   the declaration body instead of object-literal braces in parameters/defaults.
+- **Portable wire and voice teardown validation.** Realtime session ending now
+  has one published owner before synchronous state events fire. Portable
+  packages and remote tool messages validate branch-specific DTOs, conversation
+  content, zero-valued runtime controls, JSON wire values, and UTF-8 byte limits.
+
+### Migration notes
+
+- Portable packages describe executable state but grant no authority. Receiving
+  hosts must continue to supply connector/model resolution, permissions,
+  context/plugin policy, credentials, provider tools, and data-handling policy.
+- Code that needs a Realtime call ID should opt into
+  `createWebRTCCallWithMetadata()`; no migration is required for existing
+  `createWebRTCCall()` SDP-string consumers.
 
 ## [1.1.0] — 2026-08-24
 

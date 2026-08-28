@@ -229,6 +229,8 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
 
   /** Whether the 5 generic store_* tools have been registered with ToolManager */
   private _storeToolsRegistered = false;
+  /** Tool names whose executable implementations are owned by context plugins. */
+  private readonly _contextToolNames = new Set<string>();
   /** Plugins that should NOT be destroyed when this context is destroyed (shared across agents) */
   private _skipDestroyPlugins = new Set<string>();
 
@@ -907,6 +909,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
     const tools = plugin.getTools();
     for (const tool of tools) {
       this._tools.register(tool);
+      this._contextToolNames.add(tool.definition.function.name);
     }
 
     // If plugin implements IStoreHandler, register with unified store tools
@@ -918,6 +921,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
         const storeTools = this._storeToolsManager.getTools();
         for (const tool of storeTools) {
           this._tools.register(tool);
+          this._contextToolNames.add(tool.definition.function.name);
         }
         this._storeToolsRegistered = true;
       }
@@ -943,6 +947,15 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
    */
   getPlugins(): IContextPluginNextGen[] {
     return Array.from(this._plugins.values());
+  }
+
+  /**
+   * Return executable tool names recreated by this context's plugin set.
+   * Portable runtimes use this to avoid replacing restored plugin tools with
+   * remote proxies that would operate on a different context instance.
+   */
+  getContextToolNames(): string[] {
+    return Array.from(this._contextToolNames);
   }
 
   // ============================================================================
@@ -2699,6 +2712,7 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
       }
     }
     this._plugins.clear();
+    this._contextToolNames.clear();
     this._skipDestroyPlugins.clear();
 
     // Destroy store tools manager

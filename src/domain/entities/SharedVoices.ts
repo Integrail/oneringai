@@ -15,6 +15,8 @@ export interface IVoiceInfo {
   style?: string;
   previewUrl?: string;
   isDefault?: boolean;
+  /** Recommended choice for this model family. More than one voice may be recommended. */
+  recommended?: boolean;
   accent?: string;
   age?: 'child' | 'young' | 'adult' | 'senior';
 }
@@ -48,7 +50,8 @@ export const OPENAI_VOICES: IVoiceInfo[] = [
 /**
  * OpenAI Realtime API voices (subset supported by gpt-realtime models)
  * Source: https://platform.openai.com/docs/guides/realtime
- * Last verified: 2026-08-08. OpenAI recommends marin or cedar for quality.
+ * Last verified: 2026-08-28. OpenAI recommends marin or cedar for quality.
+ * Gender values are curated presentation metadata, not provider guarantees.
  */
 export const OPENAI_REALTIME_VOICES: IVoiceInfo[] = [
   { id: 'alloy', name: 'Alloy', language: 'multi', gender: 'neutral' },
@@ -59,8 +62,11 @@ export const OPENAI_REALTIME_VOICES: IVoiceInfo[] = [
   { id: 'sage', name: 'Sage', language: 'multi', gender: 'female' },
   { id: 'shimmer', name: 'Shimmer', language: 'multi', gender: 'female' },
   { id: 'verse', name: 'Verse', language: 'multi', gender: 'neutral' },
-  { id: 'marin', name: 'Marin', language: 'multi', gender: 'female', isDefault: true },
-  { id: 'cedar', name: 'Cedar', language: 'multi', gender: 'male' },
+  {
+    id: 'marin', name: 'Marin', language: 'multi', gender: 'female',
+    isDefault: true, recommended: true,
+  },
+  { id: 'cedar', name: 'Cedar', language: 'multi', gender: 'male', recommended: true },
 ];
 
 /**

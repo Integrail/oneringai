@@ -49,6 +49,7 @@ export {
   OpenAIRealtimeSession,
   OpenAIRealtimeAgentSession,
   OpenAIRealtimeAPI,
+  OpenAIRealtimeChannelTransport,
 } from './openai/index.js';
 export { GrokRealtimeAPI, GrokRealtimeSession } from './grok/index.js';
 export type {
@@ -58,12 +59,15 @@ export type {
   OpenAIRealtimeAgentTransport,
   OpenAIRealtimeAgentSessionOptions,
   OpenAIRealtimeAgentSessionEvents,
+  OpenAIRealtimeChannelTransportOptions,
   OpenAIRealtimeAgentUsage,
   OpenAIRealtimeMCPApprovalRequest,
   OpenAIRealtimeMCPApprovalDecision,
   CreateRealtimeClientSecretOptions,
   CreateRealtimeTranslationClientSecretOptions,
   CreateRealtimeWebRTCCallOptions,
+  OpenAIRealtimeWebRTCCall,
+  RealtimeMessageChannel,
   OpenAIRealtimeModel,
   OpenAIRealtimeVoice,
   RealtimePCMSampleRate,
@@ -116,6 +120,7 @@ export type {
 
   // Bridge config
   VoiceBridgeConfig,
+  VoiceAgentFactory,
   TextPipelineConfig,
   RealtimePipelineConfig,
   PipelineConfig,

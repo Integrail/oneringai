@@ -9,6 +9,7 @@ import {
 } from '../../../../src/domain/entities/Model.js';
 import { Vendor } from '../../../../src/core/Vendor.js';
 import { MODEL_REGISTRY_SCHEMA_VERSION } from '../../../../src/domain/types/SharedTypes.js';
+import { OPENAI_REALTIME_VOICES } from '../../../../src/domain/entities/SharedVoices.js';
 
 describe('Model Registry', () => {
   describe('MODEL_REGISTRY', () => {
@@ -94,6 +95,14 @@ describe('Model Registry', () => {
       expect(MODEL_REGISTRY_SCHEMA_VERSION).toBe(2);
       expect(MODEL_REGISTRY['gpt-5.6-sol'].lifecycle).toBe('active');
       expect(MODEL_REGISTRY['claude-opus-4-1-20250805'].replacementModel).toBe('claude-opus-5');
+    });
+
+    it('publishes Realtime voice defaults and recommendations for UI consumers', () => {
+      expect(OPENAI_REALTIME_VOICES.filter((voice) => voice.isDefault).map((voice) => voice.id))
+        .toEqual(['marin']);
+      expect(OPENAI_REALTIME_VOICES.filter((voice) => voice.recommended).map((voice) => voice.id))
+        .toEqual(['marin', 'cedar']);
+      expect(OPENAI_REALTIME_VOICES.every((voice) => Boolean(voice.gender))).toBe(true);
     });
   });
 

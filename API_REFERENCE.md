@@ -11,7 +11,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 
 ## Table of Contents
 
-- [Core](#core) (21 items)
+- [Core](#core) (22 items)
 - [Text-to-Speech (TTS)](#text-to-speech-tts-) (13 items)
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (11 items)
 - [Image Generation](#image-generation) (25 items)
@@ -20,16 +20,16 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Task Agents](#task-agents) (115 items)
 - [Context Management](#context-management) (14 items)
 - [Session Management](#session-management) (64 items)
-- [Tools & Function Calling](#tools-function-calling) (185 items)
+- [Tools & Function Calling](#tools-function-calling) (196 items)
 - [Streaming](#streaming) (30 items)
 - [Model Registry](#model-registry) (29 items)
 - [OAuth & External APIs](#oauth-external-apis) (41 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
-- [Errors](#errors) (39 items)
+- [Errors](#errors) (40 items)
 - [Utilities](#utilities) (10 items)
 - [Interfaces](#interfaces) (78 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (722 items)
+- [Other](#other) (740 items)
 
 ## Core
 
@@ -37,7 +37,7 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:233`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:301`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
 
@@ -433,6 +433,46 @@ getToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinitio
 ```
 
 **Returns:** `FunctionToolDefinition[]`
+
+#### `getRuntimeConfigSnapshot()`
+
+Return a runtime-options snapshot. Arrays and plain records are deeply
+isolated. Callable or opaque host-local values are retained by reference.
+
+Set `includeHostLocal` to false when constructing a portable projection.
+This excludes provider options, native tools, and data-governance policy
+before cloning, so host callbacks and credentials are never traversed.
+
+```typescript
+getRuntimeConfigSnapshot(
+    options: { includeHostLocal?: boolean } = {},
+  ): AgentRuntimeConfigSnapshot
+```
+
+**Parameters:**
+- `options`: `{ includeHostLocal?: boolean | undefined; }` *(optional)* (default: `{}`)
+
+**Returns:** `AgentRuntimeConfigSnapshot`
+
+#### `getInstructionTemplate()`
+
+Return the unrendered instruction template supplied at Agent creation.
+
+```typescript
+getInstructionTemplate(): string | undefined
+```
+
+**Returns:** `string | undefined`
+
+#### `getRenderedInstructionTemplate()`
+
+Return the creation-time instruction template after static rendering.
+
+```typescript
+getRenderedInstructionTemplate(): string | undefined
+```
+
+**Returns:** `string | undefined`
 
 #### `approveToolForSession()`
 
@@ -1875,7 +1915,7 @@ Fetch options with additional connector-specific settings
 
 ### ExternalExecutionOptions `interface`
 
-📍 [`src/core/Agent.ts:177`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:194`](src/core/Agent.ts)
 
 Options for a non-LLM execution owned by an external transport.
 
@@ -1892,7 +1932,7 @@ Options for a non-LLM execution owned by an external transport.
 
 ### ExternalExecutionResult `interface`
 
-📍 [`src/core/Agent.ts:190`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:207`](src/core/Agent.ts)
 
 Terminal data supplied when an external execution is completed.
 
@@ -1912,7 +1952,7 @@ Terminal data supplied when an external execution is completed.
 
 ### ExternalToolCall `interface`
 
-📍 [`src/core/Agent.ts:183`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:200`](src/core/Agent.ts)
 
 A function call received from an external model transport.
 
@@ -1931,7 +1971,7 @@ A function call received from an external model transport.
 
 ### RunOptions `interface`
 
-📍 [`src/core/Agent.ts:150`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:167`](src/core/Agent.ts)
 
 Per-call options for run() and stream().
 These override the agent-level config for this single invocation.
@@ -1964,6 +2004,32 @@ Callback type for agent event fan-in
 
 ```typescript
 type AgentEventListener = (agentId: string, agentName: string, event: string, data: unknown) =&gt; void
+```
+
+---
+
+### AgentRuntimeConfigSnapshot `type`
+
+📍 [`src/core/Agent.ts:147`](src/core/Agent.ts)
+
+Agent runtime options exposed by getRuntimeConfigSnapshot().
+
+```typescript
+type AgentRuntimeConfigSnapshot = Pick&lt;AgentConfig,
+  | 'temperature'
+  | 'maxIterations'
+  | 'thinking'
+  | 'vendorOptions'
+  | 'promptCache'
+  | 'nativeTools'
+  | 'dataHandling'
+  | 'toolExecutionTimeout'
+  | 'historyMode'
+  | 'limits'
+  | 'errorHandling'
+  | 'asyncTools'
+  | 'emptyResponseRetry'
+&gt;
 ```
 
 ---
@@ -18664,7 +18730,7 @@ override updateSession(
 
 ### OpenAIRealtimeAgentSession `class`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:123`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:125`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 Agent-aware controller for OpenAI Realtime voice sessions.
 
@@ -19354,6 +19420,19 @@ createAgent(config: AgentConfig): Agent
 
 **Returns:** `Agent`
 
+#### `assignAgent()`
+
+Assign a factory-created Agent. VoiceSession assumes ownership and destroys it on end.
+
+```typescript
+assignAgent(agent: Agent): Agent
+```
+
+**Parameters:**
+- `agent`: `Agent`
+
+**Returns:** `Agent`
+
 #### `setPipeline()`
 
 Assign the voice pipeline for this call session.
@@ -19737,7 +19816,7 @@ Unified agent storage interface
 
 ### OpenAIRealtimeAgentSessionEvents `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:79`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:81`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -19777,6 +19856,7 @@ Unified agent storage interface
 | Property | Type | Description |
 |----------|------|-------------|
 | `agent` | `agent: Agent;` | - |
+| `callId?` | `callId?: string;` | Existing WebRTC/SIP call to join through the default server-side WebSocket transport. |
 | `session?` | `session?: Omit&lt;OpenAIRealtimeSessionConfig, 'type' | 'model'&gt;;` | Base Realtime session options. Agent instructions and local tools are merged into this object. |
 | `transport?` | `transport?: OpenAIRealtimeAgentTransport;` | Custom transport for WebRTC/SIP bridges and tests. Defaults to the connector-first WebSocket transport. |
 | `realtimeSessionFactory?` | `realtimeSessionFactory?: (
@@ -19948,7 +20028,7 @@ off?(event: string, handler: (...args: any[]) =&gt; void): unknown;
 
 ### OpenAIRealtimeAgentUsage `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:72`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:74`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -20097,7 +20177,7 @@ off?(event: string, handler: (...args: any[]) =&gt; void): unknown;
 | `connector` | `connector: string | Connector;` | - |
 | `model?` | `model?: OpenAIRealtimeModel;` | - |
 | `endpoint?` | `endpoint?: 'realtime' | 'realtime/translations';` | Dedicated translation sessions use `realtime/translations`. |
-| `callId?` | `callId?: string;` | xAI SIP call to join. When set, the model query parameter is omitted. |
+| `callId?` | `callId?: string;` | Existing OpenAI/xAI Realtime call to join over a server sideband connection. |
 | `conversationId?` | `conversationId?: string;` | xAI conversation ID to resume after reconnecting. |
 | `reasoningEffort?` | `reasoningEffort?: 'none' | 'high';` | xAI voice reasoning mode selected during the WebSocket handshake. |
 | `session?` | `session?: OpenAIRealtimeSessionConfig
@@ -20522,6 +20602,68 @@ function toDate(v: string | Date | undefined): Date | undefined
 
 Define and execute tools for agents
 
+### AgentPackageToolServer `class`
+
+📍 [`src/portable/AgentPackage.ts:393`](src/portable/AgentPackage.ts)
+
+Session-bound server executor for tools exported as `remote`. The host must
+authenticate and authorize every request before calling `execute()`.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    private readonly agent: Agent,
+    private readonly packageValue: SerializedAgentPackage,
+  )
+```
+
+**Parameters:**
+- `agent`: `Agent`
+- `packageValue`: `SerializedAgentPackage`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `start()`
+
+```typescript
+async start(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `execute()`
+
+```typescript
+async execute(input: unknown): Promise&lt;RemoteToolExecutionResponse&gt;
+```
+
+**Parameters:**
+- `input`: `unknown`
+
+**Returns:** `Promise&lt;RemoteToolExecutionResponse&gt;`
+
+#### `close()`
+
+```typescript
+close(status: 'completed' | 'failed' | 'cancelled' = 'completed'): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `status`: `"completed" | "failed" | "cancelled"` *(optional)* (default: `'completed'`)
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+---
+
 ### ConnectorTools `class`
 
 📍 [`src/tools/connector/ConnectorTools.ts:254`](src/tools/connector/ConnectorTools.ts)
@@ -20771,6 +20913,38 @@ constructor(
 - `toolName`: `string`
 - `serverName`: `string | undefined` *(optional)*
 - `cause`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
+### RemoteToolExecutionError `class`
+
+📍 [`src/portable/AgentPackage.ts:63`](src/portable/AgentPackage.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(code: string, message: string, retryable = false)
+```
+
+**Parameters:**
+- `code`: `string`
+- `message`: `string`
+- `retryable`: `boolean` *(optional)* (default: `false`)
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `code` | `code: string` | - |
+| `retryable` | `retryable: boolean` | - |
 
 </details>
 
@@ -23972,6 +24146,91 @@ Tracks a single async tool execution in flight
 
 ---
 
+### PortableToolDescriptor `interface`
+
+📍 [`src/portable/types.ts:31`](src/portable/types.ts)
+
+Serializable tool metadata. Executable code is resolved by the receiving runtime.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `definition` | `definition: FunctionToolDefinition;` | - |
+| `placement` | `placement: PortableToolPlacement;` | - |
+| `namespace?` | `namespace?: string;` | - |
+| `category?` | `category?: string;` | - |
+| `tags?` | `tags?: string[];` | - |
+
+</details>
+
+---
+
+### RemoteToolError `interface`
+
+📍 [`src/portable/types.ts:179`](src/portable/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `code` | `code: string;` | - |
+| `message` | `message: string;` | - |
+| `retryable?` | `retryable?: boolean;` | - |
+
+</details>
+
+---
+
+### RemoteToolExecutionRequest `interface`
+
+📍 [`src/portable/types.ts:171`](src/portable/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `protocolVersion` | `protocolVersion: AgentPackageProtocolVersion;` | - |
+| `packageId` | `packageId: string;` | - |
+| `requestId` | `requestId: string;` | - |
+| `toolName` | `toolName: string;` | - |
+| `arguments` | `arguments: Record&lt;string, unknown&gt;;` | - |
+
+</details>
+
+---
+
+### RemoteToolTransport `interface`
+
+📍 [`src/portable/types.ts:202`](src/portable/types.ts)
+
+Host-supplied authenticated transport. OneRingAI owns the wire DTO and proxy tool behavior.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `execute()`
+
+```typescript
+execute(
+    request: RemoteToolExecutionRequest,
+    options?: { signal?: AbortSignal },
+  ): Promise&lt;RemoteToolExecutionResponse&gt;;
+```
+
+**Parameters:**
+- `request`: `RemoteToolExecutionRequest`
+- `options`: `{ signal?: AbortSignal | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;RemoteToolExecutionResponse&gt;`
+
+</details>
+
+---
+
 ### RequestUserInputToolDisplayResult `interface`
 
 📍 [`src/tools/interaction/requestUserInput.ts:99`](src/tools/interaction/requestUserInput.ts)
@@ -24748,6 +25007,18 @@ type DesktopToolName = (typeof DESKTOP_TOOL_NAMES)[number]
 
 ---
 
+### LocalToolResolver `type`
+
+📍 [`src/portable/types.ts:114`](src/portable/types.ts)
+
+```typescript
+type LocalToolResolver = (
+  descriptor: PortableToolDescriptor,
+) =&gt; ToolFunction | undefined | Promise&lt;ToolFunction | undefined&gt;
+```
+
+---
+
 ### NativeToolCapability `type`
 
 📍 [`src/domain/interfaces/IAdvancedInference.ts:31`](src/domain/interfaces/IAdvancedInference.ts)
@@ -24794,6 +25065,52 @@ Status of a pending async tool execution
 
 ```typescript
 type PendingAsyncToolStatus = 'running' | 'completed' | 'failed' | 'timeout' | 'cancelled'
+```
+
+---
+
+### PortableToolPlacement `type`
+
+📍 [`src/portable/types.ts:17`](src/portable/types.ts)
+
+```typescript
+type PortableToolPlacement = 'local' | 'remote'
+```
+
+---
+
+### PortableToolPlacementResolver `type`
+
+📍 [`src/portable/types.ts:80`](src/portable/types.ts)
+
+```typescript
+type PortableToolPlacementResolver = (
+  toolName: string,
+  definition: FunctionToolDefinition,
+) =&gt; PortableToolPlacement | 'omit'
+```
+
+---
+
+### RemoteToolExecutionResponse `type`
+
+📍 [`src/portable/types.ts:185`](src/portable/types.ts)
+
+```typescript
+type RemoteToolExecutionResponse = | {
+      protocolVersion: AgentPackageProtocolVersion;
+      packageId: string;
+      requestId: string;
+      ok: true;
+      result: unknown;
+    }
+  | {
+      protocolVersion: AgentPackageProtocolVersion;
+      packageId: string;
+      requestId: string;
+      ok: false;
+      error: RemoteToolError;
+    }
 ```
 
 ---
@@ -25603,6 +25920,22 @@ export function createRecallTool(deps: MemoryToolDeps): ToolFunction&lt;RecallAr
 
 ```typescript
 export function createRememberTool(deps: MemoryToolDeps): ToolFunction&lt;RememberArgs&gt;
+```
+
+---
+
+### createRemoteTool `function`
+
+📍 [`src/portable/AgentPackage.ts:360`](src/portable/AgentPackage.ts)
+
+Build a normal ToolFunction whose execution is delegated through a typed transport.
+
+```typescript
+export function createRemoteTool(
+  packageId: string,
+  descriptor: PortableToolDescriptor,
+  transport: RemoteToolTransport,
+): ToolFunction
 ```
 
 ---
@@ -26629,7 +26962,7 @@ Get summary statistics
 getStatistics()
 ```
 
-**Returns:** `{ responseId: string; model: string; status: "in_progress" | "completed" | "failed" | "incomplete"; iterations: number; totalChunks: number; totalTextDeltas: number; totalToolCalls: number; textItemsCount: number; toolCallBuffersCount: number; completedToolCallsCount: number; durationMs: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; cached_input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_creation_details?: { short_ttl_input_tokens?: number | undefined; extended_ttl_input_tokens?: number | undefined; } | undefined; native_tool_calls?: Record&lt;string, number | undefined&gt; | undefined; processing_mode?: ProcessingMode | undefined; service_tier?: string | undefined; speed?: string | undefined; }; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; }`
+**Returns:** `{ responseId: string; model: string; status: "completed" | "failed" | "in_progress" | "incomplete"; iterations: number; totalChunks: number; totalTextDeltas: number; totalToolCalls: number; textItemsCount: number; toolCallBuffersCount: number; completedToolCallsCount: number; durationMs: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; cached_input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_creation_details?: { short_ttl_input_tokens?: number | undefined; extended_ttl_input_tokens?: number | undefined; } | undefined; native_tool_calls?: Record&lt;string, number | undefined&gt; | undefined; processing_mode?: ProcessingMode | undefined; service_tier?: string | undefined; speed?: string | undefined; }; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; }`
 
 #### `hasText()`
 
@@ -26669,7 +27002,7 @@ Create a snapshot for checkpointing (error recovery)
 createSnapshot()
 ```
 
-**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; reasoningBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;; completedToolCalls: ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; cached_input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_creation_details?: { short_ttl_input_tokens?: number | undefined; extended_ttl_input_tokens?: number | undefined; } | undefined; native_tool_calls?: Record&lt;string, number | undefined&gt; | undefined; processing_mode?: ProcessingMode | undefined; service_tier?: string | undefined; speed?: string | undefined; }; status: "in_progress" | "completed" | "failed" | "incomplete"; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; startTime: Date; endTime: Date | undefined; }`
+**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; reasoningBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;; completedToolCalls: ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; cached_input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_creation_details?: { short_ttl_input_tokens?: number | undefined; extended_ttl_input_tokens?: number | undefined; } | undefined; native_tool_calls?: Record&lt;string, number | undefined&gt; | undefined; processing_mode?: ProcessingMode | undefined; service_tier?: string | undefined; speed?: string | undefined; }; status: "completed" | "failed" | "in_progress" | "incomplete"; providerStatus: "completed" | "failed" | "incomplete"; stopReason: string | undefined; stopDetails: ProviderStopDetails | undefined; startTime: Date; endTime: Date | undefined; }`
 
 </details>
 
@@ -26683,7 +27016,7 @@ createSnapshot()
 | `createdAt` | `createdAt: number` | - |
 | `currentIteration` | `currentIteration: number` | - |
 | `usage` | `usage: TokenUsage` | - |
-| `status` | `status: "in_progress" | "completed" | "failed" | "incomplete"` | - |
+| `status` | `status: "completed" | "failed" | "in_progress" | "incomplete"` | - |
 | `providerStatus` | `providerStatus: "completed" | "failed" | "incomplete"` | Status reported by the provider's RESPONSE_COMPLETE event. Defaults to 'incomplete' (safe if never received). |
 | `stopReason?` | `stopReason: string | undefined` | Raw stop reason from provider (e.g., 'end_turn', 'max_tokens', 'SAFETY') |
 | `stopDetails?` | `stopDetails: ProviderStopDetails | undefined` | Structured stop detail (Anthropic refusals: which classifier fired + why). |
@@ -33757,6 +34090,26 @@ Default rate limiter configuration
 
 Error types and handling
 
+### AgentPackageCompatibilityError `class`
+
+📍 [`src/portable/AgentPackage.ts:56`](src/portable/AgentPackage.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(message: string)
+```
+
+**Parameters:**
+- `message`: `string`
+
+</details>
+
+---
+
 ### AIError `class`
 
 📍 [`src/domain/errors/AIErrors.ts:5`](src/domain/errors/AIErrors.ts)
@@ -39210,6 +39563,18 @@ getPlugins(): IContextPluginNextGen[]
 
 **Returns:** `IContextPluginNextGen[]`
 
+#### `getContextToolNames()`
+
+Return executable tool names recreated by this context's plugin set.
+Portable runtimes use this to avoid replacing restored plugin tools with
+remote proxies that would operate on a different context instance.
+
+```typescript
+getContextToolNames(): string[]
+```
+
+**Returns:** `string[]`
+
 #### `addUserMessage()`
 
 Add a user message.
@@ -42176,7 +42541,7 @@ async focusWindow(windowId: number): Promise&lt;void&gt;
 
 ### OpenAIRealtimeAPI `class`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:30`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:31`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
 
 REST helpers for browser/WebRTC credentials and server-side SIP call control.
 
@@ -42223,7 +42588,7 @@ async createTranslationClientSecret(
 
 #### `createWebRTCCall()`
 
-Exchange a WebRTC SDP offer for OpenAI's SDP answer.
+Exchange a WebRTC SDP offer for the SDP answer (backward-compatible API).
 
 ```typescript
 async createWebRTCCall(options: CreateRealtimeWebRTCCallOptions): Promise&lt;string&gt;
@@ -42233,6 +42598,21 @@ async createWebRTCCall(options: CreateRealtimeWebRTCCallOptions): Promise&lt;str
 - `options`: `CreateRealtimeWebRTCCallOptions`
 
 **Returns:** `Promise&lt;string&gt;`
+
+#### `createWebRTCCallWithMetadata()`
+
+Exchange a WebRTC SDP offer for the SDP answer and sideband call ID.
+
+```typescript
+async createWebRTCCallWithMetadata(
+    options: CreateRealtimeWebRTCCallOptions,
+  ): Promise&lt;OpenAIRealtimeWebRTCCall&gt;
+```
+
+**Parameters:**
+- `options`: `CreateRealtimeWebRTCCallOptions`
+
+**Returns:** `Promise&lt;OpenAIRealtimeWebRTCCall&gt;`
 
 #### `acceptCall()`
 
@@ -42289,6 +42669,99 @@ async referCall(callId: string, targetUri: string): Promise&lt;void&gt;
 | Property | Type | Description |
 |----------|------|-------------|
 | `connector` | `connector: Connector` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeChannelTransport `class`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeChannelTransport.ts:25`](src/capabilities/voice/openai/OpenAIRealtimeChannelTransport.ts)
+
+Adapts a browser data channel or cross-process text bridge to the transport
+consumed by OpenAIRealtimeAgentSession. Audio may remain on WebRTC media tracks.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(options: OpenAIRealtimeChannelTransportOptions)
+```
+
+**Parameters:**
+- `options`: `OpenAIRealtimeChannelTransportOptions`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `connect()`
+
+```typescript
+async connect(options: { signal?: AbortSignal } = {}): Promise&lt;OpenAIRealtimeServerEvent&gt;
+```
+
+**Parameters:**
+- `options`: `{ signal?: AbortSignal | undefined; }` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;OpenAIRealtimeServerEvent&gt;`
+
+#### `updateSession()`
+
+```typescript
+updateSession(session: OpenAIRealtimeSessionConfig): void
+```
+
+**Parameters:**
+- `session`: `OpenAIRealtimeSessionConfig`
+
+**Returns:** `void`
+
+#### `appendAudio()`
+
+```typescript
+appendAudio(audio: Buffer | string): boolean
+```
+
+**Parameters:**
+- `audio`: `string | Buffer&lt;ArrayBufferLike&gt;`
+
+**Returns:** `boolean`
+
+#### `send()`
+
+```typescript
+send(event: OpenAIRealtimeClientEvent): void
+```
+
+**Parameters:**
+- `event`: `OpenAIRealtimeClientEvent`
+
+**Returns:** `void`
+
+#### `close()`
+
+```typescript
+close(code = 1000, reason = 'Client closed'): void
+```
+
+**Parameters:**
+- `code`: `number` *(optional)* (default: `1000`)
+- `reason`: `string` *(optional)* (default: `'Client closed'`)
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `emitsOutputAudioFromEvents` | `emitsOutputAudioFromEvents: false` | - |
 
 </details>
 
@@ -45670,7 +46143,7 @@ destroy(): void
 
 ### VoiceBridge `class`
 
-📍 [`src/capabilities/voice/VoiceBridge.ts:68`](src/capabilities/voice/VoiceBridge.ts)
+📍 [`src/capabilities/voice/VoiceBridge.ts:69`](src/capabilities/voice/VoiceBridge.ts)
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -45962,6 +46435,43 @@ Map of all event names to their payload types
 | `'async:tool:timeout'` | `'async:tool:timeout': AsyncToolTimeoutEvent;` | - |
 | `'async:results:injected'` | `'async:results:injected': AsyncResultsInjectedEvent;` | - |
 | `'async:continuation:start'` | `'async:continuation:start': AsyncContinuationStartEvent;` | - |
+
+</details>
+
+---
+
+### AgentPackageConnectorResolution `interface`
+
+📍 [`src/portable/types.ts:119`](src/portable/types.ts)
+
+Trusted connector and model selected by the receiving application host.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: string | Connector;` | - |
+| `model` | `model: string;` | - |
+
+</details>
+
+---
+
+### AgentPackageContextFactoryInput `interface`
+
+📍 [`src/portable/types.ts:102`](src/portable/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `package` | `package: SerializedAgentPackage;` | - |
+| `connector` | `connector: string | Connector;` | - |
+| `model` | `model: string;` | - |
+| `userId?` | `userId?: string;` | - |
+| `identities?` | `identities?: AuthIdentity[];` | - |
 
 </details>
 
@@ -47115,7 +47625,7 @@ Conversation message in history
 
 ### CreateRealtimeClientSecretOptions `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:10`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:11`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47132,7 +47642,7 @@ Conversation message in history
 
 ### CreateRealtimeTranslationClientSecretOptions `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:16`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:17`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47148,7 +47658,7 @@ Conversation message in history
 
 ### CreateRealtimeWebRTCCallOptions `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:21`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:22`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -48614,6 +49124,29 @@ This captures the essential info without importing full AgentConfig.
 | `executionId` | `executionId: string;` | ID of the execution record (must already be inserted). |
 | `logPrefix?` | `logPrefix?: string;` | Optional prefix for log messages. |
 | `maxTruncateLength?` | `maxTruncateLength?: number;` | Max length for truncated tool args/results in steps. Default: 500. |
+
+</details>
+
+---
+
+### ExportAgentPackageOptions `interface`
+
+📍 [`src/portable/types.ts:85`](src/portable/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `packageId?` | `packageId?: string;` | - |
+| `expiresAt?` | `expiresAt?: string | Date;` | - |
+| `revision?` | `revision?: string | number;` | - |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | - |
+| `realtime?` | `realtime?: PortableRealtimeProfile;` | - |
+| `instructionTemplate?` | `instructionTemplate?: string;` | Explicit unrendered instruction template. Required when the Agent's
+instructions were installed by mutating its context after construction. |
+| `toolPlacement?` | `toolPlacement?: PortableToolPlacementResolver;` | Tools default to remote because executable functions cannot cross a wire. |
+| `pluginNames?` | `pluginNames?: string[];` | Override the plugin set that the receiving context must provide. |
 
 </details>
 
@@ -50927,7 +51460,7 @@ withTransaction?&lt;R&gt;(fn: () =&gt; Promise&lt;R&gt;): Promise&lt;R&gt;;
 
 ### IncomingCallInfo `interface`
 
-📍 [`src/capabilities/voice/types.ts:437`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:454`](src/capabilities/voice/types.ts)
 
 Metadata for an incoming call from the telephony provider.
 The adapter maps provider-specific data to this structure.
@@ -51610,7 +52143,7 @@ storeAction?(action: string, params?: Record&lt;string, unknown&gt;, context?: T
 
 ### ITelephonyAdapter `interface`
 
-📍 [`src/capabilities/voice/types.ts:474`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:491`](src/capabilities/voice/types.ts)
 
 Abstraction over telephony providers (Twilio, Vonage, etc.).
 The adapter handles the provider-specific protocol and exposes
@@ -51952,6 +52485,7 @@ Eliminates duplication across TTS model registries
 | `style?` | `style?: string;` | - |
 | `previewUrl?` | `previewUrl?: string;` | - |
 | `isDefault?` | `isDefault?: boolean;` | - |
+| `recommended?` | `recommended?: boolean;` | Recommended choice for this model family. More than one voice may be recommended. |
 | `accent?` | `accent?: string;` | - |
 | `age?` | `age?: 'child' | 'young' | 'adult' | 'senior';` | - |
 
@@ -51961,7 +52495,7 @@ Eliminates duplication across TTS model registries
 
 ### IVoicePipeline `interface`
 
-📍 [`src/capabilities/voice/types.ts:399`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:416`](src/capabilities/voice/types.ts)
 
 Voice pipeline strategy interface.
 TextPipeline and RealtimePipeline both implement this.
@@ -53017,6 +53551,25 @@ toHexString(): string;
 
 ---
 
+### OpenAIRealtimeChannelTransportOptions `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeChannelTransport.ts:10`](src/capabilities/voice/openai/OpenAIRealtimeChannelTransport.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `channel` | `channel: RealtimeMessageChannel;` | - |
+| `connectTimeoutMs?` | `connectTimeoutMs?: number;` | - |
+| `maxBufferedAmountBytes?` | `maxBufferedAmountBytes?: number;` | Stop accepting sends when channel buffering reaches this size. Default: 1 MiB. |
+| `maxPendingEvents?` | `maxPendingEvents?: number;` | Maximum event count retained until connect() begins. Default: 256. |
+| `maxPendingEventBytes?` | `maxPendingEventBytes?: number;` | Maximum UTF-8 bytes retained until connect() begins. Default: 1 MiB. |
+
+</details>
+
+---
+
 ### OpenAIRealtimeClientEvent `interface`
 
 📍 [`src/capabilities/voice/openai/RealtimeTypes.ts:228`](src/capabilities/voice/openai/RealtimeTypes.ts)
@@ -53063,6 +53616,24 @@ toHexString(): string;
 |----------|------|-------------|
 | `type` | `type: string;` | - |
 | `event_id?` | `event_id?: string;` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeWebRTCCall `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeChannel.ts:2`](src/capabilities/voice/openai/RealtimeChannel.ts)
+
+SDP answer returned by a server-created OpenAI Realtime WebRTC call.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `sdp` | `sdp: string;` | - |
+| `callId` | `callId: string;` | - |
 
 </details>
 
@@ -53163,7 +53734,7 @@ Default: false |
 
 ### OutboundCallConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:505`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:522`](src/capabilities/voice/types.ts)
 
 Configuration for initiating an outbound call.
 
@@ -53789,6 +54360,43 @@ Decision returned by a permission policy.
 
 ---
 
+### PortableAgentContext `interface`
+
+📍 [`src/portable/types.ts:39`](src/portable/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `features` | `features: ResolvedContextFeatures;` | - |
+| `pluginNames` | `pluginNames: string[];` | - |
+| `state` | `state: SerializedContextState;` | - |
+
+</details>
+
+---
+
+### PortableRealtimeProfile `interface`
+
+📍 [`src/portable/types.ts:46`](src/portable/types.ts)
+
+Provider-neutral Realtime profile. Provider credentials are deliberately excluded.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `provider` | `provider: string;` | - |
+| `connectorName` | `connectorName: string;` | - |
+| `model` | `model: string;` | - |
+| `voice?` | `voice?: string;` | - |
+
+</details>
+
+---
+
 ### PredicateDefinition `interface`
 
 📍 [`src/memory/predicates/types.ts:42`](src/memory/predicates/types.ts)
@@ -54197,6 +54805,107 @@ Result of a file read operation
 | `size?` | `size?: number;` | - |
 | `error?` | `error?: string;` | - |
 | `path?` | `path?: string;` | - |
+
+</details>
+
+---
+
+### RealtimeMessageChannel `interface`
+
+📍 [`src/capabilities/voice/openai/RealtimeChannel.ts:11`](src/capabilities/voice/openai/RealtimeChannel.ts)
+
+Minimal text channel shared by WebRTC data channels, Electron MessagePorts,
+workers, and other host bridges. Authentication and routing stay with the host.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `open()?`
+
+```typescript
+open?(options?: { signal?: AbortSignal }): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `options`: `{ signal?: AbortSignal | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getSessionCreatedMessage()?`
+
+Compatibility replay hook for a channel attached after session.created.
+
+```typescript
+getSessionCreatedMessage?(): string | undefined;
+```
+
+**Returns:** `string | undefined`
+
+#### `send()`
+
+```typescript
+send(message: string): void;
+```
+
+**Parameters:**
+- `message`: `string`
+
+**Returns:** `void`
+
+#### `close()`
+
+```typescript
+close(code?: number, reason?: string): void;
+```
+
+**Parameters:**
+- `code`: `number | undefined` *(optional)*
+- `reason`: `string | undefined` *(optional)*
+
+**Returns:** `void`
+
+#### `onMessage()`
+
+```typescript
+onMessage(handler: (message: string) =&gt; void): () =&gt; void;
+```
+
+**Parameters:**
+- `handler`: `(message: string) =&gt; void`
+
+**Returns:** `() =&gt; void`
+
+#### `onClose()`
+
+```typescript
+onClose(handler: (code: number, reason: string) =&gt; void): () =&gt; void;
+```
+
+**Parameters:**
+- `handler`: `(code: number, reason: string) =&gt; void`
+
+**Returns:** `() =&gt; void`
+
+#### `onError()`
+
+```typescript
+onError(handler: (error: Error) =&gt; void): () =&gt; void;
+```
+
+**Parameters:**
+- `handler`: `(error: Error) =&gt; void`
+
+**Returns:** `() =&gt; void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `isOpen` | `readonly isOpen: boolean;` | - |
+| `bufferedAmount?` | `readonly bufferedAmount?: number;` | - |
 
 </details>
 
@@ -55182,6 +55891,43 @@ an `IngestionError` entry rather than silently failing.
 | Property | Type | Description |
 |----------|------|-------------|
 | `topK` | `topK: number;` | - |
+
+</details>
+
+---
+
+### SerializedAgentPackage `interface`
+
+📍 [`src/portable/types.ts:58`](src/portable/types.ts)
+
+Data-only snapshot used to recreate one effective agent in another trusted
+application process. It is an execution package, not an authorization token,
+credential store, or authoritative agent catalog.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `protocolVersion` | `protocolVersion: AgentPackageProtocolVersion;` | - |
+| `packageId` | `packageId: string;` | - |
+| `createdAt` | `createdAt: string;` | - |
+| `expiresAt?` | `expiresAt?: string;` | - |
+| `revision?` | `revision?: string | number;` | - |
+| `agent` | `agent: {
+    id: string;
+    name: string;
+    connector: {
+      name: string;
+      model: string;
+    };
+    instructions?: string;
+    runtime: PortableAgentRuntimeConfig;
+    context: PortableAgentContext;
+    tools: PortableToolDescriptor[];
+    realtime?: PortableRealtimeProfile;
+  };` | - |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | - |
 
 </details>
 
@@ -56442,7 +57188,7 @@ Telegram User object
 
 ### TelephonyAdapterEvents `interface`
 
-📍 [`src/capabilities/voice/types.ts:456`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:473`](src/capabilities/voice/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -56726,7 +57472,7 @@ Emitted by pipelines for UI display and logging.
 
 ### TwilioAdapterConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:520`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:537`](src/capabilities/voice/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -57178,7 +57924,7 @@ according to `kind`:
 
 ### VoiceBridgeEvents `interface`
 
-📍 [`src/capabilities/voice/VoiceBridge.ts:49`](src/capabilities/voice/VoiceBridge.ts)
+📍 [`src/capabilities/voice/VoiceBridge.ts:50`](src/capabilities/voice/VoiceBridge.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -57227,7 +57973,7 @@ is generated concurrently; its return value is ignored. |
 
 ### VoicePipelineEvents `interface`
 
-📍 [`src/capabilities/voice/types.ts:378`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:395`](src/capabilities/voice/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -57367,6 +58113,28 @@ type AgentEvents = AgenticLoopEvents
 
 ```typescript
 type AgenticLoopEventName = keyof AgenticLoopEvents
+```
+
+---
+
+### AgentPackageContextFactory `type`
+
+📍 [`src/portable/types.ts:110`](src/portable/types.ts)
+
+```typescript
+type AgentPackageContextFactory = (
+  input: AgentPackageContextFactoryInput,
+) =&gt; AgentContextNextGen | AgentContextNextGenConfig | Promise&lt;AgentContextNextGen | AgentContextNextGenConfig&gt;
+```
+
+---
+
+### AgentPackageProtocolVersion `type`
+
+📍 [`src/portable/types.ts:15`](src/portable/types.ts)
+
+```typescript
+type AgentPackageProtocolVersion = typeof AGENT_PACKAGE_PROTOCOL_VERSION
 ```
 
 ---
@@ -57894,6 +58662,33 @@ type HookName = keyof Omit&lt;HookConfig, 'hookTimeout' | 'parallelHooks'&gt;
 
 ---
 
+### HydrateAgentPackageOptions `type`
+
+📍 [`src/portable/types.ts:155`](src/portable/types.ts)
+
+Hydration always requires the trusted host to select both connector and
+model. Package values are hints for the resolver, never authorization.
+
+```typescript
+type HydrateAgentPackageOptions = HydrateAgentPackageBaseOptions & (
+  | {
+      connector: string | Connector;
+      model: string;
+      connectorResolver?: never;
+    }
+  | {
+      connector?: never;
+      model?: never;
+      connectorResolver: (
+        reference: SerializedAgentPackage['agent']['connector'],
+        profile: 'text' | 'realtime',
+      ) =&gt; AgentPackageConnectorResolution | Promise&lt;AgentPackageConnectorResolution&gt;;
+    }
+)
+```
+
+---
+
 ### IdentifierRecoveryFn `type`
 
 📍 [`src/memory/identifierMigration.ts:36`](src/memory/identifierMigration.ts)
@@ -58270,6 +59065,24 @@ type PluginFactory = (
   config?: Record&lt;string, unknown&gt;,
   context?: PluginFactoryContext
 ) =&gt; IContextPluginNextGen
+```
+
+---
+
+### PortableAgentRuntimeConfig `type`
+
+📍 [`src/portable/types.ts:25`](src/portable/types.ts)
+
+Runtime options that are safe to carry across an application boundary.
+Arbitrary vendor options, provider-hosted tools, and data-governance policy
+are omitted. The receiving trusted host must reconstruct them through
+`HydrateAgentPackageOptions.agentConfig`.
+
+```typescript
+type PortableAgentRuntimeConfig = Omit&lt;
+  AgentRuntimeConfigSnapshot,
+  'vendorOptions' | 'nativeTools' | 'promptCache' | 'dataHandling'
+&gt;
 ```
 
 ---
@@ -58742,15 +59555,31 @@ type VisibilityPolicy = (ctx: VisibilityContext) =&gt; Permissions | undefined
 
 ---
 
+### VoiceAgentFactory `type`
+
+📍 [`src/capabilities/voice/types.ts:356`](src/capabilities/voice/types.ts)
+
+Create one fully configured Agent for a single call. VoiceSession owns and destroys it.
+
+```typescript
+type VoiceAgentFactory = (
+  session: VoiceSessionInfo,
+) =&gt; Agent | Promise&lt;Agent&gt;
+```
+
+---
+
 ### VoiceBridgeConfig `type`
 
-📍 [`src/capabilities/voice/types.ts:360`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:375`](src/capabilities/voice/types.ts)
 
 VoiceBridge configuration — discriminated union by pipeline type.
 
 ```typescript
-type VoiceBridgeConfig = | (VoiceBridgeBaseConfig & TextPipelineConfig)
-  | (VoiceBridgeBaseConfig & RealtimePipelineConfig)
+type VoiceBridgeConfig = VoiceAgentSource & (
+    | (VoiceBridgeBaseConfig & TextPipelineConfig)
+    | (VoiceBridgeBaseConfig & RealtimePipelineConfig)
+  )
 ```
 
 ---
@@ -58774,6 +59603,18 @@ export function applyRestrainedExtractionContract(
   input: RestrainedExtractionInput,
   opts: RestrainedExtractionOptions,
 ): RestrainedExtractionResult
+```
+
+---
+
+### assertAgentPackageCompatible `function`
+
+📍 [`src/portable/AgentPackage.ts:289`](src/portable/AgentPackage.ts)
+
+Validate the public protocol version and the bounded fields used for routing.
+
+```typescript
+export function assertAgentPackageCompatible(packageValue: SerializedAgentPackage): void
 ```
 
 ---
@@ -59372,6 +60213,21 @@ initialUserMessage: 'Execute the selected action: Send reply.',
 
 ---
 
+### exportAgentPackage `function`
+
+📍 [`src/portable/AgentPackage.ts:76`](src/portable/AgentPackage.ts)
+
+Export one already-resolved Agent as a data-only package for another runtime.
+
+```typescript
+export function exportAgentPackage(
+  agent: Agent,
+  options: ExportAgentPackageOptions = {},
+): SerializedAgentPackage
+```
+
+---
+
 ### factFilterToMongo `function`
 
 📍 [`src/memory/adapters/mongo/queries.ts:17`](src/memory/adapters/mongo/queries.ts)
@@ -59839,6 +60695,21 @@ export function getUserPathPrefix(
   targetUser?: string,
   actAs?: string,
 ): string
+```
+
+---
+
+### hydrateAgentPackage `function`
+
+📍 [`src/portable/AgentPackage.ts:190`](src/portable/AgentPackage.ts)
+
+Recreate an Agent from a portable package using trusted host connector and tool resolvers.
+
+```typescript
+export async function hydrateAgentPackage(
+  packageValue: SerializedAgentPackage,
+  options: HydrateAgentPackageOptions,
+): Promise&lt;Agent&gt;
 ```
 
 ---

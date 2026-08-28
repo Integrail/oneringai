@@ -12976,7 +12976,7 @@ const translationSecret = await api.createTranslationClientSecret({
 });
 
 // Trusted-server WebRTC setup can exchange an SDP offer directly.
-const sdpAnswer = await api.createWebRTCCall({
+const { sdp: sdpAnswer, callId } = await api.createWebRTCCallWithMetadata({
   sdp: browserOffer.sdp!,
   session: {
     model: 'gpt-realtime-2.1',
@@ -12985,15 +12985,46 @@ const sdpAnswer = await api.createWebRTCCall({
   safetyIdentifier: hashUserId('user-123'),
 });
 
-// Send `voiceSecret.value` or `translationSecret.value` to the intended client.
+// Apply sdpAnswer in the peer. A server-owned Agent can join by call ID:
+const serverAgentSession = new OpenAIRealtimeAgentSession({ agent, callId });
+await serverAgentSession.connect();
+// Send `voiceSecret.value` or `translationSecret.value` only to the intended client.
 ```
 
-The browser creates an `RTCPeerConnection`, adds its microphone track, creates
-the `oai-events` data channel, and exchanges SDP with OpenAI using the ephemeral
-secret. OneRingAI mints credentials but does not wrap browser WebRTC primitives;
-this keeps media permissions and peer-connection lifecycle in the browser where
-they belong. Use `/v1/realtime/calls` for a voice-agent SDP offer and
+`createWebRTCCall()` remains source-compatible with earlier OneRingAI releases
+and returns only the SDP answer string. Use `createWebRTCCallWithMetadata()`
+when the caller also needs the opaque call ID for sideband control or hangup.
+
+The browser-safe `OpenAIRealtimeWebRTCPeer` creates an `RTCPeerConnection`, adds
+its microphone track, creates the `oai-events` data channel, and exchanges SDP
+through a host callback. It intentionally accepts no provider credential. The
+full Agent can remain in an Electron main process and consume the bridged data
+channel through `OpenAIRealtimeChannelTransport`. Use `/v1/realtime/calls` for a voice-agent SDP offer and
 `/v1/realtime/translations/calls` for translation.
+
+```typescript
+// Renderer or browser-safe bundle
+import { OpenAIRealtimeWebRTCPeer } from '@everworker/oneringai/realtime-browser';
+
+const peer = new OpenAIRealtimeWebRTCPeer({
+  exchangeSdp: (offer, { signal }) => appBackend.createRealtimeCall({ offer, signal }),
+  releaseCall: (callId) => appBackend.hangupRealtimeCall({ callId }),
+  onRemoteTrack: (streamOrTrack) => {
+    if (streamOrTrack instanceof MediaStream) audioElement.srcObject = streamOrTrack;
+  },
+});
+await peer.connect();
+
+// On explicit shutdown, wait until both local media and the provider call end.
+await peer.closeAndRelease();
+```
+
+`exchangeSdp` must return `{ sdp, callId }`; the old string-only answer is not
+accepted because it cannot support reliable cleanup. The peer retains a bounded
+event backlog until the renderer/main bridge attaches, and
+`OpenAIRealtimeChannelTransport` replays the backlog when it connects. Bridges
+that implement their own channel should preserve the same ordering and may use
+`getSessionCreatedMessage()` for compatibility with creation-event replay.
 
 Never send the connector's standard API key to a browser or mobile application.
 Mint client secrets per session and associate the safety identifier when the
@@ -13094,6 +13125,19 @@ bridge.on('transcript', (session, entry) => {
 bridge.attach(twilio);
 await twilio.start();
 ```
+
+When the effective Agent depends on caller or tenant context, replace the
+static `agent` object with a per-call factory:
+
+```typescript
+const bridge = VoiceBridge.create({
+  agentFactory: async (session) => resolveAuthorizedAgent(session),
+  pipeline: 'realtime',
+  voice: 'marin',
+});
+```
+
+The factory must return a new Agent. `VoiceSession` owns and destroys it.
 
 Realtime `beforeAgentResponse` and `afterAgentResponse` hooks are observational:
 the model has already consumed or generated audio concurrently, so returned text
@@ -13321,13 +13365,15 @@ the provider.
 The package root exports:
 
 - runtime classes: `OpenAIRealtimeAgentSession`, `OpenAIRealtimeSession`, `OpenAIRealtimeAPI`,
+  `OpenAIRealtimeChannelTransport`,
   `GrokRealtimeSession`, `GrokRealtimeAPI`, `RealtimePipeline`, and
   `VoiceBridge`;
 - session/API types: `OpenAIRealtimeSessionOptions`,
   `OpenAIRealtimeAgentSessionOptions`, `OpenAIRealtimeAgentTransport`,
   `CreateRealtimeClientSecretOptions`, and
   `CreateRealtimeTranslationClientSecretOptions`, and
-  `CreateRealtimeWebRTCCallOptions`;
+  `CreateRealtimeWebRTCCallOptions`, `OpenAIRealtimeWebRTCCall`, and
+  `RealtimeMessageChannel`;
 - configuration types: `OpenAIRealtimeSessionConfig`,
   `OpenAIRealtimeTranscriptionSessionConfig`,
   `OpenAIRealtimeTranslationSessionConfig`, and
@@ -13338,7 +13384,7 @@ The package root exports:
 - protocol types: `OpenAIRealtimeClientEvent`,
   `OpenAIRealtimeServerEvent`, `OpenAIRealtimeClientSecret`, audio/VAD types,
   function/MCP tool types, voices, and model ids; and
-- telephony types: `RealtimePipelineConfig`, `VoiceBridgeConfig`,
+- telephony types: `RealtimePipelineConfig`, `VoiceBridgeConfig`, `VoiceAgentFactory`,
   `VoicePipelineEvents`, `TranscriptMessage`, and adapter/session types.
 
 Run the complete server-side example with:

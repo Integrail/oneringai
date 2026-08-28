@@ -36,6 +36,7 @@ export type { ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope, Conne
 export { Agent } from './Agent.js';
 export type {
   AgentConfig,
+  AgentRuntimeConfigSnapshot,
   AgentSessionConfig,
   RunOptions,
   ExternalExecutionOptions,

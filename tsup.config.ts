@@ -15,7 +15,9 @@ export default defineConfig([
     dts: true,
     splitting: false,
     sourcemap: true,
-    clean: true,
+    // Dist is cleaned once before all parallel configs start. Per-config clean
+    // races can delete declarations emitted by another config.
+    clean: false,
     treeshake: true,
     target: 'node22',
     platform: 'node',
@@ -27,6 +29,21 @@ export default defineConfig([
     noExternal: [
       '@modelcontextprotocol/sdk',
     ],
+  },
+  // Browser-safe OpenAI Realtime WebRTC media and data-channel peer.
+  {
+    entry: {
+      'realtime-browser/index': 'src/realtime-browser/index.ts',
+    },
+    format: ['esm', 'cjs'],
+    dts: true,
+    splitting: false,
+    sourcemap: true,
+    clean: false,
+    treeshake: true,
+    target: 'es2020',
+    platform: 'browser',
+    outDir: 'dist',
   },
   // Lightweight types bundle — no Node.js / SDK dependencies
   {

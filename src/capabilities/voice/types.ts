@@ -8,7 +8,7 @@
  * - ITelephonyAdapter: abstraction over Twilio, Vonage, etc.
  */
 
-import type { AgentConfig } from '../../core/Agent.js';
+import type { Agent, AgentConfig } from '../../core/Agent.js';
 import type {
   OpenAIRealtimeSessionConfig,
   OpenAIRealtimeVoice,
@@ -326,8 +326,6 @@ export interface TranscriptMessage {
  * Common fields shared by all VoiceBridge configurations.
  */
 interface VoiceBridgeBaseConfig {
-  /** Agent configuration — connector, model, instructions, tools */
-  agent: AgentConfig;
 
   /** Silence duration (ms) to consider end-of-utterance. Default: 1500 */
   silenceTimeout?: number;
@@ -354,12 +352,31 @@ interface VoiceBridgeBaseConfig {
   hooks?: VoiceHooks;
 }
 
+/** Create one fully configured Agent for a single call. VoiceSession owns and destroys it. */
+export type VoiceAgentFactory = (
+  session: VoiceSessionInfo,
+) => Agent | Promise<Agent>;
+
+type VoiceAgentSource =
+  | {
+      /** Static configuration used to create a fresh Agent for every call. */
+      agent: AgentConfig;
+      agentFactory?: never;
+    }
+  | {
+      agent?: never;
+      /** Resolve identities, context plugins, tools, and instructions for this call. */
+      agentFactory: VoiceAgentFactory;
+    };
+
 /**
  * VoiceBridge configuration — discriminated union by pipeline type.
  */
 export type VoiceBridgeConfig =
-  | (VoiceBridgeBaseConfig & TextPipelineConfig)
-  | (VoiceBridgeBaseConfig & RealtimePipelineConfig);
+  VoiceAgentSource & (
+    | (VoiceBridgeBaseConfig & TextPipelineConfig)
+    | (VoiceBridgeBaseConfig & RealtimePipelineConfig)
+  );
 
 // =============================================================================
 // Voice Pipeline Interface (strategy pattern)

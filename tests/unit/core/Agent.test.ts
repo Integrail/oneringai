@@ -872,6 +872,33 @@ describe('Agent', () => {
       expect(agent).toBeDefined();
     });
 
+    it('returns deeply isolated runtime configuration snapshots', () => {
+      const transformRequest = vi.fn(() => ({ transformed: true }));
+      const agent = Agent.create({
+        connector: 'test-openai',
+        model: 'gpt-4',
+        vendorOptions: { nested: { mode: 'safe' }, transformRequest },
+        nativeTools: [{
+          capability: 'web_search',
+          options: { headers: { authorization: 'host-only' } },
+        }],
+      });
+      const snapshot = agent.getRuntimeConfigSnapshot();
+      (snapshot.vendorOptions?.nested as { mode: string }).mode = 'mutated';
+      const nativeOptions = snapshot.nativeTools?.[0]?.options as {
+        headers: { authorization: string };
+      };
+      nativeOptions.headers.authorization = 'mutated';
+
+      expect(agent.getRuntimeConfigSnapshot()).toMatchObject({
+        vendorOptions: { nested: { mode: 'safe' }, transformRequest },
+        nativeTools: [{ options: { headers: { authorization: 'host-only' } } }],
+      });
+      expect(snapshot.vendorOptions?.transformRequest).toBe(transformRequest);
+
+      agent.destroy();
+    });
+
     it('should accept hooks configuration', () => {
       const agent = Agent.create({
         connector: 'test-openai',

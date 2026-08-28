@@ -1,0 +1,30 @@
+export {
+  AgentPackageCompatibilityError,
+  AgentPackageToolServer,
+  RemoteToolExecutionError,
+  assertAgentPackageCompatible,
+  createRemoteTool,
+  exportAgentPackage,
+  hydrateAgentPackage,
+} from './AgentPackage.js';
+export { AGENT_PACKAGE_PROTOCOL_VERSION } from './types.js';
+export type {
+  AgentPackageContextFactory,
+  AgentPackageContextFactoryInput,
+  AgentPackageConnectorResolution,
+  AgentPackageProtocolVersion,
+  ExportAgentPackageOptions,
+  HydrateAgentPackageOptions,
+  LocalToolResolver,
+  PortableAgentContext,
+  PortableAgentRuntimeConfig,
+  PortableRealtimeProfile,
+  PortableToolDescriptor,
+  PortableToolPlacement,
+  PortableToolPlacementResolver,
+  RemoteToolError,
+  RemoteToolExecutionRequest,
+  RemoteToolExecutionResponse,
+  RemoteToolTransport,
+  SerializedAgentPackage,
+} from './types.js';

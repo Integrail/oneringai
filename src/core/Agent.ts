@@ -143,6 +143,23 @@ export interface AgentConfig extends BaseAgentConfig {
   };
 }
 
+/** Agent runtime options exposed by getRuntimeConfigSnapshot(). */
+export type AgentRuntimeConfigSnapshot = Pick<AgentConfig,
+  | 'temperature'
+  | 'maxIterations'
+  | 'thinking'
+  | 'vendorOptions'
+  | 'promptCache'
+  | 'nativeTools'
+  | 'dataHandling'
+  | 'toolExecutionTimeout'
+  | 'historyMode'
+  | 'limits'
+  | 'errorHandling'
+  | 'asyncTools'
+  | 'emptyResponseRetry'
+>;
+
 /**
  * Per-call options for run() and stream().
  * These override the agent-level config for this single invocation.
@@ -219,6 +236,57 @@ interface IterationPreconditionResult {
   exitReason?: 'cancelled' | 'paused';
 }
 
+function cloneRuntimeConfigValue<T>(value: T, seen = new WeakMap<object, unknown>()): T {
+  if (value === null || typeof value !== 'object') return value;
+  const objectValue = value as object;
+  const existing = seen.get(objectValue);
+  if (existing !== undefined) return existing as T;
+
+  if (Array.isArray(value)) {
+    const clone: unknown[] = [];
+    seen.set(objectValue, clone);
+    for (const entry of value) clone.push(cloneRuntimeConfigValue(entry, seen));
+    return clone as T;
+  }
+  if (value instanceof Date) return new Date(value.getTime()) as T;
+  if (value instanceof Map) {
+    const clone = new Map<unknown, unknown>();
+    seen.set(objectValue, clone);
+    for (const [key, entry] of value) {
+      clone.set(cloneRuntimeConfigValue(key, seen), cloneRuntimeConfigValue(entry, seen));
+    }
+    return clone as T;
+  }
+  if (value instanceof Set) {
+    const clone = new Set<unknown>();
+    seen.set(objectValue, clone);
+    for (const entry of value) clone.add(cloneRuntimeConfigValue(entry, seen));
+    return clone as T;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype === Object.prototype || prototype === null) {
+    const clone = Object.create(prototype) as Record<PropertyKey, unknown>;
+    seen.set(objectValue, clone);
+    for (const key of Reflect.ownKeys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor) continue;
+      if ('value' in descriptor) {
+        descriptor.value = cloneRuntimeConfigValue(descriptor.value, seen);
+      }
+      Object.defineProperty(clone, key, descriptor);
+    }
+    return clone as T;
+  }
+
+  try {
+    return structuredClone(value);
+  } catch {
+    // Executable or opaque host resources cannot be meaningfully cloned.
+    return value;
+  }
+}
+
 /**
  * Agent class - represents an AI assistant with tool calling capabilities
  *
@@ -235,6 +303,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   private hookManager: HookManager;
   private executionContext: ExecutionContext | null = null;
   private _toolRegisteredListener: ((event: { name: string }) => void) | null = null;
+  private _renderedInstructionTemplate: string | undefined;
 
   // Pause/resume/cancel state
   private _paused = false;
@@ -502,9 +571,10 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         vendor: this.connector.vendor,
         userId: config.userId,
       };
-      this._agentContext.systemPrompt = TemplateEngine.processSync(
+      this._renderedInstructionTemplate = TemplateEngine.processSync(
         config.instructions, templateCtx, { phase: 'static' }
       );
+      this._agentContext.systemPrompt = this._renderedInstructionTemplate;
       this._hasExplicitInstructions = true;
     }
 
@@ -3300,6 +3370,51 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
    */
   getToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinition[] {
     return this.getEnabledToolDefinitions();
+  }
+
+  /**
+   * Return a runtime-options snapshot. Arrays and plain records are deeply
+   * isolated. Callable or opaque host-local values are retained by reference.
+   *
+   * Set `includeHostLocal` to false when constructing a portable projection.
+   * This excludes provider options, native tools, and data-governance policy
+   * before cloning, so host callbacks and credentials are never traversed.
+   */
+  getRuntimeConfigSnapshot(
+    options: { includeHostLocal?: boolean } = {},
+  ): AgentRuntimeConfigSnapshot {
+    const snapshot: AgentRuntimeConfigSnapshot = {
+      ...(this._config.temperature !== undefined ? { temperature: this._config.temperature } : {}),
+      ...(this._config.maxIterations !== undefined ? { maxIterations: this._config.maxIterations } : {}),
+      ...(this._config.thinking ? { thinking: this._config.thinking } : {}),
+      ...(this._config.toolExecutionTimeout !== undefined
+        ? { toolExecutionTimeout: this._config.toolExecutionTimeout }
+        : {}),
+      ...(this._config.historyMode ? { historyMode: this._config.historyMode } : {}),
+      ...(this._config.limits ? { limits: this._config.limits } : {}),
+      ...(this._config.errorHandling ? { errorHandling: this._config.errorHandling } : {}),
+      ...(this._config.asyncTools ? { asyncTools: this._config.asyncTools } : {}),
+      ...(this._config.emptyResponseRetry
+        ? { emptyResponseRetry: this._config.emptyResponseRetry }
+        : {}),
+    };
+    if (options.includeHostLocal !== false) {
+      if (this._config.vendorOptions) snapshot.vendorOptions = this._config.vendorOptions;
+      if (this._config.promptCache) snapshot.promptCache = this._config.promptCache;
+      if (this._config.nativeTools) snapshot.nativeTools = this._config.nativeTools;
+      if (this._config.dataHandling) snapshot.dataHandling = this._config.dataHandling;
+    }
+    return cloneRuntimeConfigValue(snapshot);
+  }
+
+  /** Return the unrendered instruction template supplied at Agent creation. */
+  getInstructionTemplate(): string | undefined {
+    return this._config.instructions;
+  }
+
+  /** Return the creation-time instruction template after static rendering. */
+  getRenderedInstructionTemplate(): string | undefined {
+    return this._renderedInstructionTemplate;
   }
 
   // ===== Permission Convenience Methods =====

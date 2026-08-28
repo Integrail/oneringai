@@ -46,6 +46,8 @@ export interface OpenAIRealtimeMCPApprovalDecision {
 
 export interface OpenAIRealtimeAgentSessionOptions {
   agent: Agent;
+  /** Existing WebRTC/SIP call to join through the default server-side WebSocket transport. */
+  callId?: string;
   /** Base Realtime session options. Agent instructions and local tools are merged into this object. */
   session?: Omit<OpenAIRealtimeSessionConfig, 'type' | 'model'>;
   /** Custom transport for WebRTC/SIP bridges and tests. Defaults to the connector-first WebSocket transport. */
@@ -175,6 +177,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
     this.transport = options.transport ?? factory({
       connector: this.agent.connector,
       model: this.agent.model,
+      callId: options.callId,
       safetyIdentifier: options.safetyIdentifier,
     });
     this.transport.on('event', this.onTransportEvent);
