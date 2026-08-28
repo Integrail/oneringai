@@ -13,6 +13,7 @@ import { assertOpenAIRealtimePCMRates } from './RealtimeTypes.js';
 
 interface WebSocketLike {
   readyState: number;
+  bufferedAmount?: number;
   on(event: string, listener: (...args: any[]) => void): void;
   removeAllListeners(event?: string): void;
   send(data: string | Buffer): void;
@@ -37,6 +38,8 @@ export interface OpenAIRealtimeSessionOptions {
   safetyIdentifier?: string;
   headers?: Record<string, string>;
   connectTimeoutMs?: number;
+  /** Stop accepting audio frames when WebSocket buffering exceeds this size. Default: 1 MiB. Set 0 to disable. */
+  maxBufferedAmountBytes?: number;
   /** Test/custom-runtime hook. Normal callers should leave this unset. */
   webSocketFactory?: (
     url: string,
@@ -54,6 +57,7 @@ export interface OpenAIRealtimeSessionEvents {
   audio: (audio: Buffer) => void;
   error: (error: Error) => void;
   close: (code: number, reason: string) => void;
+  backpressure: (info: { bufferedAmount: number; limit: number }) => void;
 }
 
 /**
@@ -222,13 +226,19 @@ export class OpenAIRealtimeSession extends EventEmitter {
     this.send({ type: 'session.update', session: normalized });
   }
 
-  appendAudio(audio: Buffer | string): void {
+  appendAudio(audio: Buffer | string): boolean {
+    if (!this.socket || this.socket.readyState !== 1) {
+      throw new Error(`${this.providerLabel} Realtime WebSocket is not open`);
+    }
+    const limit = this.options.maxBufferedAmountBytes ?? 1024 * 1024;
+    const bufferedAmount = this.socket.bufferedAmount ?? 0;
+    if (limit > 0 && bufferedAmount >= limit) {
+      this.emit('backpressure', { bufferedAmount, limit });
+      return false;
+    }
     if (this.inputAudioTransport === 'binary') {
-      if (!this.socket || this.socket.readyState !== 1) {
-        throw new Error(`${this.providerLabel} Realtime WebSocket is not open`);
-      }
       this.socket.send(typeof audio === 'string' ? Buffer.from(audio, 'base64') : audio);
-      return;
+      return true;
     }
     this.send({
       type: this.isTranslationSession()
@@ -236,6 +246,7 @@ export class OpenAIRealtimeSession extends EventEmitter {
         : 'input_audio_buffer.append',
       audio: typeof audio === 'string' ? audio : audio.toString('base64'),
     });
+    return true;
   }
 
   commitAudio(): void { this.send({ type: 'input_audio_buffer.commit' }); }

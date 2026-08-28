@@ -1998,14 +1998,21 @@ for await (const event of voice.wrap(agent.stream('Tell me a story'))) {
 Build native speech-to-speech agents, streaming transcription, and continuous
 speech translation with the current OpenAI Realtime API. OneRingAI provides a
 connector-first server WebSocket client, ephemeral WebRTC credentials, SIP call
-control, and a production telephony pipeline:
+control, a transport-neutral Agent session, and a production telephony pipeline:
 
 ```typescript
-import { OpenAIRealtimeSession } from '@everworker/oneringai';
+import { Agent, OpenAIRealtimeAgentSession } from '@everworker/oneringai';
 
-const realtime = new OpenAIRealtimeSession({
+const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-realtime-2.1',
+  instructions: 'Be concise and confirm consequential actions.',
+  tools: [lookupOrder],
+  permissions: { onApprovalRequired: approveTool },
+});
+
+const realtime = new OpenAIRealtimeAgentSession({
+  agent,
   session: {
     reasoning: { effort: 'low' },
     audio: {
@@ -2018,17 +2025,19 @@ const realtime = new OpenAIRealtimeSession({
   },
 });
 
-realtime.on('event', (event) => {
-  if (event.type === 'response.output_audio.delta') play(event.delta);
-});
+realtime.on('audio', playPcm24);
+realtime.on('usage', recordUsage);
 await realtime.connect();
+realtime.appendAudio(pcm24Chunk);
 ```
 
-`OpenAIRealtimeAPI` creates short-lived WebRTC client secrets and accepts,
-rejects, transfers, or hangs up SIP calls. `VoiceBridge` uses the same GA API
-with PCMU telephony audio and supports server VAD, semantic VAD, local/manual
-VAD, noise reduction, barge-in truncation, agent permissions, local tools,
-remote MCP tools, tracing, stored prompts, and retention-ratio truncation. See
+`OpenAIRealtimeAgentSession` refreshes Agent memory/context per turn and runs
+parallel local functions through the normal Agent hook, approval, permission,
+timeout, identity, event, and metrics path. Provider MCP approvals fail closed.
+`OpenAIRealtimeAPI` creates short-lived WebRTC client secrets, exchanges SDP,
+and accepts, rejects, transfers, or hangs up SIP calls. `VoiceBridge` uses the
+same semantics with PCMU telephony audio, VAD, barge-in truncation, tools, MCP,
+usage, tracing, and retention-ratio truncation. See
 the [complete OpenAI Realtime API guide](./USER_GUIDE.md#openai-realtime-api)
 for voice-agent, transcription, translation, WebRTC, SIP, tool, event, pricing,
 and production examples. A runnable server-side example is also available at

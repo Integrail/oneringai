@@ -45,14 +45,25 @@ export type { VoiceSessionEvents } from './VoiceSession.js';
 // Pipelines
 export { TextPipeline } from './pipelines/TextPipeline.js';
 export { RealtimePipeline } from './pipelines/RealtimePipeline.js';
-export { OpenAIRealtimeSession, OpenAIRealtimeAPI } from './openai/index.js';
+export {
+  OpenAIRealtimeSession,
+  OpenAIRealtimeAgentSession,
+  OpenAIRealtimeAPI,
+} from './openai/index.js';
 export { GrokRealtimeAPI, GrokRealtimeSession } from './grok/index.js';
 export type {
   OpenAIRealtimeConnectOptions,
   OpenAIRealtimeSessionOptions,
   OpenAIRealtimeSessionEvents,
+  OpenAIRealtimeAgentTransport,
+  OpenAIRealtimeAgentSessionOptions,
+  OpenAIRealtimeAgentSessionEvents,
+  OpenAIRealtimeAgentUsage,
+  OpenAIRealtimeMCPApprovalRequest,
+  OpenAIRealtimeMCPApprovalDecision,
   CreateRealtimeClientSecretOptions,
   CreateRealtimeTranslationClientSecretOptions,
+  CreateRealtimeWebRTCCallOptions,
   OpenAIRealtimeModel,
   OpenAIRealtimeVoice,
   RealtimePCMSampleRate,

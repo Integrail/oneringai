@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Agent-aware Realtime voice sessions.** Added
+  `OpenAIRealtimeAgentSession`, a transport-neutral layer that synchronizes
+  `AgentContextNextGen` before turns, exposes cumulative modality usage, replays
+  managed history, supports text/image turns, and warns before OpenAI's
+  60-minute session limit.
+- **Complete Realtime tool lifecycle.** Local functions now execute through the
+  Agent hook/approval/permission/identity/timeout/event/metrics path, parallel
+  results are committed as one context batch, and provider-hosted MCP approval
+  requests fail closed unless an explicit handler approves them.
+- **WebRTC SDP helper and audio backpressure.** `OpenAIRealtimeAPI` now exchanges
+  SDP offers through `/v1/realtime/calls`; WebSocket sessions bound queued audio
+  with a configurable high-water mark.
+
+### Changed
+
+- **Telephony uses the shared Agent-aware layer.** OpenAI `RealtimePipeline`
+  refreshes dynamic context before each response and exposes usage/MCP approval
+  handling while preserving PCMU streaming and interruption truncation.
+
+### Fixed
+
+- **ESM package loading with MCP.** AJV and `ajv-formats` remain external to the
+  ESM bundle, avoiding generated dynamic `require()` calls under Node.js ESM.
+- **Realtime audio and lifecycle correctness.** Agent sessions now decode
+  WebSocket output-audio deltas, preserve identical replies across turns,
+  distinguish cancellation from normal and unexpected closure, and pass the
+  current external input sequence to lifecycle hooks.
+- **Atomic Agent execution ownership.** `run`, `stream`, async continuations,
+  and external transports share one execution lease; parallel external tool
+  admission now enforces `maxToolCalls` without double-counting active calls.
+- **Generated API signatures.** The API documentation generator now slices at
+  the declaration body instead of object-literal braces in parameters/defaults.
+
 ## [1.1.0] — 2026-08-24
 
 Version 1.1.0 introduces OneRingAI's preview Agent Runtime: one generic,

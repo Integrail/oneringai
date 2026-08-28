@@ -13,7 +13,7 @@ import { BaseAgent, BaseAgentConfig, BaseSessionConfig } from './BaseAgent.js';
 import { ExecutionContext, HistoryMode } from '../capabilities/agents/ExecutionContext.js';
 import { HookManager } from '../capabilities/agents/HookManager.js';
 import { InputItem, MessageRole, OutputItem } from '../domain/entities/Message.js';
-import { AgentResponse } from '../domain/entities/Response.js';
+import { AgentResponse, type TokenUsage } from '../domain/entities/Response.js';
 import { StreamEvent, StreamEventType, ResponseCompleteEvent, isToolCallArgumentsDone, isReasoningDelta } from '../domain/entities/StreamEvent.js';
 import { StreamState } from '../domain/entities/StreamState.js';
 import { Tool, ToolCall, ToolCallState, ToolResult, AsyncToolConfig, PendingAsyncTool } from '../domain/entities/Tool.js';
@@ -173,6 +173,27 @@ export interface RunOptions {
   responseFormat?: ResponseFormat;
 }
 
+/** Options for a non-LLM execution owned by an external transport. */
+export interface ExternalExecutionOptions {
+  /** Stable label recorded in the execution context for observability. */
+  source?: string;
+}
+
+/** A function call received from an external model transport. */
+export interface ExternalToolCall {
+  id: string;
+  name: string;
+  arguments: string | Record<string, unknown>;
+}
+
+/** Terminal data supplied when an external execution is completed. */
+export interface ExternalExecutionResult {
+  status?: AgentResponse['status'];
+  outputText?: string;
+  usage?: Partial<TokenUsage>;
+  error?: Error;
+}
+
 /**
  * Execution setup information returned by _prepareExecution()
  */
@@ -180,6 +201,14 @@ interface ExecutionSetup {
   executionId: string;
   startTime: number;
   maxIterations: number;
+  lease: AgentExecutionLease;
+}
+
+type AgentExecutionKind = 'run' | 'stream' | 'external' | 'continuation';
+
+interface AgentExecutionLease {
+  kind: AgentExecutionKind;
+  token: symbol;
 }
 
 /**
@@ -219,7 +248,10 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   private _asyncBatchTimer: ReturnType<typeof setTimeout> | null = null;
   private _asyncResultQueue: ToolResult[] = [];
   private _continuationInProgress = false;
-  private _executionActive = false;
+  private _executionOwner: AgentExecutionLease | null = null;
+  private _externalExecutionId: string | null = null;
+  private _externalExecutionLease: AgentExecutionLease | null = null;
+  private _externalHookInput: InputItem[] = [];
 
   // Per-call run options (set in run/stream, cleared in finally)
   private _runOptions: RunOptions | undefined;
@@ -553,6 +585,262 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     return true;
   }
 
+  /** Acquire the Agent's single mutable execution slot without an async race. */
+  private acquireExecution(kind: AgentExecutionKind): AgentExecutionLease {
+    if (this._executionOwner) {
+      throw new Error(
+        `Agent already has an active ${this._executionOwner.kind} execution`,
+      );
+    }
+    const lease = { kind, token: Symbol(kind) };
+    this._executionOwner = lease;
+    return lease;
+  }
+
+  /** Release only the exact execution that acquired the slot. */
+  private releaseExecution(lease: AgentExecutionLease): void {
+    if (this._executionOwner !== lease) return;
+    this._executionOwner = null;
+    this.scheduleAsyncResultFlush();
+  }
+
+  /** Wake queued async results after any execution owner releases its lease. */
+  private scheduleAsyncResultFlush(): void {
+    if (this._isDestroyed
+      || this._asyncResultQueue.length === 0
+      || this._config.asyncTools?.autoContinue === false) {
+      return;
+    }
+    setTimeout(() => {
+      if (this._isDestroyed) return;
+      try {
+        this._flushAsyncResults();
+      } catch (error) {
+        this._logger.error(
+          { error: (error as Error).message },
+          'Error flushing async results',
+        );
+      }
+    }, 0);
+  }
+
+  /**
+   * Start a long-lived execution driven by an external model transport.
+   *
+   * Realtime voice sessions use this to share the Agent's normal tool hooks,
+   * permission pipeline, limits, events, and metrics without running a second
+   * text-model loop.
+   */
+  async beginExternalExecution(options: ExternalExecutionOptions = {}): Promise<string> {
+    assertNotDestroyed(this, 'begin external execution');
+    const lease = this.acquireExecution('external');
+    this._paused = false;
+    this._cancelled = false;
+    this._externalExecutionLease = lease;
+    this._externalHookInput = [];
+
+    const executionId = `exec_${randomUUID()}`;
+    this._externalExecutionId = executionId;
+    try {
+      await this.ensureSessionLoaded();
+      this.executionContext = new ExecutionContext(executionId, {
+        maxHistorySize: 10,
+        historyMode: this._config.historyMode || 'summary',
+        maxAuditTrailSize: 1000,
+      });
+      if (options.source) this.executionContext.metadata.set('source', options.source);
+
+      this.emit('execution:start', {
+        executionId,
+        config: { model: this.model, maxIterations: this._config.maxIterations || 10 },
+        timestamp: new Date(),
+      });
+      await this.hookManager.executeHooks('before:execution', {
+        executionId,
+        config: { model: this.model },
+        timestamp: new Date(),
+      }, undefined);
+    } catch (error) {
+      this._externalExecutionId = null;
+      this._externalExecutionLease = null;
+      this._externalHookInput = [];
+      this.releaseExecution(lease);
+      throw error;
+    }
+    return executionId;
+  }
+
+  /**
+   * Add user input owned by the active external transport and retain the exact
+   * input sequence for lifecycle hooks.
+   */
+  recordExternalUserInput(content: string | Content[]): string {
+    assertNotDestroyed(this, 'record external user input');
+    if (!this._externalExecutionLease
+      || this._executionOwner !== this._externalExecutionLease) {
+      throw new Error('beginExternalExecution() must be called before recording external input');
+    }
+    const id = this._agentContext.addUserMessage(content);
+    this._externalHookInput.push(...this._agentContext.getCurrentInput());
+    return id;
+  }
+
+  /**
+   * Execute a function call received from an external model transport.
+   * The call follows the same approval, hook, permission, timeout, connector,
+   * event, and metrics path as a tool selected by Agent.run().
+   */
+  async executeExternalToolCall(
+    call: ExternalToolCall,
+    options: { iteration?: number } = {},
+  ): Promise<ToolResult> {
+    assertNotDestroyed(this, 'execute external tool call');
+    if (!this._externalExecutionId
+      || !this._externalExecutionLease
+      || this._executionOwner !== this._externalExecutionLease
+      || !this.executionContext) {
+      throw new Error('beginExternalExecution() must be called before executing external tools');
+    }
+
+    const definition = this.getToolDefinitions().find(
+      (tool) => tool.function.name === call.name,
+    );
+    if (!definition) {
+      throw new Error(`Tool "${call.name}" is not enabled on this agent`);
+    }
+
+    const toolCall: ToolCall = {
+      id: call.id,
+      type: 'function',
+      function: {
+        name: call.name,
+        arguments: typeof call.arguments === 'string'
+          ? call.arguments
+          : JSON.stringify(call.arguments),
+      },
+      // External transports need the real result before they can continue,
+      // even when a tool is normally configured as non-blocking.
+      blocking: true,
+      state: ToolCallState.PENDING,
+    };
+    const executionContext = this.executionContext;
+    const executionId = this._externalExecutionId;
+    const maxToolCalls = this._config.limits?.maxToolCalls;
+    if (maxToolCalls && executionContext.toolCalls.size >= maxToolCalls) {
+      throw new Error(`Tool call limit exceeded: ${maxToolCalls}`);
+    }
+    // Record admission synchronously. This is the reservation: a second
+    // parallel call sees it immediately, with no separate counter to double-count.
+    executionContext.addToolCall(toolCall);
+
+    await this.checkPause();
+    if (this._cancelled) throw new Error('Agent execution is cancelled');
+    executionContext.checkLimits(this._config.limits);
+
+    const iteration = options.iteration ?? executionContext.iteration;
+    this.emit('tool:detected', {
+      executionId,
+      iteration,
+      toolCalls: [toolCall],
+      timestamp: new Date(),
+    });
+    const [result] = await this.executeToolsWithHooks(
+      [toolCall],
+      iteration,
+      executionId,
+      true,
+      true,
+    );
+    if (!result) throw new Error(`Tool "${call.name}" produced no result`);
+    executionContext.iteration = Math.max(executionContext.iteration, iteration + 1);
+    return result;
+  }
+
+  /** Add provider-reported usage to the active external execution. */
+  recordExternalUsage(usage: Partial<TokenUsage>): void {
+    if (!this._externalExecutionId || !this.executionContext) return;
+    const current = this.executionContext.metrics;
+    this.executionContext.updateMetrics({
+      inputTokens: current.inputTokens + (usage.input_tokens ?? 0),
+      outputTokens: current.outputTokens + (usage.output_tokens ?? 0),
+      totalTokens: current.totalTokens + (usage.total_tokens ?? 0),
+      cachedInputTokens: (current.cachedInputTokens ?? 0) + (usage.cached_input_tokens ?? 0),
+      cacheCreationInputTokens:
+        (current.cacheCreationInputTokens ?? 0) + (usage.cache_creation_input_tokens ?? 0),
+      reasoningTokens:
+        (current.reasoningTokens ?? 0) + (usage.output_tokens_details?.reasoning_tokens ?? 0),
+      nativeToolCalls: this.mergeNativeToolMetrics(
+        current.nativeToolCalls ?? {},
+        usage.native_tool_calls,
+      ),
+    });
+  }
+
+  /** Complete the active external execution and run normal lifecycle hooks. */
+  async completeExternalExecution(result: ExternalExecutionResult = {}): Promise<AgentResponse> {
+    const lease = this._externalExecutionLease;
+    if (!this._externalExecutionId
+      || !lease
+      || this._executionOwner !== lease
+      || !this.executionContext) {
+      throw new Error('No external execution is active');
+    }
+    const executionId = this._externalExecutionId;
+    const hookInput = [...this._externalHookInput];
+    const outputText = result.outputText ?? '';
+    const output: OutputItem[] = outputText ? [{
+      type: 'message',
+      role: MessageRole.ASSISTANT,
+      content: [{ type: ContentType.OUTPUT_TEXT, text: outputText }],
+    }] : [];
+    const metricsSnapshot = this.executionContext.metrics;
+    const response: AgentResponse = {
+      id: `realtime_${randomUUID()}`,
+      object: 'response',
+      created_at: Math.floor(Date.now() / 1000),
+      status: result.status ?? (result.error ? 'failed' : this._cancelled ? 'cancelled' : 'completed'),
+      model: this.model,
+      output,
+      output_text: outputText,
+      usage: {
+        input_tokens: result.usage?.input_tokens ?? metricsSnapshot.inputTokens,
+        output_tokens: result.usage?.output_tokens ?? metricsSnapshot.outputTokens,
+        total_tokens: result.usage?.total_tokens ?? metricsSnapshot.totalTokens,
+        cached_input_tokens: result.usage?.cached_input_tokens ?? metricsSnapshot.cachedInputTokens,
+        cache_creation_input_tokens:
+          result.usage?.cache_creation_input_tokens ?? metricsSnapshot.cacheCreationInputTokens,
+        output_tokens_details: {
+          reasoning_tokens:
+            result.usage?.output_tokens_details?.reasoning_tokens
+            ?? metricsSnapshot.reasoningTokens
+            ?? 0,
+        },
+        native_tool_calls: result.usage?.native_tool_calls ?? metricsSnapshot.nativeToolCalls,
+      },
+      ...(result.error ? { error: { type: result.error.name, message: result.error.message } } : {}),
+    };
+    const duration = Date.now() - this.executionContext.startTime.getTime();
+    this.executionContext.updateMetrics({ totalDuration: duration });
+
+    try {
+      await this.hookManager.executeHooks('after:execution', {
+        executionId,
+        response,
+        context: this.executionContext,
+        input: hookInput,
+        timestamp: new Date(),
+        duration,
+      }, undefined);
+      this.emit('execution:complete', { executionId, response, timestamp: new Date(), duration });
+      return response;
+    } finally {
+      this._externalExecutionId = null;
+      this._externalExecutionLease = null;
+      this._externalHookInput = [];
+      this.releaseExecution(lease);
+    }
+  }
+
   // getContextState() and restoreContextState() are inherited from BaseAgent
 
   // ===== Shared Execution Helpers =====
@@ -565,28 +853,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     methodName: 'run' | 'stream'
   ): Promise<ExecutionSetup> {
     assertNotDestroyed(this, `${methodName} agent`);
-
-    // Ensure any pending session load is complete
-    await this.ensureSessionLoaded();
-
-    const inputPreview = typeof input === 'string'
-      ? input.substring(0, 100)
-      : `${input.length} messages`;
-
-    this._logger.info({ inputPreview, toolCount: this._config.tools?.length || 0 }, `Agent ${methodName} started`);
-    metrics.increment(`agent.${methodName}.started`, 1, { model: this.model, connector: this.connector.name });
-
-    const startTime = Date.now();
-
-    // Generate execution ID and create execution context
-    const executionId = `exec_${randomUUID()}`;
-    this.executionContext = new ExecutionContext(executionId, {
-      maxHistorySize: 10,
-      historyMode: this._config.historyMode || 'summary',
-      maxAuditTrailSize: 1000,
-    });
-
-    // Reset control state
+    const lease = this.acquireExecution(methodName);
     this._paused = false;
     this._cancelled = false;
     if (methodName === 'stream') {
@@ -594,37 +861,61 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       this._resumeCallback = null;
     }
 
-    // Add user message to AgentContext
-    // NOTE: setCurrentInput() also calls addUserMessage() internally, so we use it
-    // for string input to handle both task-type detection and journaling in one call.
-    // For InputItem[] input, use addInputItems() which doesn't journal (history seeding).
-    if (typeof input === 'string') {
-      this._agentContext.setCurrentInput(input);
-    } else {
-      this._agentContext.addInputItems(input);
+    try {
+      // Ensure any pending session load is complete
+      await this.ensureSessionLoaded();
+
+      const inputPreview = typeof input === 'string'
+        ? input.substring(0, 100)
+        : `${input.length} messages`;
+
+      this._logger.info({ inputPreview, toolCount: this._config.tools?.length || 0 }, `Agent ${methodName} started`);
+      metrics.increment(`agent.${methodName}.started`, 1, { model: this.model, connector: this.connector.name });
+
+      const startTime = Date.now();
+
+      // Generate execution ID and create execution context
+      const executionId = `exec_${randomUUID()}`;
+      this.executionContext = new ExecutionContext(executionId, {
+        maxHistorySize: 10,
+        historyMode: this._config.historyMode || 'summary',
+        maxAuditTrailSize: 1000,
+      });
+
+      // Add user message to AgentContext
+      // NOTE: setCurrentInput() also calls addUserMessage() internally, so we use it
+      // for string input to handle both task-type detection and journaling in one call.
+      // For InputItem[] input, use addInputItems() which doesn't journal (history seeding).
+      if (typeof input === 'string') {
+        this._agentContext.setCurrentInput(input);
+      } else {
+        this._agentContext.addInputItems(input);
+      }
+
+      // Emit execution start
+      this.emit('execution:start', {
+        executionId,
+        config: { model: this.model, maxIterations: this._config.maxIterations || 10 },
+        timestamp: new Date(),
+      });
+
+      // Execute before:execution hook
+      await this.hookManager.executeHooks('before:execution', {
+        executionId,
+        config: { model: this.model },
+        timestamp: new Date(),
+      }, undefined);
+
+      return {
+        executionId,
+        startTime,
+        maxIterations: this._config.maxIterations || AGENT_DEFAULTS.MAX_ITERATIONS,
+        lease,
+      };
+    } catch (error) {
+      this.releaseExecution(lease);
+      throw error;
     }
-
-    // Emit execution start
-    this.emit('execution:start', {
-      executionId,
-      config: { model: this.model, maxIterations: this._config.maxIterations || 10 },
-      timestamp: new Date(),
-    });
-
-    // Execute before:execution hook
-    await this.hookManager.executeHooks('before:execution', {
-      executionId,
-      config: { model: this.model },
-      timestamp: new Date(),
-    }, undefined);
-
-    this._executionActive = true;
-
-    return {
-      executionId,
-      startTime,
-      maxIterations: this._config.maxIterations || AGENT_DEFAULTS.MAX_ITERATIONS,
-    };
   }
 
   /**
@@ -865,8 +1156,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
    * Run the agent with input
    */
   async run(input: string | InputItem[], options?: RunOptions): Promise<AgentResponse> {
+    const { executionId, startTime, maxIterations, lease } =
+      await this._prepareExecution(input, 'run');
     this._runOptions = options;
-    const { executionId, startTime, maxIterations } = await this._prepareExecution(input, 'run');
 
     try {
       const finalResponse = await this._runAgenticLoop(executionId, startTime, maxIterations);
@@ -927,20 +1219,8 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       throw error;
     } finally {
       this._runOptions = undefined;
-      this._executionActive = false;
+      this.releaseExecution(lease);
       this._cleanupExecution();
-
-      // If async results arrived while we were running, schedule a flush
-      if (this._asyncResultQueue.length > 0 && (this._config.asyncTools?.autoContinue !== false)) {
-        setTimeout(() => {
-          if (this._isDestroyed) return;
-          try {
-            this._flushAsyncResults();
-          } catch (err) {
-            this._logger.error({ error: (err as Error).message }, 'Error flushing async results');
-          }
-        }, 0);
-      }
     }
   }
 
@@ -1438,8 +1718,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
    * Stream response from the agent
    */
   async *stream(input: string | InputItem[], options?: RunOptions): AsyncIterableIterator<StreamEvent> {
+    const { executionId, startTime, maxIterations, lease } =
+      await this._prepareExecution(input, 'stream');
     this._runOptions = options;
-    const { executionId, startTime, maxIterations } = await this._prepareExecution(input, 'stream');
 
     // Structured output on stream() can only be enforced when it applies inline:
     // natively, or the prompt fallback when no tools are present. Unlike run(),
@@ -1856,13 +2137,8 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       throw error;
     } finally {
       this._runOptions = undefined;
-      this._executionActive = false;
+      this.releaseExecution(lease);
       this._cleanupExecution(globalStreamState);
-
-      // If async results arrived while we were streaming, schedule a flush
-      if (this._asyncResultQueue.length > 0 && (this._config.asyncTools?.autoContinue !== false)) {
-        setTimeout(() => this._flushAsyncResults(), 0);
-      }
     }
   }
 
@@ -2290,13 +2566,16 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   private async executeToolsWithHooks(
     toolCalls: ToolCall[],
     iteration: number,
-    executionId: string
+    executionId: string,
+    forceBlocking = false,
+    callsAlreadyTracked = false,
   ): Promise<ToolResult[]> {
     const results: ToolResult[] = [];
 
     for (const toolCall of toolCalls) {
-      // Add to context
-      this.executionContext?.addToolCall(toolCall);
+      // External transports record calls synchronously at admission so
+      // parallel calls cannot race the maxToolCalls boundary.
+      if (!callsAlreadyTracked) this.executionContext?.addToolCall(toolCall);
 
       // Check pause before each tool
       await this.checkPause();
@@ -2343,7 +2622,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       }
 
       // Async tool: return placeholder, execute in background
-      if (!toolCall.blocking) {
+      if (!toolCall.blocking && !forceBlocking) {
         const placeholderResult = this._startAsyncExecution(toolCall, executionId);
         results.push(placeholderResult);
         this.executionContext?.addToolResult(placeholderResult);
@@ -2416,6 +2695,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       if (!approval.approved) {
         throw new Error(`Tool execution rejected: ${approval.reason || 'No reason provided'}`);
       }
+      if (approval.modifiedArgs !== undefined) {
+        toolCall.function.arguments = JSON.stringify(approval.modifiedArgs);
+      }
     }
 
     // Emit tool start
@@ -2458,10 +2740,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         toolResult = { ...toolResult, ...afterTool.modified };
       }
 
-      // Update metrics
+      // Call/result counts are tracked once by ExecutionContext.addToolCall()
+      // and addToolResult(). Only duration is owned by this execution stage.
       if (this.executionContext) {
-        this.executionContext.metrics.toolCallCount++;
-        this.executionContext.metrics.toolSuccessCount++;
         this.executionContext.metrics.toolDuration += toolResult.executionTime || 0;
       }
 
@@ -2474,9 +2755,8 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       toolCall.endTime = new Date();
       toolCall.error = (error as Error).message;
 
-      // Update metrics
       if (this.executionContext) {
-        this.executionContext.metrics.toolFailureCount++;
+        this.executionContext.metrics.toolDuration += Date.now() - toolStartTime;
       }
 
       // Handle permission denied — return as tool result instead of throwing
@@ -2760,7 +3040,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     if (this._isDestroyed) return;
     if (this._asyncResultQueue.length === 0) return;
     if (this._continuationInProgress) return; // wait for current continuation to finish
-    if (this._executionActive) return; // results stay queued, flushed after run/stream ends
+    if (this._executionOwner) return; // results stay queued until the current owner releases
 
     // Fire and forget — errors logged internally
     this.continueWithAsyncResults().catch((err) => {
@@ -2781,8 +3061,10 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       throw new Error('A continuation is already in progress');
     }
 
+    const lease = this.acquireExecution('continuation');
     this._continuationInProgress = true;
-    this._executionActive = true;
+    this._paused = false;
+    this._cancelled = false;
 
     try {
       // Drain queue if no explicit results provided
@@ -2831,10 +3113,6 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         maxAuditTrailSize: 1000,
       });
 
-      // Reset control state
-      this._paused = false;
-      this._cancelled = false;
-
       this.emit('execution:start', {
         executionId,
         config: { model: this.model, maxIterations },
@@ -2848,13 +3126,8 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       return finalResponse;
     } finally {
       this._continuationInProgress = false;
-      this._executionActive = false;
+      this.releaseExecution(lease);
       this._cleanupExecution();
-
-      // If async results arrived during continuation, schedule a flush
-      if (this._asyncResultQueue.length > 0 && (this._config.asyncTools?.autoContinue !== false)) {
-        setTimeout(() => this._flushAsyncResults(), 0);
-      }
     }
   }
 
@@ -3020,6 +3293,15 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   // ===== Tool Management =====
   // Note: addTool, removeTool, listTools, setTools are inherited from BaseAgent
 
+  /**
+   * Return the enabled, identity-filtered tool definitions exactly as they
+   * would be sent by the normal Agent loop. External model transports should
+   * use this instead of reading ToolManager registrations directly.
+   */
+  getToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinition[] {
+    return this.getEnabledToolDefinitions();
+  }
+
   // ===== Permission Convenience Methods =====
 
   approveToolForSession(toolName: string): void {
@@ -3151,7 +3433,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   }
 
   isRunning(): boolean {
-    return this.executionContext !== null && !this._cancelled;
+    return this._executionOwner !== null && !this._cancelled;
   }
 
   isPaused(): boolean {
@@ -3210,7 +3492,10 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       this._asyncBatchTimer = null;
     }
     this._continuationInProgress = false;
-    this._executionActive = false;
+    this._executionOwner = null;
+    this._externalExecutionId = null;
+    this._externalExecutionLease = null;
+    this._externalHookInput = [];
 
     // Remove ToolManager listener before context is destroyed
     if (this._toolRegisteredListener) {

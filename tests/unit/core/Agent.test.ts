@@ -1084,6 +1084,122 @@ describe('Agent', () => {
     });
   });
 
+  describe('execution ownership', () => {
+    it('rejects external calls to tools hidden by the current connector identity', async () => {
+      const workExecute = vi.fn(async () => ({ account: 'work' }));
+      const personalExecute = vi.fn(async () => ({ account: 'personal' }));
+      const connectorTool = (
+        name: string,
+        execute: ToolFunction['execute'],
+      ): ToolFunction => ({
+        definition: {
+          type: 'function',
+          function: {
+            name,
+            description: 'Read account data.',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+        execute,
+        connectorName: 'test-openai',
+      });
+      const agent = Agent.create({
+        connector: 'test-openai',
+        model: 'gpt-4',
+        permissions: { autoApproveAll: true },
+      });
+      agent.tools.registerConnectorTools(
+        'test-openai',
+        [connectorTool('read_work_account', workExecute)],
+        { accountId: 'work' },
+      );
+      agent.tools.registerConnectorTools(
+        'test-openai',
+        [connectorTool('read_personal_account', personalExecute)],
+        { accountId: 'personal' },
+      );
+      agent.identities = [{ connector: 'test-openai', accountId: 'work' }];
+
+      const visibleToolNames = agent.getToolDefinitions().map((tool) => tool.function.name);
+      expect(visibleToolNames).toContain('read_work_account');
+      expect(visibleToolNames).not.toContain('read_personal_account');
+      await agent.beginExternalExecution({ source: 'test-realtime' });
+
+      await expect(agent.executeExternalToolCall({
+        id: 'call_personal',
+        name: 'read_personal_account',
+        arguments: {},
+      })).rejects.toThrow('not enabled on this agent');
+      expect(personalExecute).not.toHaveBeenCalled();
+
+      await expect(agent.executeExternalToolCall({
+        id: 'call_work',
+        name: 'read_work_account',
+        arguments: {},
+      })).resolves.toMatchObject({ content: { account: 'work' } });
+      expect(workExecute).toHaveBeenCalledOnce();
+
+      await agent.completeExternalExecution();
+      agent.destroy();
+    });
+
+    it('keeps an external execution authoritative over run, stream, and continuations', async () => {
+      const agent = Agent.create({ connector: 'test-openai', model: 'gpt-4' });
+      await agent.beginExternalExecution({ source: 'test-realtime' });
+      const externalContext = agent.getExecutionContext();
+
+      await expect(agent.run('overlap')).rejects.toThrow(
+        'active external execution',
+      );
+      await expect(agent.stream('overlap').next()).rejects.toThrow(
+        'active external execution',
+      );
+      await expect(agent.continueWithAsyncResults()).rejects.toThrow(
+        'active external execution',
+      );
+      expect(agent.getExecutionContext()).toBe(externalContext);
+      expect(agent.isRunning()).toBe(true);
+
+      await agent.completeExternalExecution();
+      expect(agent.isRunning()).toBe(false);
+      agent.destroy();
+    });
+
+    it('rejects an external session while a text run owns the Agent', async () => {
+      let resolveGenerate!: (response: any) => void;
+      mockGenerate.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveGenerate = resolve;
+      }));
+      const agent = Agent.create({ connector: 'test-openai', model: 'gpt-4' });
+
+      const running = agent.run('hold the execution slot');
+      await vi.waitFor(() => expect(mockGenerate).toHaveBeenCalled());
+      await expect(agent.beginExternalExecution()).rejects.toThrow(
+        'active run execution',
+      );
+
+      resolveGenerate({
+        id: 'resp_owner',
+        object: 'response',
+        created_at: Date.now(),
+        status: 'completed',
+        model: 'gpt-4',
+        output: [{
+          type: 'message',
+          role: MessageRole.ASSISTANT,
+          content: [{ type: ContentType.OUTPUT_TEXT, text: 'done' }],
+        }],
+        output_text: 'done',
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+      });
+      await running;
+
+      await expect(agent.beginExternalExecution()).resolves.toMatch(/^exec_/);
+      await agent.completeExternalExecution();
+      agent.destroy();
+    });
+  });
+
   describe('clearConversation()', () => {
     it('should clear conversation history while preserving plugins', () => {
       const agent = Agent.create({

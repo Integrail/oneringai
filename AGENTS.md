@@ -377,7 +377,8 @@ Use the dedicated high-level class rather than calling vendor SDKs directly:
 | Text-to-speech | `TextToSpeech`, `TTS_MODELS` |
 | Speech-to-text | `SpeechToText`, `STT_MODELS` |
 | Embeddings | `Embeddings`, `EMBEDDING_MODELS` |
-| Realtime voice | Realtime APIs documented in `USER_GUIDE.md` |
+| Realtime voice agent | `OpenAIRealtimeAgentSession` (Agent lifecycle, context, local tools, hosted MCP) |
+| Raw Realtime transport | `OpenAIRealtimeSession` (advanced WebSocket protocol access) |
 | Documents | `DocumentReader`, `readDocumentAsContent`, filesystem tools |
 
 Inspect registry metadata for lifecycle, modality, capability, endpoint,

@@ -414,6 +414,7 @@ export class VoiceBridge extends EventEmitter {
         transcriptionLanguage: cfg.transcriptionLanguage,
         realtime: cfg.realtime,
         safetyIdentifier: cfg.safetyIdentifier,
+        approveMCP: cfg.approveMCP,
         manualVAD,
         greeting,
         interruptible: cfg.interruptible ?? true,

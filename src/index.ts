@@ -31,7 +31,14 @@ export { Connector, ScopedConnectorRegistry, StorageRegistry, ToolCatalogRegistr
 export type { TemplateHandler, TemplateContext, TemplateHandlerOptions, ProcessOptions } from './core/index.js';
 export type { StorageConfig, StorageContext, ToolCategoryDefinition, CatalogToolEntry, ToolCategoryScope, ConnectorCategoryInfo, ParsedConnectorCategory, CatalogRegistryEntry, SuspendSignalOptions, OrchestratorConfig, AgentTypeConfig, DelegationDefaults, OrchestrationToolsContext, DelegationState, DelegationReclaimConfig, AgentInfo, AgentInspection, AgentFilter, AgentRegistryStats, AgentRegistryEvents, AgentEventListener } from './core/index.js';
 export type { AgentStatus as RegistryAgentStatus } from './core/index.js';
-export type { AgentConfig, AgentSessionConfig, RunOptions } from './core/index.js';
+export type {
+  AgentConfig,
+  AgentSessionConfig,
+  RunOptions,
+  ExternalExecutionOptions,
+  ExternalToolCall,
+  ExternalExecutionResult,
+} from './core/index.js';
 
 // Structured (JSON) output — vendor-agnostic
 export {
@@ -188,6 +195,7 @@ export {
   TextPipeline,
   RealtimePipeline,
   OpenAIRealtimeSession,
+  OpenAIRealtimeAgentSession,
   OpenAIRealtimeAPI,
   GrokRealtimeAPI,
   GrokRealtimeSession,
@@ -222,8 +230,15 @@ export type {
   OpenAIRealtimeConnectOptions,
   OpenAIRealtimeSessionOptions,
   OpenAIRealtimeSessionEvents,
+  OpenAIRealtimeAgentTransport,
+  OpenAIRealtimeAgentSessionOptions,
+  OpenAIRealtimeAgentSessionEvents,
+  OpenAIRealtimeAgentUsage,
+  OpenAIRealtimeMCPApprovalRequest,
+  OpenAIRealtimeMCPApprovalDecision,
   CreateRealtimeClientSecretOptions,
   CreateRealtimeTranslationClientSecretOptions,
+  CreateRealtimeWebRTCCallOptions,
   OpenAIRealtimeModel,
   OpenAIRealtimeVoice,
   RealtimePCMSampleRate,

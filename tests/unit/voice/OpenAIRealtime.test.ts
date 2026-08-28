@@ -301,6 +301,7 @@ describe('OpenAI Realtime GA support', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         value: 'ek_test', expires_at: 123, session: { type: 'realtime' },
       }), { status: 200 }))
+      .mockResolvedValueOnce(new Response('v=0\r\ns=OpenAI Realtime\r\n', { status: 200 }))
       .mockResolvedValue(new Response(null, { status: 204 }));
     const api = new OpenAIRealtimeAPI(connector);
 
@@ -309,12 +310,18 @@ describe('OpenAI Realtime GA support', () => {
       expiresAfterSeconds: 600,
       safetyIdentifier: 'hashed-user-id',
     });
+    const sdpAnswer = await api.createWebRTCCall({
+      sdp: 'v=0\r\ns=Browser offer\r\n',
+      session: { model: 'gpt-realtime-2.1' },
+      safetyIdentifier: 'hashed-user-id',
+    });
     await api.acceptCall('call/1', { model: 'gpt-realtime-2.1' });
     await api.referCall('call/1', 'tel:+14155550123');
     await api.rejectCall('call/1', 603);
     await api.hangupCall('call/1');
 
     expect(secret.value).toBe('ek_test');
+    expect(sdpAnswer).toContain('OpenAI Realtime');
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.openai.com/v1/realtime/client_secrets');
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       session: { type: 'realtime', model: 'gpt-realtime-2.1' },
@@ -323,16 +330,24 @@ describe('OpenAI Realtime GA support', () => {
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
       'OpenAI-Safety-Identifier': 'hashed-user-id',
     });
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('https://api.openai.com/v1/realtime/calls');
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+      sdp: 'v=0\r\ns=Browser offer\r\n',
+      session: { type: 'realtime', model: 'gpt-realtime-2.1' },
+    });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({
+      'OpenAI-Safety-Identifier': 'hashed-user-id',
+    });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
       'https://api.openai.com/v1/realtime/calls/call%2F1/accept',
     );
-    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(
       'https://api.openai.com/v1/realtime/calls/call%2F1/refer',
     );
-    expect(fetchMock.mock.calls[3]?.[0]).toBe(
+    expect(fetchMock.mock.calls[4]?.[0]).toBe(
       'https://api.openai.com/v1/realtime/calls/call%2F1/reject',
     );
-    expect(fetchMock.mock.calls[4]?.[0]).toBe(
+    expect(fetchMock.mock.calls[5]?.[0]).toBe(
       'https://api.openai.com/v1/realtime/calls/call%2F1/hangup',
     );
   });
@@ -439,6 +454,79 @@ describe('OpenAI Realtime GA support', () => {
     expect(audioOut).toHaveBeenCalledOnce();
     expect(transcripts).toEqual(['caller:Hi there', 'agent:Hello!']);
     expect(voiceSession.turns).toBe(1);
+
+    await pipeline.destroy();
+    agent.destroy();
+  });
+
+  it('reports a socket-close race while appending telephony audio without throwing', async () => {
+    const connector = createConnector();
+    const socket = new MockSocket();
+    const agent = Agent.create({ connector, model: 'gpt-realtime-2.1' });
+    const voiceSession = new VoiceSession({
+      callId: 'call-audio-race', from: '+1000', to: '+2000', metadata: {},
+    });
+    const pipeline = new RealtimePipeline({
+      agent,
+      session: voiceSession,
+      realtimeSessionFactory: (options) => new OpenAIRealtimeSession({
+        ...options,
+        webSocketFactory: connectedFactory(socket),
+      }),
+    });
+    const errors: Error[] = [];
+    pipeline.on('error', (error) => errors.push(error));
+    await pipeline.init(voiceSession.getInfo());
+
+    const realtime = (pipeline as unknown as {
+      realtime: { appendAudio(audio: Buffer): boolean };
+    }).realtime;
+    vi.spyOn(realtime, 'appendAudio').mockImplementationOnce(() => {
+      throw new Error('OpenAI Realtime WebSocket is not open');
+    });
+
+    expect(() => pipeline.processAudio({
+      audio: Buffer.from([1, 2, 3]),
+      sampleRate: 8000,
+      encoding: 'mulaw',
+      channels: 1,
+      timestamp: 20,
+    })).not.toThrow();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain('WebSocket is not open');
+
+    await pipeline.destroy();
+    agent.destroy();
+  });
+
+  it('keeps manual turn responses working when input transcription is disabled', async () => {
+    const connector = createConnector();
+    const socket = new MockSocket();
+    const agent = Agent.create({ connector, model: 'gpt-realtime-2.1' });
+    const voiceSession = new VoiceSession({
+      callId: 'call-no-transcription', from: '+1000', to: '+2000', metadata: {},
+    });
+    const pipeline = new RealtimePipeline({
+      agent,
+      session: voiceSession,
+      turnDetection: 'none',
+      inputTranscription: false,
+      realtimeSessionFactory: (options) => new OpenAIRealtimeSession({
+        ...options,
+        webSocketFactory: connectedFactory(socket),
+      }),
+    });
+    pipeline.on('error', () => undefined);
+
+    await pipeline.init(voiceSession.getInfo());
+    await pipeline.onSpeechEnd();
+
+    const update = socket.sent.find((event) => event.type === 'session.update');
+    expect((update?.session as any).audio.input.transcription).toBeNull();
+    expect(socket.sent.slice(-2).map((event) => event.type)).toEqual([
+      'input_audio_buffer.commit',
+      'response.create',
+    ]);
 
     await pipeline.destroy();
     agent.destroy();

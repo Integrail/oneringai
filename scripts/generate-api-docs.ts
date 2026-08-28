@@ -20,6 +20,7 @@ import { Project, SourceFile, Node, SyntaxKind, JSDoc, Type } from 'ts-morph';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { getDeclarationSignature, hasPrivateModifier } from './declarationSignature.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -274,11 +275,12 @@ function extractClass(node: any, sourceFile: SourceFile): DocItem {
   // Constructor
   const constructors = node.getConstructors();
   for (const ctor of constructors) {
+    if (hasPrivateModifier(ctor)) continue;
     members.push({
       kind: 'constructor',
       name: 'constructor',
       description: getJSDocDescription(ctor),
-      signature: ctor.getText().split('{')[0].trim(),
+      signature: getDeclarationSignature(ctor),
       isStatic: false,
       isOptional: false,
       parameters: extractParameters(ctor),
@@ -293,11 +295,7 @@ function extractClass(node: any, sourceFile: SourceFile): DocItem {
     if (seenMethods.has(methodKey)) continue; // Skip duplicates
 
     // Skip private methods in public mode
-    const modifiers = method.getModifiers?.() || [];
-    const isPrivate = modifiers.some(
-      (m: any) => m.getKind?.() === SyntaxKind.PrivateKeyword
-    );
-    if (isPrivate) continue;
+    if (hasPrivateModifier(method)) continue;
 
     seenMethods.add(methodKey);
 
@@ -305,7 +303,7 @@ function extractClass(node: any, sourceFile: SourceFile): DocItem {
       kind: 'method',
       name: method.getName(),
       description: getJSDocDescription(method),
-      signature: method.getText().split('{')[0].trim(),
+      signature: getDeclarationSignature(method),
       isStatic: method.isStatic(),
       isOptional: false,
       parameters: extractParameters(method),
@@ -317,6 +315,7 @@ function extractClass(node: any, sourceFile: SourceFile): DocItem {
   for (const prop of node.getProperties()) {
     if (prop.getName().startsWith('_')) continue;
     if (prop.getName().startsWith('#')) continue; // Skip private fields
+    if (hasPrivateModifier(prop)) continue;
 
     members.push({
       kind: 'property',
@@ -407,7 +406,7 @@ function extractFunction(node: any, sourceFile: SourceFile): DocItem {
     kind: 'function',
     name,
     description: getJSDocDescription(node),
-    signature: node.getText().split('{')[0].trim(),
+    signature: getDeclarationSignature(node),
     examples: getExamples(node),
     sourceFile: sourceFile.getFilePath(),
     lineNumber: node.getStartLineNumber(),

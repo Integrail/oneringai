@@ -12477,15 +12477,23 @@ Use the Realtime API for:
 | Phone agent through Twilio | `gpt-realtime-2.1` | `VoiceBridge` realtime pipeline | Twilio Media Streams + server WebSocket |
 | Phone agent through OpenAI SIP | Supported realtime voice model | `/v1/realtime/calls/*` control endpoints | SIP |
 
-`OpenAIRealtimeSession` is a server-side WebSocket client. It handles
+`OpenAIRealtimeAgentSession` is the preferred voice-agent surface. It binds a
+normal `Agent` to a Realtime transport and preserves Agent context plugins,
+memory refresh, identity-filtered tools, permission policies, tool hooks,
+limits, metrics, parallel function results, and provider-hosted MCP approvals.
+Its transport contract can be implemented by WebSocket, a WebRTC data channel,
+or a SIP/server-control bridge.
+
+`OpenAIRealtimeSession` is the lower-level server-side WebSocket client. It handles
 connector authentication, session creation, JSON serialization, endpoint
 selection, and the protocol differences between conversation, transcription,
 and translation sessions. It intentionally leaves audio capture/playback to the
 host and exposes every server event so applications are not limited by a closed
 event union as OpenAI evolves the protocol.
 
-`OpenAIRealtimeAPI` contains the REST operations: minting WebRTC credentials and
-controlling SIP calls. It does not put a long-lived OpenAI API key in the browser.
+`OpenAIRealtimeAPI` contains the REST operations: minting WebRTC credentials,
+exchanging an SDP offer with `/v1/realtime/calls`, and controlling SIP calls. It
+does not put a long-lived OpenAI API key in the browser.
 
 ### Authentication and Setup
 
@@ -12516,6 +12524,89 @@ of an internal user id). The library sends it through the
 `OpenAI-Safety-Identifier` header.
 
 ### Server WebSocket Voice Agent
+
+For a tool-using agent, use the agent-aware session. `contextSync: 'per_turn'`
+is the default: it disables automatic VAD response creation, waits for the input
+transcript, refreshes Agent memory/plugin instructions and the dynamic tool set,
+then requests the response. If transcription fails, it still continues with the
+original audio so the turn cannot deadlock.
+
+```typescript
+import {
+  Agent,
+  OpenAIRealtimeAgentSession,
+} from '@everworker/oneringai';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-realtime-2.1',
+  instructions: 'Be concise and confirm consequential actions.',
+  userId: 'user-123',
+  tools: [lookupOrder, createTicket],
+  permissions: { onApprovalRequired: approveLocalTool },
+  context: {
+    model: 'gpt-realtime-2.1',
+    features: { memory: true },
+    plugins: { memory: { memory } },
+  },
+});
+
+const voice = new OpenAIRealtimeAgentSession({
+  agent,
+  safetyIdentifier: hashUserId('user-123'),
+  session: {
+    reasoning: { effort: 'low' },
+    audio: {
+      input: {
+        format: { type: 'audio/pcm', rate: 24000 },
+        turn_detection: { type: 'semantic_vad', eagerness: 'auto' },
+      },
+      output: {
+        format: { type: 'audio/pcm', rate: 24000 },
+        voice: 'marin',
+      },
+    },
+    tools: [{
+      type: 'mcp',
+      server_label: 'crm',
+      connector_id: 'conn_crm',
+      require_approval: 'always',
+    }],
+  },
+  approveMCP: async (request) => authorizeHostedTool(request),
+});
+
+voice.on('audio', playPcm24);
+voice.on('transcript:input', showUserTranscript);
+voice.on('transcript:output', showAssistantTranscript);
+voice.on('usage', recordCumulativeUsage);
+voice.on('error', reportVoiceError);
+
+await voice.connect();
+voice.appendAudio(pcm24Chunk);
+
+// Text and image turns use the same managed Agent context.
+await voice.sendText('Summarize the current order status.');
+await voice.sendImage('https://example.com/damaged-package.jpg');
+
+await voice.close();
+agent.destroy();
+```
+
+Missing `approveMCP` handlers reject MCP approval requests by default. Local
+function calls always execute through `Agent.executeExternalToolCall()`, so
+Agent hooks, connector identity, permission policy, circuit breakers, hard
+timeouts, and metrics behave the same way as in `agent.run()`.
+
+The agent-aware session decodes base64 `response.output_audio.delta` events and
+emits their bytes through `audio`. A custom WebRTC/media transport that already
+does this must set `emitsOutputAudioFromEvents: true` to avoid duplicate audio.
+Normal `close()` completes the external Agent execution, closing after
+`agent.cancel()` reports `cancelled`, and an unrequested transport close reports
+`failed` regardless of its WebSocket close code.
+
+Use the raw WebSocket session when the host intentionally owns context and tool
+execution itself:
 
 The default model is `gpt-realtime-2.1`. Audio sent to `appendAudio()` may be a
 `Buffer` or an already-base64-encoded string. PCM audio is signed 16-bit little
@@ -12592,7 +12683,7 @@ abstraction:
 | Method | Client event/behavior |
 |--------|-----------------------|
 | `updateSession(session)` | Sends `session.update` using the correct session shape |
-| `appendAudio(bufferOrBase64)` | Sends the appropriate audio-buffer append event |
+| `appendAudio(bufferOrBase64)` | Sends the appropriate audio-buffer append event; returns `false` under configured WebSocket backpressure |
 | `commitAudio()` | Commits a standard/transcription audio turn |
 | `clearAudio()` | Clears uncommitted standard/transcription input audio |
 | `sendText(text)` | Adds a user text conversation item |
@@ -12727,10 +12818,11 @@ const lookupTool = {
 ```
 
 Raw `OpenAIRealtimeSession` surfaces OpenAI tool-call events but deliberately
-does not execute function tools. Use `VoiceBridge` when local `ToolFunction`s
-should execute through OneRingAI's `ToolManager`, permissions, circuit breakers,
-and tool context. Remote MCP tools remain provider-executed and may be included
-under `realtime.tools`.
+does not execute function tools. Use `OpenAIRealtimeAgentSession` or
+`VoiceBridge` when local `ToolFunction`s should execute with the full Agent
+lifecycle. Remote MCP tools remain provider-executed; the agent-aware surfaces
+answer approval requests through `approveMCP` and reject them when no handler is
+configured.
 
 ### Voice-Agent Models
 
@@ -12883,6 +12975,16 @@ const translationSecret = await api.createTranslationClientSecret({
   safetyIdentifier: hashUserId('user-123'),
 });
 
+// Trusted-server WebRTC setup can exchange an SDP offer directly.
+const sdpAnswer = await api.createWebRTCCall({
+  sdp: browserOffer.sdp!,
+  session: {
+    model: 'gpt-realtime-2.1',
+    audio: { output: { voice: 'marin' } },
+  },
+  safetyIdentifier: hashUserId('user-123'),
+});
+
 // Send `voiceSecret.value` or `translationSecret.value` to the intended client.
 ```
 
@@ -12930,8 +13032,9 @@ hangup calls are authenticated through the selected connector.
 For Twilio Media Streams, use `VoiceBridge` with `pipeline: 'realtime'`. It
 creates a fresh full `Agent` per call, translates agent instructions and enabled
 local tools into the Realtime session, streams native PCMU in both directions,
-executes tool calls through the agent's `ToolManager`, maintains a transcript,
-and handles interruption timing and truncation.
+executes tool calls through the full Agent lifecycle, refreshes context before
+every response, maintains a transcript and cumulative usage, and handles
+interruption timing and truncation.
 
 ```typescript
 import {
@@ -12968,6 +13071,8 @@ const bridge = VoiceBridge.create({
     tracing: { workflow_name: 'twilio-support' },
     truncation: { type: 'retention_ratio', retention_ratio: 0.8 },
   },
+  approveMCP: async (request, session) =>
+    authorizeHostedVoiceTool(session.callId, request),
   hooks: {
     onCallStart: async (session) => isAllowedCaller(session.from),
     onInterrupt: async (session) => audit('interrupt', session.sessionId),
@@ -13015,6 +13120,12 @@ change realtime behavior. `onCallStart`, `onInterrupt`, `onError`, and
 | `interruptible` | `true` | Permit caller barge-in |
 | `realtime` | `{}` | Advanced GA session options; agent instructions/tools are merged |
 | `safetyIdentifier` | unset | Privacy-preserving OpenAI end-user identifier |
+| `approveMCP` | reject | Approval callback for provider-hosted MCP requests |
+
+With input transcription enabled, the OpenAI bridge refreshes Agent context and
+tools before every response. Setting `inputTranscription: false` intentionally
+falls back to initial-only context synchronization and preserves OpenAI's normal
+server/manual response creation.
 
 When `turnDetection: 'none'`, `VoiceBridge` uses local `EnergyVAD`, commits the
 audio buffer, and requests each response itself. The existing `vad` and
@@ -13030,12 +13141,14 @@ the bridge transcript as `tool_use` and `tool_result` entries.
 
 There are two distinct tool paths:
 
-1. **Local OneRingAI tools** are supplied through `agent.tools`. `VoiceBridge`
-   executes them through the normal `ToolManager`, including permission policy,
-   user rules, circuit breakers, tool context, and execution hooks.
+1. **Local OneRingAI tools** are supplied through `agent.tools`.
+   `OpenAIRealtimeAgentSession` and `VoiceBridge` execute them through the normal
+   Agent lifecycle, including permission policy, user rules, before/approve/after
+   hooks, circuit breakers, tool context, limits, cancellation, events, and metrics.
 2. **Provider-hosted MCP tools** are supplied through `realtime.tools`. They run
-   through OpenAI's Realtime tool path; configure connector authorization,
-   allowed tools, and approval behavior explicitly.
+   through OpenAI's Realtime tool path. Configure connector authorization and
+   allowed tools explicitly; approval requests fail closed unless `approveMCP`
+   returns an affirmative decision.
 
 Do not place long-lived secrets directly in model-visible tool definitions.
 Prefer an OpenAI-managed connector reference (`connector_id`) or resolve
@@ -13086,6 +13199,10 @@ modality metadata used by the calculator.
   reconnect behavior with real microphones, accents, network conditions, and
   telephony audio.
 - Handle the raw `error` event payload and socket-level `error` separately.
+- Observe `backpressure` and do not queue unbounded raw audio; the WebSocket
+  transport rejects new audio frames after `maxBufferedAmountBytes` (1 MiB by default).
+- Recreate or hand off the session when `session:expiring` fires. The default
+  warning is at 55 minutes, before OpenAI's hard 60-minute session limit.
 - Stop local playback when cancelling a response; keep server conversation state
   aligned with `truncateItem()`.
 - For translation, send `closeTranslation()`, continue reading until
@@ -13203,12 +13320,14 @@ the provider.
 
 The package root exports:
 
-- runtime classes: `OpenAIRealtimeSession`, `OpenAIRealtimeAPI`,
+- runtime classes: `OpenAIRealtimeAgentSession`, `OpenAIRealtimeSession`, `OpenAIRealtimeAPI`,
   `GrokRealtimeSession`, `GrokRealtimeAPI`, `RealtimePipeline`, and
   `VoiceBridge`;
 - session/API types: `OpenAIRealtimeSessionOptions`,
+  `OpenAIRealtimeAgentSessionOptions`, `OpenAIRealtimeAgentTransport`,
   `CreateRealtimeClientSecretOptions`, and
-  `CreateRealtimeTranslationClientSecretOptions`;
+  `CreateRealtimeTranslationClientSecretOptions`, and
+  `CreateRealtimeWebRTCCallOptions`;
 - configuration types: `OpenAIRealtimeSessionConfig`,
   `OpenAIRealtimeTranscriptionSessionConfig`,
   `OpenAIRealtimeTranslationSessionConfig`, and

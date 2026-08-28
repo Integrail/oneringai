@@ -13,6 +13,11 @@ import type {
   OpenAIRealtimeSessionConfig,
   OpenAIRealtimeVoice,
 } from './openai/RealtimeTypes.js';
+import type {
+  OpenAIRealtimeAgentUsage,
+  OpenAIRealtimeMCPApprovalDecision,
+  OpenAIRealtimeMCPApprovalRequest,
+} from './openai/OpenAIRealtimeAgentSession.js';
 
 // =============================================================================
 // Audio Frame — internal protocol between adapter and pipeline
@@ -283,6 +288,15 @@ export interface RealtimePipelineConfig {
 
   /** Stable, privacy-preserving end-user identifier sent in the OpenAI header. */
   safetyIdentifier?: string;
+
+  /**
+   * Approval handler for provider-hosted OpenAI MCP tools. Requests fail closed
+   * when this callback is omitted.
+   */
+  approveMCP?: (
+    request: OpenAIRealtimeMCPApprovalRequest,
+    session: VoiceSessionInfo,
+  ) => Promise<OpenAIRealtimeMCPApprovalDecision> | OpenAIRealtimeMCPApprovalDecision;
 }
 
 export type PipelineConfig = TextPipelineConfig | RealtimePipelineConfig;
@@ -374,6 +388,8 @@ export interface VoicePipelineEvents {
   'transcript': (entry: TranscriptMessage) => void;
   /** Error during processing */
   'error': (error: Error) => void;
+  /** Cumulative provider usage for native OpenAI Realtime sessions. */
+  'usage': (usage: OpenAIRealtimeAgentUsage) => void;
 }
 
 /**

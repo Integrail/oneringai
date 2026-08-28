@@ -20,7 +20,9 @@ export default defineConfig([
     target: 'node22',
     platform: 'node',
     outDir: 'dist',
-    external: ['cross-spawn', '@openai/codex-sdk'],
+    // AJV must stay external: ajv-formats emits runtime require() expressions
+    // that are invalid when folded into the ESM bundle.
+    external: ['cross-spawn', '@openai/codex-sdk', 'ajv', 'ajv-formats'],
     // Bundle MCP SDK to avoid subpath import resolution issues in Meteor
     noExternal: [
       '@modelcontextprotocol/sdk',

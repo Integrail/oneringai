@@ -1,4 +1,5 @@
 export { OpenAIRealtimeSession } from './OpenAIRealtimeSession.js';
+export { OpenAIRealtimeAgentSession } from './OpenAIRealtimeAgentSession.js';
 export { OpenAIRealtimeAPI } from './OpenAIRealtimeAPI.js';
 export type {
   OpenAIRealtimeConnectOptions,
@@ -6,8 +7,17 @@ export type {
   OpenAIRealtimeSessionEvents,
 } from './OpenAIRealtimeSession.js';
 export type {
+  OpenAIRealtimeAgentTransport,
+  OpenAIRealtimeAgentSessionOptions,
+  OpenAIRealtimeAgentSessionEvents,
+  OpenAIRealtimeAgentUsage,
+  OpenAIRealtimeMCPApprovalRequest,
+  OpenAIRealtimeMCPApprovalDecision,
+} from './OpenAIRealtimeAgentSession.js';
+export type {
   CreateRealtimeClientSecretOptions,
   CreateRealtimeTranslationClientSecretOptions,
+  CreateRealtimeWebRTCCallOptions,
 } from './OpenAIRealtimeAPI.js';
 export type {
   OpenAIRealtimeModel,

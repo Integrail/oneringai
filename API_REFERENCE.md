@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-08-24
+**Generated:** 2026-08-28
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -11,7 +11,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 
 ## Table of Contents
 
-- [Core](#core) (18 items)
+- [Core](#core) (21 items)
 - [Text-to-Speech (TTS)](#text-to-speech-tts-) (13 items)
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (11 items)
 - [Image Generation](#image-generation) (25 items)
@@ -19,7 +19,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Agent Runtime](#agent-runtime) (70 items)
 - [Task Agents](#task-agents) (115 items)
 - [Context Management](#context-management) (14 items)
-- [Session Management](#session-management) (57 items)
+- [Session Management](#session-management) (64 items)
 - [Tools & Function Calling](#tools-function-calling) (185 items)
 - [Streaming](#streaming) (30 items)
 - [Model Registry](#model-registry) (29 items)
@@ -29,7 +29,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (10 items)
 - [Interfaces](#interfaces) (78 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (721 items)
+- [Other](#other) (722 items)
 
 ## Core
 
@@ -37,7 +37,7 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:204`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:233`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
 
@@ -48,20 +48,6 @@ Extends BaseAgent to inherit:
 - Permission manager initialization
 - Session management
 - Lifecycle/cleanup
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(config: AgentConfig)
-```
-
-**Parameters:**
-- `config`: `AgentConfig`
-
-</details>
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -86,7 +72,8 @@ Resume an agent from a saved session
 ```typescript
 static async resume(
     sessionId: string,
-    config: Omit&lt;AgentConfig, 'session'&gt; &
+    config: Omit&lt;AgentConfig, 'session'&gt; & { session: { storage: IContextStorage } }
+  ): Promise&lt;Agent&gt;
 ```
 
 **Parameters:**
@@ -130,7 +117,15 @@ This is the primary API for resuming suspended sessions.
 ```typescript
 static async hydrate(
     sessionId: string,
-    options:
+    options: {
+      /** Agent ID to load definition for */
+      agentId: string;
+      /** Optional definition storage override */
+      definitionStorage?: IAgentDefinitionStorage;
+      /** Optional config overrides (e.g., connector, model) */
+      overrides?: Partial&lt;AgentConfig&gt;;
+    }
+  ): Promise&lt;Agent&gt;
 ```
 
 **Parameters:**
@@ -181,7 +176,8 @@ Throws if any name is not registered on this agent.
 ```typescript
 scopedTo(
     allowedToolNames: string[],
-    options?:
+    options?: { instructions?: string },
+  ): Agent
 ```
 
 **Parameters:**
@@ -208,6 +204,82 @@ hasContext(): boolean
 ```
 
 **Returns:** `boolean`
+
+#### `beginExternalExecution()`
+
+Start a long-lived execution driven by an external model transport.
+
+Realtime voice sessions use this to share the Agent's normal tool hooks,
+permission pipeline, limits, events, and metrics without running a second
+text-model loop.
+
+```typescript
+async beginExternalExecution(options: ExternalExecutionOptions = {}): Promise&lt;string&gt;
+```
+
+**Parameters:**
+- `options`: `ExternalExecutionOptions` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;string&gt;`
+
+#### `recordExternalUserInput()`
+
+Add user input owned by the active external transport and retain the exact
+input sequence for lifecycle hooks.
+
+```typescript
+recordExternalUserInput(content: string | Content[]): string
+```
+
+**Parameters:**
+- `content`: `string | Content[]`
+
+**Returns:** `string`
+
+#### `executeExternalToolCall()`
+
+Execute a function call received from an external model transport.
+The call follows the same approval, hook, permission, timeout, connector,
+event, and metrics path as a tool selected by Agent.run().
+
+```typescript
+async executeExternalToolCall(
+    call: ExternalToolCall,
+    options: { iteration?: number } = {},
+  ): Promise&lt;ToolResult&gt;
+```
+
+**Parameters:**
+- `call`: `ExternalToolCall`
+- `options`: `{ iteration?: number | undefined; }` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;ToolResult&gt;`
+
+#### `recordExternalUsage()`
+
+Add provider-reported usage to the active external execution.
+
+```typescript
+recordExternalUsage(usage: Partial&lt;TokenUsage&gt;): void
+```
+
+**Parameters:**
+- `usage`: `Partial&lt;TokenUsage&gt;`
+
+**Returns:** `void`
+
+#### `completeExternalExecution()`
+
+Complete the active external execution and run normal lifecycle hooks.
+
+```typescript
+async completeExternalExecution(result: ExternalExecutionResult = {}): Promise&lt;AgentResponse&gt;
+```
+
+**Parameters:**
+- `result`: `ExternalExecutionResult` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;LLMResponse&gt;`
 
 #### `run()`
 
@@ -349,6 +421,18 @@ inject(message: string, role: 'user' | 'developer' = 'user'): void
 - `role`: `"user" | "developer"` *(optional)* (default: `'user'`)
 
 **Returns:** `void`
+
+#### `getToolDefinitions()`
+
+Return the enabled, identity-filtered tool definitions exactly as they
+would be sent by the normal Agent loop. External model transports should
+use this instead of reading ToolManager registrations directly.
+
+```typescript
+getToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinition[]
+```
+
+**Returns:** `FunctionToolDefinition[]`
 
 #### `approveToolForSession()`
 
@@ -622,17 +706,6 @@ destroy(): void
 ```
 
 **Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `hookManager` | `hookManager: HookManager` | - |
-| `executionContext` | `executionContext: ExecutionContext | null` | - |
-| `MAX_PENDING_INJECTIONS` | `MAX_PENDING_INJECTIONS: 100` | M3: Maximum injection queue size to prevent unbounded growth |
 
 </details>
 
@@ -1067,20 +1140,6 @@ static clear(): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `agents` | `agents: Map&lt;string, RegistryEntry&gt;` | - |
-| `childIndex` | `childIndex: Map&lt;string, Set&lt;string&gt;&gt;` | - |
-| `emitter` | `emitter: EventEmitter&lt;AgentRegistryEvents, any&gt;` | - |
-| `fanInListeners` | `fanInListeners: Set&lt;AgentEventListener&gt;` | - |
-| `fanInCleanups` | `fanInCleanups: Map&lt;string, () =&gt; void&gt;` | Per-agent fan-in cleanup functions (only populated when fanInListeners.size > 0) |
-| `KNOWN_EVENTS` | `KNOWN_EVENTS: string[]` | Known agent events for fan-in forwarding |
-
-</details>
-
 ---
 
 ### Connector `class`
@@ -1088,20 +1147,6 @@ static clear(): void
 📍 [`src/core/Connector.ts:54`](src/core/Connector.ts)
 
 Connector class - represents a single authenticated connection
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(config: ConnectorConfig &
-```
-
-**Parameters:**
-- `config`: `ConnectorConfig & { name: string; }`
-
-</details>
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -1139,7 +1184,7 @@ static getRegistry(): IConnectorRegistry | null
 Create and register a new connector
 
 ```typescript
-static create(config: ConnectorConfig &
+static create(config: ConnectorConfig & { name: string }): Connector
 ```
 
 **Parameters:**
@@ -1369,7 +1414,7 @@ static getDescriptionsForTools(): string
 Get connector info (for tools and documentation)
 
 ```typescript
-static getInfo(): Record&lt;string,
+static getInfo(): Record&lt;string, { displayName: string; description: string; baseURL: string }&gt;
 ```
 
 **Returns:** `Record&lt;string, { displayName: string; description: string; baseURL: string; }&gt;`
@@ -1527,7 +1572,13 @@ getOptions(): Record&lt;string, unknown&gt;
 Get connector metrics
 
 ```typescript
-getMetrics():
+getMetrics(): {
+    requestCount: number;
+    successCount: number;
+    failureCount: number;
+    avgLatencyMs: number;
+    circuitBreakerState?: string;
+  }
 ```
 
 **Returns:** `{ requestCount: number; successCount: number; failureCount: number; avgLatencyMs: number; circuitBreakerState?: string | undefined; }`
@@ -1619,30 +1670,10 @@ isDisposed(): boolean
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `registry` | `registry: Map&lt;string, Connector&gt;` | - |
-| `refreshStrategyBackfill?` | `refreshStrategyBackfill: ((serviceType: string | undefined, auth: OAuthConnectorAuth & { type: "oauth"; }) =&gt; { requiredScope?: string | undefined; scope?: string | undefined; authorizationParams?: Record&lt;string, string&gt; | undefined; } | undefined) | undefined` | Backfill resolver for OAuth `authorization_code` connectors loaded from
-persisted configs that pre-date the `RefreshStrategy` annotation. Given a
-`serviceType` (e.g. `'microsoft'`), returns a patch that re-applies the
-vendor template's strategy: stamps `requiredScope` and merges the
-scope/authorizationParams. Returns `undefined` if no template is found
-or the strategy is a no-op (`automatic`/`never_expires`/`manual_setup`).
-
-Registered by `vendors/index.ts` at module-load time, so the lookup
-works for any host that imports `@everworker/oneringai`. Hosts that
-bypass `buildAuthConfig` (e.g. v25's GroupScopedConnectorRegistry, which
-reconstructs Connectors from decrypted DB configs) still get the right
-refresh-grant tokens on every authorize URL — no migration required. |
 | `id` | `id: string` | - |
 | `name` | `name: string` | - |
 | `vendor?` | `vendor: Vendor | undefined` | - |
 | `config` | `config: ConnectorConfig` | - |
-| `oauthManager?` | `oauthManager: OAuthManager | undefined` | - |
-| `circuitBreaker?` | `circuitBreaker: CircuitBreaker&lt;any&gt; | undefined` | - |
-| `disposed` | `disposed: boolean` | - |
-| `requestCount` | `requestCount: number` | - |
-| `successCount` | `successCount: number` | - |
-| `failureCount` | `failureCount: number` | - |
-| `totalLatencyMs` | `totalLatencyMs: number` | - |
 
 </details>
 
@@ -1842,6 +1873,62 @@ Fetch options with additional connector-specific settings
 
 ---
 
+### ExternalExecutionOptions `interface`
+
+📍 [`src/core/Agent.ts:177`](src/core/Agent.ts)
+
+Options for a non-LLM execution owned by an external transport.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `source?` | `source?: string;` | Stable label recorded in the execution context for observability. |
+
+</details>
+
+---
+
+### ExternalExecutionResult `interface`
+
+📍 [`src/core/Agent.ts:190`](src/core/Agent.ts)
+
+Terminal data supplied when an external execution is completed.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `status?` | `status?: AgentResponse['status'];` | - |
+| `outputText?` | `outputText?: string;` | - |
+| `usage?` | `usage?: Partial&lt;TokenUsage&gt;;` | - |
+| `error?` | `error?: Error;` | - |
+
+</details>
+
+---
+
+### ExternalToolCall `interface`
+
+📍 [`src/core/Agent.ts:183`](src/core/Agent.ts)
+
+A function call received from an external model transport.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+| `name` | `name: string;` | - |
+| `arguments` | `arguments: string | Record&lt;string, unknown&gt;;` | - |
+
+</details>
+
+---
+
 ### RunOptions `interface`
 
 📍 [`src/core/Agent.ts:150`](src/core/Agent.ts)
@@ -1976,20 +2063,6 @@ const tts = TextToSpeech.create({
 const audio = await tts.synthesize('Hello, world!');
 await tts.toFile('Hello', './output.mp3');
 ```
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(config: TextToSpeechConfig)
-```
-
-**Parameters:**
-- `config`: `TextToSpeechConfig`
-
-</details>
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -2240,16 +2313,6 @@ setSpeed(speed: number): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `provider` | `provider: ITextToSpeechProvider` | - |
-| `config` | `config: TextToSpeechConfig` | - |
-
-</details>
-
 ---
 
 ### ITTSModelDescription `interface`
@@ -2471,7 +2534,8 @@ For Google models: based on input/output token count
 export function calculateTTSCost(
   modelName: string,
   characterCount: number,
-  options?:
+  options?: { inputTokens?: number; outputTokens?: number }
+): number | null
 ```
 
 ---
@@ -2748,20 +2812,6 @@ console.log(detailed.words);
 ```
 
 <details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(config: SpeechToTextConfig)
-```
-
-**Parameters:**
-- `config`: `SpeechToTextConfig`
-
-</details>
-
-<details>
 <summary><strong>Static Methods</strong></summary>
 
 #### `static create()`
@@ -2817,7 +2867,8 @@ The caller is responsible for yielding audio in real-time-paced chunks.
 ```typescript
 transcribeStream(
     audio: AsyncIterable&lt;STTStreamInput&gt; | Iterable&lt;STTStreamInput&gt;,
-    options: Partial&lt;Omit&lt;STTStreamOptions, 'model' | 'audio'&gt;&gt; =
+    options: Partial&lt;Omit&lt;STTStreamOptions, 'model' | 'audio'&gt;&gt; = {}
+  ): AsyncIterableIterator&lt;STTStreamEvent&gt;
 ```
 
 **Parameters:**
@@ -3065,16 +3116,6 @@ setTemperature(temperature: number): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `provider` | `provider: ISpeechToTextProvider` | - |
-| `config` | `config: SpeechToTextConfig` | - |
-
-</details>
-
 ---
 
 ### ISTTModelDescription `interface`
@@ -3239,7 +3280,8 @@ Calculate estimated cost for STT
 export function calculateSTTCost(
   modelName: string,
   durationSeconds: number,
-  options?:
+  options?: { inputTokens?: number; streaming?: boolean }
+): number | null
 ```
 
 ---
@@ -3604,20 +3646,6 @@ Generate images from text prompts
 ImageGeneration capability class
 
 <details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(connector: Connector)
-```
-
-**Parameters:**
-- `connector`: `Connector`
-
-</details>
-
-<details>
 <summary><strong>Static Methods</strong></summary>
 
 #### `static create()`
@@ -3721,17 +3749,6 @@ getConnector(): Connector
 ```
 
 **Returns:** `Connector`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `provider` | `provider: IImageProvider` | - |
-| `connector` | `connector: Connector` | - |
-| `defaultModel` | `defaultModel: string` | - |
 
 </details>
 
@@ -4127,7 +4144,17 @@ Calculate estimated cost for image generation
 export function calculateImageCost(
   modelName: string,
   imageCount: number,
-  qualityOrOptions: 'standard' | 'hd' |
+  qualityOrOptions: 'standard' | 'hd' | {
+    quality?: 'standard' | 'hd';
+    resolution?: string;
+    inputImages?: number;
+    textInputTokens?: number;
+    cachedTextInputTokens?: number;
+    imageInputTokens?: number;
+    cachedImageInputTokens?: number;
+    imageOutputTokens?: number;
+  } = 'standard'
+): number | null
 ```
 
 ---
@@ -5407,20 +5434,6 @@ Generate videos from text prompts
 VideoGeneration capability class
 
 <details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(connector: Connector)
-```
-
-**Parameters:**
-- `connector`: `Connector`
-
-</details>
-
-<details>
 <summary><strong>Static Methods</strong></summary>
 
 #### `static create()`
@@ -5638,17 +5651,6 @@ getConnector(): Connector
 ```
 
 **Returns:** `Connector`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `provider` | `provider: IVideoProvider` | - |
-| `connector` | `connector: Connector` | - |
-| `defaultModel` | `defaultModel: string` | - |
 
 </details>
 
@@ -6127,7 +6129,8 @@ Calculate video generation cost
 export function calculateVideoCost(
   modelName: string,
   durationSeconds: number,
-  options?:
+  options?: { resolution?: string; batch?: boolean; inputImages?: number }
+): number | null
 ```
 
 ---
@@ -6695,17 +6698,6 @@ async destroy(): Promise&lt;void&gt;
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `backend` | `backend: AgentExecutionBackend` | - |
-| `ownsBackend` | `ownsBackend: boolean` | - |
-| `sessions` | `sessions: Set&lt;AgentSession&gt;` | - |
-
-</details>
-
 ---
 
 ### AgentRuntimeDependencyError `class`
@@ -6802,7 +6794,7 @@ constructor(message: string, cause?: Error)
 #### `constructor`
 
 ```typescript
-constructor(private readonly options: CodexSdkDriverOptions =
+constructor(private readonly options: CodexSdkDriverOptions = {})
 ```
 
 **Parameters:**
@@ -6843,7 +6835,6 @@ async openSession(request: DriverOpenSessionRequest): Promise&lt;DriverSession&g
 | Property | Type | Description |
 |----------|------|-------------|
 | `id` | `id: "openai.codex.sdk"` | - |
-| `modelReasoningEfforts` | `modelReasoningEfforts: Readonly&lt;Record&lt;string, ReadonlySet&lt;ModelReasoningEffort&gt;&gt;&gt;` | - |
 
 </details>
 
@@ -6875,7 +6866,8 @@ constructor(options: LocalExecutionBackendOptions)
 ```typescript
 async inspect(
     spec: Readonly&lt;RuntimeAgentSpec&gt;,
-    request: AgentInspectionRequest =
+    request: AgentInspectionRequest = {},
+  ): Promise&lt;ResolvedAgentCapabilities&gt;
 ```
 
 **Parameters:**
@@ -6909,19 +6901,6 @@ async destroy(): Promise&lt;void&gt;
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `drivers` | `drivers: Map&lt;string, AgentDriver&gt;` | - |
-| `connectorRegistry` | `connectorRegistry: IConnectorRegistry` | - |
-| `maxSessionJournalBytes` | `maxSessionJournalBytes: number` | - |
-| `sessions` | `sessions: Set&lt;LocalAgentSession&gt;` | - |
-| `workspaceLeases` | `workspaceLeases: Map&lt;string, string&gt;` | - |
-
-</details>
-
 ---
 
 ### OneRingAIDriver `class`
@@ -6934,7 +6913,7 @@ async destroy(): Promise&lt;void&gt;
 #### `constructor`
 
 ```typescript
-constructor(private readonly options: OneRingAIDriverOptions =
+constructor(private readonly options: OneRingAIDriverOptions = {})
 ```
 
 **Parameters:**
@@ -6975,8 +6954,6 @@ async openSession(request: DriverOpenSessionRequest): Promise&lt;DriverSession&g
 | Property | Type | Description |
 |----------|------|-------------|
 | `id` | `id: "oneringai.agent"` | - |
-| `activeBindings` | `activeBindings: Set&lt;string&gt;` | - |
-| `modelReasoningControls` | `modelReasoningControls: Readonly&lt;Record&lt;string, NormalizedReasoningControls&gt;&gt;` | - |
 
 </details>
 
@@ -8273,21 +8250,6 @@ async cleanup(): Promise&lt;void&gt;
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `storage` | `storage: IAgentStorage` | - |
-| `strategy` | `strategy: CheckpointStrategy` | - |
-| `toolCallsSinceCheckpoint` | `toolCallsSinceCheckpoint: number` | - |
-| `llmCallsSinceCheckpoint` | `llmCallsSinceCheckpoint: number` | - |
-| `intervalTimer?` | `intervalTimer: NodeJS.Timeout | undefined` | - |
-| `pendingCheckpoints` | `pendingCheckpoints: Set&lt;Promise&lt;void&gt;&gt;` | - |
-| `currentState` | `currentState: AgentState | null` | - |
-
-</details>
-
 ---
 
 ### ExternalDependencyHandler `class`
@@ -8392,18 +8354,6 @@ updateTools(tools: ToolFunction[]): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `activePolls` | `activePolls: Map&lt;string, NodeJS.Timeout&gt;` | - |
-| `activeScheduled` | `activeScheduled: Map&lt;string, NodeJS.Timeout&gt;` | - |
-| `cancelledPolls` | `cancelledPolls: Set&lt;string&gt;` | - |
-| `tools` | `tools: Map&lt;string, ToolFunction&lt;any, any&gt;&gt;` | - |
-
-</details>
-
 ---
 
 ### InContextMemoryPluginNextGen `class`
@@ -8416,7 +8366,7 @@ updateTools(tools: ToolFunction[]): void
 #### `constructor`
 
 ```typescript
-constructor(config: InContextMemoryConfig =
+constructor(config: InContextMemoryConfig = {})
 ```
 
 **Parameters:**
@@ -8582,7 +8532,7 @@ delete(key: string): boolean
 List all entries with metadata
 
 ```typescript
-list(): Array&lt;
+list(): Array&lt;{ key: string; description: string; priority: InContextPriority; updatedAt: number; showInUI: boolean }&gt;
 ```
 
 **Returns:** `{ key: string; description: string; priority: InContextPriority; updatedAt: number; showInUI: boolean; }[]`
@@ -8662,9 +8612,6 @@ async storeList(_filter?: Record&lt;string, unknown&gt;, _context?: ToolContext)
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "in_context_memory"` | - |
-| `entries` | `entries: Map&lt;string, InContextEntry&gt;` | - |
-| `config` | `config: { maxEntries: number; maxTotalTokens: number; defaultPriority: InContextPriority; showTimestamps: boolean; onEntriesChanged?: ((entries: InContextEntry[]) =&gt; void) | undefined; }` | - |
-| `estimator` | `estimator: ITokenEstimator` | - |
 
 </details>
 
@@ -8680,7 +8627,7 @@ async storeList(_filter?: Record&lt;string, unknown&gt;, _context?: ToolContext)
 #### `constructor`
 
 ```typescript
-constructor(opts: InMemoryAdapterOptions =
+constructor(opts: InMemoryAdapterOptions = {})
 ```
 
 **Parameters:**
@@ -8777,7 +8724,7 @@ cannot both pass the find without one observing the other's insert.
 async atomicCreateOrFindByNormalizedName(
     input: NewEntity,
     scope: ScopeFilter,
-  ): Promise&lt;
+  ): Promise&lt;{ entity: IEntity; created: boolean }&gt;
 ```
 
 **Parameters:**
@@ -8793,7 +8740,8 @@ async findEntitiesByNormalizedName(
     type: string | undefined,
     normalized: string,
     scope: ScopeFilter,
-    opts?:
+    opts?: { matchAliases?: boolean; limit?: number },
+  ): Promise&lt;IEntity[]&gt;
 ```
 
 **Parameters:**
@@ -8986,7 +8934,7 @@ async semanticSearch(
     filter: FactFilter,
     opts: SemanticSearchOptions,
     scope: ScopeFilter,
-  ): Promise&lt;Array&lt;
+  ): Promise&lt;Array&lt;{ fact: IFact; score: number }&gt;&gt;
 ```
 
 **Parameters:**
@@ -9003,7 +8951,9 @@ async semanticSearch(
 async semanticSearchEntities(
     queryVector: number[],
     filter: EntitySemanticSearchFilter,
-    opts: SemanticSearchOptions &
+    opts: SemanticSearchOptions & { minScore?: number; embeddingField?: EntityEmbeddingField },
+    scope: ScopeFilter,
+  ): Promise&lt;Array&lt;{ entity: IEntity; score: number }&gt;&gt;
 ```
 
 **Parameters:**
@@ -9021,21 +8971,6 @@ destroy(): void
 ```
 
 **Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `entitiesById` | `entitiesById: Map&lt;string, IEntity&gt;` | - |
-| `entitiesByIdent` | `entitiesByIdent: Map&lt;string, Set&lt;string&gt;&gt;` | - |
-| `factsById` | `factsById: Map&lt;string, IFact&gt;` | - |
-| `factsBySubject` | `factsBySubject: Map&lt;string, Set&lt;string&gt;&gt;` | - |
-| `factsByObject` | `factsByObject: Map&lt;string, Set&lt;string&gt;&gt;` | - |
-| `factsByContext` | `factsByContext: Map&lt;string, Set&lt;string&gt;&gt;` | - |
-| `destroyed` | `destroyed: boolean` | - |
 
 </details>
 
@@ -9086,7 +9021,7 @@ async delete(agentId: string): Promise&lt;void&gt;
 #### `list()`
 
 ```typescript
-async list(filter?:
+async list(filter?: { status?: AgentStatus[] }): Promise&lt;AgentState[]&gt;
 ```
 
 **Parameters:**
@@ -9105,15 +9040,6 @@ async patch(agentId: string, updates: Partial&lt;AgentState&gt;): Promise&lt;voi
 - `updates`: `Partial&lt;AgentState&gt;`
 
 **Returns:** `Promise&lt;void&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `agents` | `agents: Map&lt;string, AgentState&gt;` | - |
 
 </details>
 
@@ -9217,16 +9143,6 @@ async restoreState(state: SerializedHistoryState): Promise&lt;void&gt;
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `messages` | `messages: HistoryMessage[]` | - |
-| `summaries` | `summaries: { content: string; coversCount: number; timestamp: number; }[]` | - |
-
-</details>
-
 ---
 
 ### InMemoryMetrics `class`
@@ -9295,7 +9211,12 @@ histogram(metric: string, value: number, tags?: MetricTags): void
 Get all metrics (for testing)
 
 ```typescript
-getMetrics():
+getMetrics(): {
+    counters: Map&lt;string, number&gt;;
+    gauges: Map&lt;string, number&gt;;
+    timings: Map&lt;string, number[]&gt;;
+    histograms: Map&lt;string, number[]&gt;;
+  }
 ```
 
 **Returns:** `{ counters: Map&lt;string, number&gt;; gauges: Map&lt;string, number&gt;; timings: Map&lt;string, number[]&gt;; histograms: Map&lt;string, number[]&gt;; }`
@@ -9315,7 +9236,15 @@ clear(): void
 Get summary statistics for timings
 
 ```typescript
-getTimingStats(metric: string, tags?: MetricTags):
+getTimingStats(metric: string, tags?: MetricTags): {
+    count: number;
+    min: number;
+    max: number;
+    mean: number;
+    p50: number;
+    p95: number;
+    p99: number;
+  } | null
 ```
 
 **Parameters:**
@@ -9323,18 +9252,6 @@ getTimingStats(metric: string, tags?: MetricTags):
 - `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `{ count: number; min: number; max: number; mean: number; p50: number; p95: number; p99: number; } | null`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `counters` | `counters: Map&lt;string, number&gt;` | - |
-| `gauges` | `gauges: Map&lt;string, number&gt;` | - |
-| `timings` | `timings: Map&lt;string, number[]&gt;` | - |
-| `histograms` | `histograms: Map&lt;string, number[]&gt;` | - |
 
 </details>
 
@@ -9409,7 +9326,7 @@ async deletePlan(planId: string): Promise&lt;void&gt;
 #### `listPlans()`
 
 ```typescript
-async listPlans(filter?:
+async listPlans(filter?: { status?: PlanStatus[] }): Promise&lt;Plan[]&gt;
 ```
 
 **Parameters:**
@@ -9420,22 +9337,13 @@ async listPlans(filter?:
 #### `findByWebhookId()`
 
 ```typescript
-async findByWebhookId(webhookId: string): Promise&lt;
+async findByWebhookId(webhookId: string): Promise&lt;{ plan: Plan; task: Task } | undefined&gt;
 ```
 
 **Parameters:**
 - `webhookId`: `string`
 
 **Returns:** `Promise&lt;{ plan: Plan; task: Task; } | undefined&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `plans` | `plans: Map&lt;string, Plan&gt;` | - |
 
 </details>
 
@@ -9540,15 +9448,6 @@ async getTotalSize(): Promise&lt;number&gt;
 ```
 
 **Returns:** `Promise&lt;number&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `store` | `store: Map&lt;string, MemoryEntry&gt;` | - |
 
 </details>
 
@@ -9677,15 +9576,6 @@ size(): number
 ```
 
 **Returns:** `number`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `configs` | `configs: Map&lt;string, StoredConnectorConfig&gt;` | - |
 
 </details>
 
@@ -9907,7 +9797,11 @@ Entity IDs created (or resolved) during bootstrap. Undefined before bootstrap.
  `getOwnSubjectIds()`.
 
 ```typescript
-getBootstrappedIds():
+getBootstrappedIds(): {
+    userEntityId?: string;
+    agentEntityId?: string;
+    groupEntityId?: string;
+  }
 ```
 
 **Returns:** `{ userEntityId?: string | undefined; agentEntityId?: string | undefined; groupEntityId?: string | undefined; }`
@@ -9925,7 +9819,7 @@ Use `getBootstrappedIds()` instead when you need the variant agent entity
 id (analytics, factContextIds, snapshots).
 
 ```typescript
-getOwnSubjectIds():
+getOwnSubjectIds(): { userEntityId?: string; agentEntityId?: string }
 ```
 
 **Returns:** `{ userEntityId?: string | undefined; agentEntityId?: string | undefined; }`
@@ -9938,34 +9832,6 @@ getOwnSubjectIds():
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "memory"` | - |
-| `memory` | `memory: MemorySystem` | - |
-| `agentId` | `agentId: string` | - |
-| `userId` | `userId: string` | - |
-| `groupId` | `groupId: string | undefined` | - |
-| `principals` | `principals: string[] | undefined` | - |
-| `timezone` | `timezone: string | undefined` | - |
-| `personaEntityId` | `personaEntityId: string | undefined` | - |
-| `userPerms` | `userPerms: Permissions | undefined` | - |
-| `agentPerms` | `agentPerms: Permissions | undefined` | - |
-| `groupPerms` | `groupPerms: Permissions | undefined` | - |
-| `userInj` | `userInj: ResolvedInjection` | - |
-| `groupInj` | `groupInj: ResolvedInjection` | - |
-| `userDisplayName` | `userDisplayName: string` | - |
-| `agentDisplayName` | `agentDisplayName: string` | - |
-| `groupDisplayName` | `groupDisplayName: string | undefined` | - |
-| `groupExtraIdentifiers` | `groupExtraIdentifiers: readonly Identifier[]` | - |
-| `groupBootstrapEnabled` | `groupBootstrapEnabled: boolean` | - |
-| `defaultVisibility` | `defaultVisibility: { forUser: Visibility; forAgent: Visibility; forOther: Visibility; }` | - |
-| `autoResolveThreshold` | `autoResolveThreshold: number` | - |
-| `estimator` | `estimator: ITokenEstimator` | - |
-| `userEntityId` | `userEntityId: string | undefined` | - |
-| `agentEntityId` | `agentEntityId: string | undefined` | - |
-| `groupEntityId` | `groupEntityId: string | undefined` | - |
-| `bootstrapInFlight` | `bootstrapInFlight: Promise&lt;void&gt; | null` | - |
-| `tokenCache` | `tokenCache: number` | - |
-| `instructionsTokenCache` | `instructionsTokenCache: number | null` | - |
-| `destroyed` | `destroyed: boolean` | - |
-| `cachedTools` | `cachedTools: ToolFunction&lt;any, any&gt;[] | null` | - |
 
 </details>
 
@@ -10055,15 +9921,6 @@ async listKeys(): Promise&lt;string[]&gt;
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `tokens` | `tokens: Map&lt;string, string&gt;` | - |
-
-</details>
-
 ---
 
 ### MemorySystem `class`
@@ -10091,7 +9948,55 @@ constructor(config: MemorySystemConfig)
 
 ```typescript
 async upsertEntity(
-    input: Partial&lt;IEntity&gt; &
+    input: Partial&lt;IEntity&gt; & {
+      identifiers: Identifier[];
+      displayName: string;
+      type: string;
+      /**
+       * How `input.metadata` is folded into an existing entity on resolve.
+       * Default: undefined → metadata is ignored on resolve (current behavior,
+       * backward-compatible).
+       *  - `'fillMissing'`: only set keys absent from stored metadata; existing
+       *    values are never overwritten. Safe for LLM-driven re-extraction.
+       *  - `'overwrite'`: shallow-merge — incoming keys win. Use when the
+       *    caller is authoritative (calendar API for events, sync from system
+       *    of record).
+       *
+       * On create (no match) all keys are set verbatim regardless of this option.
+       */
+      metadataMerge?: 'fillMissing' | 'overwrite';
+      /**
+       * Optional whitelist applied when `metadataMerge` is set: only these
+       * top-level keys are touched. Other incoming keys are ignored. Lets the
+       * caller pin the merge to a known set (e.g. `['startTime','endTime',
+       * 'status']` for events) without leaking unrelated extracted fields.
+       *
+       * Has no effect when `metadataMerge` is unset.
+       */
+      metadataMergeKeys?: string[];
+    },
+    scope: ScopeFilter,
+    options?: {
+      /**
+       * Allow a resolve-and-update to mutate an existing entity owned by a
+       * different user WITHIN THE SAME GROUP/TENANT. Default `false`.
+       *
+       * When `true`: if the best-match entity shares `scope.groupId`, the
+       * per-owner `assertCanAccess(write)` check is skipped — so trusted
+       * server-side consolidation (e.g. the signal pipeline converging a
+       * group-visible Person/Organization that another user in the same group
+       * created) can enrich it without re-owning it first. Mirrors the
+       * `allowCrossOwner` option on `mergeEntities`.
+       *
+       * Tenancy invariant is preserved: a cross-tenant best-match (different
+       * `groupId`) still goes through `assertCanAccess`, which denies it — the
+       * flag never enables cross-tenant writes. The host is responsible for
+       * gating which callers may pass it (server pipeline code only — never an
+       * agent/tool surface).
+       */
+      allowCrossOwner?: boolean;
+    },
+  ): Promise&lt;UpsertEntityResult&gt;
 ```
 
 **Parameters:**
@@ -10157,7 +10062,9 @@ findEntitiesByIdentifier(
 ```typescript
 searchEntities(
     query: string,
-    opts:
+    opts: { types?: string[]; limit?: number; cursor?: string },
+    scope: ScopeFilter,
+  )
 ```
 
 **Parameters:**
@@ -10296,7 +10203,27 @@ async mergeEntities(
     winnerId: EntityId,
     loserId: EntityId,
     scope: ScopeFilter,
-    options?:
+    options?: {
+      /**
+       * Allow merging entities owned by different users within the same
+       * group/tenant. Default `false`.
+       *
+       * When `true`: the per-entity `assertCanAccess(write)` check is
+       * skipped (both winner and loser may be owned by users other than
+       * `scope.userId`), AND the same bypass is applied while rewriting
+       * fact references so the graph stays coherent post-merge.
+       *
+       * Tenancy invariant is preserved: the call refuses if
+       * `winner.groupId !== loser.groupId`. The host is responsible for
+       * gating which callers may pass the flag (typically a group/super
+       * admin running a legitimate consolidation pass).
+       *
+       * The owner of the surviving winner is unchanged either way — only
+       * the loser is archived, so its ownerId becomes irrelevant after.
+       */
+      allowCrossOwner?: boolean;
+    },
+  ): Promise&lt;IEntity&gt;
 ```
 
 **Parameters:**
@@ -10371,7 +10298,8 @@ pointers. See `archiveEntity` JSDoc for rationale.
 async deleteEntity(
     id: EntityId,
     scope: ScopeFilter,
-    opts:
+    opts: { hard?: boolean } = {},
+  ): Promise&lt;void&gt;
 ```
 
 **Parameters:**
@@ -10514,7 +10442,10 @@ trigger from a readonly probe):
    Idempotent to call again from your migration; that's the supported path.
 
 ```typescript
-assertEnterpriseReady():
+assertEnterpriseReady(): {
+    ok: boolean;
+    findings: Array&lt;{ severity: 'error' | 'warn'; code: string; message: string }&gt;;
+  }
 ```
 
 **Returns:** `{ ok: boolean; findings: { severity: "error" | "warn"; code: string; message: string; }[]; }`
@@ -10550,7 +10481,8 @@ re-stamping. Default is the cheaper differ-only path.
 ```typescript
 async backfillNormalizedFields(
     scope: ScopeFilter,
-    opts?:
+    opts?: { batchSize?: number; force?: boolean },
+  ): Promise&lt;{ scanned: number; updated: number; skipped: number }&gt;
 ```
 
 **Parameters:**
@@ -10584,7 +10516,13 @@ arrays, not the access-source fields).
 ```typescript
 async backfillAccessPrincipals(
     scope: ScopeFilter,
-    opts?:
+    opts?: { batchSize?: number; force?: boolean },
+  ): Promise&lt;{
+    entitiesScanned: number;
+    entitiesUpdated: number;
+    factsScanned: number;
+    factsUpdated: number;
+  }&gt;
 ```
 
 **Parameters:**
@@ -10627,7 +10565,32 @@ migration is informational, not destructive.
 
 ```typescript
 async hoistContextIdsFromFactsToEntities(
-    opts:
+    opts: {
+      predicate: string;
+      entitySide: 'subject' | 'object';
+      entityType?: string;
+      batchSize?: number;
+      dryRun?: boolean;
+      archiveSource?: boolean;
+    },
+    scope: ScopeFilter,
+  ): Promise&lt;{
+    scannedFacts: number;
+    /** Facts that triggered a real entity write (added &gt;= 1 new contextId). */
+    hoistedEntities: number;
+    /**
+     * Facts where the target entity already had every contextId — no write
+     * performed. Important for migration planning: re-runs of an idempotent
+     * migration are expected to land entirely in this bucket. Also bumped on
+     * dry-run when the simulated hoist would have been a no-op.
+     */
+    skippedAlreadyHoisted: number;
+    skippedNoContextIds: number;
+    skippedWrongType: number;
+    skippedNoTarget: number;
+    archivedFacts: number;
+    errors: number;
+  }&gt;
 ```
 
 **Parameters:**
@@ -10659,7 +10622,11 @@ Returns `{ policy: 'fuzzy_map', mappedTo? }` / `{ policy: 'keep' }` /
 the decision in their result payload.
 
 ```typescript
-resolveUnknownPredicate(canonical: string):
+resolveUnknownPredicate(canonical: string): {
+    policy: 'fuzzy_map' | 'keep' | 'drop';
+    mappedTo?: string;
+    distance?: number;
+  }
 ```
 
 **Parameters:**
@@ -10671,7 +10638,23 @@ resolveUnknownPredicate(canonical: string):
 
 ```typescript
 async addFact(
-    input: Partial&lt;IFact&gt; &
+    input: Partial&lt;IFact&gt; & {
+      subjectId: EntityId;
+      predicate: string;
+      kind: IFact['kind'];
+      /**
+       * When true: before inserting, look for a non-archived fact with the same
+       * (subjectId, canonicalized predicate, kind) and matching (value, objectId).
+       * On match → bump `observedAt` on the existing fact and return it — NO new
+       * row is inserted. Used by the session ingestor to prevent bloat across
+       * repeated observations ("anton works_at everworker" re-extracted).
+       * Details merging is the caller's responsibility (see updateFactDetails).
+       * Defaults to false for backward-compatibility.
+       */
+      dedup?: boolean;
+    },
+    scope: ScopeFilter,
+  ): Promise&lt;IFact&gt;
 ```
 
 **Parameters:**
@@ -10685,7 +10668,10 @@ async addFact(
 ```typescript
 async addFacts(
     inputs: Array&lt;
-      Partial&lt;IFact&gt; &
+      Partial&lt;IFact&gt; & { subjectId: EntityId; predicate: string; kind: IFact['kind'] }
+    &gt;,
+    scope: ScopeFilter,
+  ): Promise&lt;IFact[]&gt;
 ```
 
 **Parameters:**
@@ -10699,7 +10685,9 @@ async addFacts(
 ```typescript
 supersedeFact(
     oldId: FactId,
-    newInput: Partial&lt;IFact&gt; &
+    newInput: Partial&lt;IFact&gt; & { predicate: string; kind: IFact['kind']; subjectId: EntityId },
+    scope: ScopeFilter,
+  ): Promise&lt;IFact&gt;
 ```
 
 **Parameters:**
@@ -10747,7 +10735,21 @@ to bound memory; pageSize defaults to 500.
 
 ```typescript
 async expireFacts(
-    opts:
+    opts: {
+      /** Cutoff. Facts with `validUntil &lt; asOf` are eligible. Defaults to `new Date()`. */
+      asOf?: Date;
+      /**
+       * Restrict to specific predicates. When omitted, all expired facts in
+       * scope are archived. Pass `[]` to short-circuit to 0 (no-op).
+       */
+      predicates?: string[];
+      /** Maximum number of facts to archive in this call. Defaults to unbounded. */
+      limit?: number;
+      /** Internal page size for findFacts. Defaults to 500. */
+      pageSize?: number;
+    },
+    scope: ScopeFilter,
+  ): Promise&lt;{ archived: number }&gt;
 ```
 
 **Parameters:**
@@ -10831,7 +10833,17 @@ async applyEntityReconciliationOps(
     ops: ReconciliationOp[],
     priorFacts: IFact[],
     scope: ScopeFilter,
-    opts?:
+    opts?: {
+      /** Optional skeptic filter — return false to drop an op with logging. */
+      skepticFilter?: (op: ReconciliationOp) =&gt; boolean;
+      /**
+       * Source signal id to stamp on `updateFact` patches. Optional — entity
+       * reconciliation isn't bound to a single source signal (that's the
+       * point), so callers may leave it undefined.
+       */
+      sourceSignalId?: string;
+    },
+  ): Promise&lt;OperationOutcome&gt;
 ```
 
 **Parameters:**
@@ -10871,7 +10883,17 @@ Returns op-level counts (fact creates/updates/archives + task updates/resolves
 ```typescript
 async applyReconciliationOps(
     ops: SignalReconciliationOp[],
-    context:
+    context: { priorFacts: IFact[]; priorTasks: IEntity[] },
+    scope: ScopeFilter,
+    opts?: {
+      /** Optional skeptic filter — return false to drop an op with logging. */
+      skepticFilter?: (op: SignalReconciliationOp) =&gt; boolean;
+      /** Source signal id stamped on fact-update patches + task state history. */
+      sourceSignalId?: string;
+      /** Transition timestamp. Defaults to now. */
+      at?: Date;
+    },
+  ): Promise&lt;SignalReconciliationOutcome&gt;
 ```
 
 **Parameters:**
@@ -10941,7 +10963,13 @@ aliases match the same way `addFact` would treat them.
 
 ```typescript
 async findDuplicateFact(
-    input: Partial&lt;IFact&gt; &
+    input: Partial&lt;IFact&gt; & {
+      subjectId: EntityId;
+      predicate: string;
+      kind: IFact['kind'];
+    },
+    scope: ScopeFilter,
+  ): Promise&lt;IFact | null&gt;
 ```
 
 **Parameters:**
@@ -10978,7 +11006,16 @@ terminal states by default.
 async resolveRelatedItems(
     entityIds: EntityId[],
     scope: ScopeFilter,
-    opts?:
+    opts?: {
+      types?: ('task' | 'event')[];
+      /** Task state filter. Default: configured `taskStates.active`. Pass empty array to disable filtering. */
+      taskStates?: string[];
+      /** Per-bucket cap (tasks and events each capped at this value). Default 50, hard ceiling 200. */
+      limit?: number;
+      asOf?: Date;
+      recentEventsWindowDays?: number;
+    },
+  ): Promise&lt;RelatedItemsResult&gt;
 ```
 
 **Parameters:**
@@ -11011,7 +11048,59 @@ callers should treat semantic similarity as opportunistic, not load-bearing.
 async findSimilarOpenTasks(
     queryOrVector: string | number[],
     scope: ScopeFilter,
-    opts?:
+    opts?: {
+      topK?: number;
+      minScore?: number;
+      taskStates?: string[];
+      /**
+       * Narrow the search to tasks whose top-level `contextIds` includes this
+       * entity id. Pushed into the underlying `semanticSearchEntities` filter
+       * → Atlas `$vectorSearch.filter` clause. Requires `'contextIds'` in the
+       * entities vector index's filter paths (declared by default — see
+       * `ENTITIES_FILTER_PATHS` in MongoMemoryAdapter).
+       */
+      contextId?: EntityId;
+      /**
+       * Narrow by assignee entity id. Pushed into vector pipeline filter via
+       * `metadata.assigneeId` path. Useful for "tasks for Alice similar to X"
+       * scoped queries.
+       */
+      assigneeId?: EntityId;
+      /**
+       * Narrow by project entity id. Pushed into vector pipeline filter via
+       * `metadata.projectId` path.
+       */
+      projectId?: EntityId;
+      /**
+       * Narrow by reporter entity id. Pushed into vector pipeline filter via
+       * `metadata.reporterId` path. Mirrors `assigneeId`. Useful for surgical
+       * "tasks where X is reporter" queries — e.g. "what did I ask Y to do?".
+       */
+      reporterId?: EntityId;
+      /**
+       * OR-wildcard role match — narrows to tasks where this entity appears
+       * in any of `metadata.assigneeId`, `metadata.reporterId`,
+       * `metadata.projectId`, or top-level `contextIds`. The entity-side
+       * analog of `FactFilter.touchesEntity`.
+       *
+       * Prefer this over fanning out N separate role-narrowed searches and
+       * unioning client-side: the union is pushed into Atlas
+       * `$vectorSearch.filter` as one compound `$or`, so vector ranking sees
+       * the participant-touching candidates together rather than competing
+       * across role-specific top-K cuts.
+       */
+      touchesEntity?: EntityId;
+      /**
+       * Multi-anchor variant of `touchesEntity` — narrows to tasks touched by
+       * ANY id in this array (any of `assigneeId`/`reporterId`/`projectId`/
+       * `contextIds`). Use for participant fan-out: pass every participant +
+       * context-anchor entity id and let ONE ranked vector query surface the
+       * tasks relevant to the whole signal, instead of N per-anchor searches
+       * unioned client-side. ANDs with `touchesEntity` when both are set.
+       */
+      touchesAnyOf?: EntityId[];
+    },
+  ): Promise&lt;Array&lt;{ task: IEntity; score: number }&gt;&gt;
 ```
 
 **Parameters:**
@@ -11057,7 +11146,8 @@ async semanticSearchEntities(
     queryOrVector: string | number[],
     filter: EntitySemanticSearchFilter,
     scope: ScopeFilter,
-    opts?:
+    opts?: { topK?: number; minScore?: number; embeddingField?: EntityEmbeddingField },
+  ): Promise&lt;Array&lt;{ entity: IEntity; score: number }&gt;&gt;
 ```
 
 **Parameters:**
@@ -11119,7 +11209,8 @@ async addEntityContextIds(
     entityId: EntityId,
     additions: EntityId[],
     scope: ScopeFilter,
-    opts?:
+    opts?: { maxAttempts?: number },
+  ): Promise&lt;{ entity: IEntity; added: number }&gt;
 ```
 
 **Parameters:**
@@ -11188,7 +11279,18 @@ constrain prompt-token budget when injecting into an extraction prompt.
 ```typescript
 async listOpenTasks(
     scope: ScopeFilter,
-    opts:
+    opts: {
+      assigneeId?: EntityId;
+      projectId?: EntityId;
+      /**
+       * Narrow to tasks whose top-level `contextIds` array includes this
+       * anchor (project, deal, meeting, etc.). First-class filter — does NOT
+       * go through `metadataFilter` (which would query the wrong path).
+       */
+      contextId?: EntityId;
+      limit?: number;
+    } = {},
+  ): Promise&lt;IEntity[]&gt;
 ```
 
 **Parameters:**
@@ -11209,7 +11311,8 @@ adapters.
 ```typescript
 async listRecentTopics(
     scope: ScopeFilter,
-    opts:
+    opts: { days?: number; limit?: number } = {},
+  ): Promise&lt;IEntity[]&gt;
 ```
 
 **Parameters:**
@@ -11233,7 +11336,16 @@ backfills). Use `listOpenTasks` when you need a small bounded slice
 ```typescript
 async *iterateOpenTasks(
     scope: ScopeFilter,
-    opts:
+    opts: {
+      assigneeId?: EntityId;
+      projectId?: EntityId;
+      /** Narrow to tasks whose top-level `contextIds` includes this anchor. */
+      contextId?: EntityId;
+      batchSize?: number;
+      /** Resume from a cursor returned by a prior interrupted iteration. */
+      startAfter?: string;
+    } = {},
+  ): AsyncIterable&lt;IEntity[]&gt;
 ```
 
 **Parameters:**
@@ -11254,7 +11366,8 @@ that point).
 ```typescript
 async *iterateRecentTopics(
     scope: ScopeFilter,
-    opts:
+    opts: { days?: number; batchSize?: number; startAfter?: string } = {},
+  ): AsyncIterable&lt;IEntity[]&gt;
 ```
 
 **Parameters:**
@@ -11275,7 +11388,12 @@ require the caller to be explicit.
 async *iterateEntitiesByFilter(
     filter: EntityListFilter,
     scope: ScopeFilter,
-    opts:
+    opts: {
+      batchSize?: number;
+      startAfter?: string;
+      orderBy: EntityOrderBy | EntityOrderBy[];
+    },
+  ): AsyncIterable&lt;IEntity[]&gt;
 ```
 
 **Parameters:**
@@ -11296,7 +11414,12 @@ iteration across stores.
 async *iterateFacts(
     query: FactFilter,
     scope: ScopeFilter,
-    opts:
+    opts: {
+      batchSize?: number;
+      startAfter?: string;
+      orderBy: FactOrderBy;
+    },
+  ): AsyncIterable&lt;IFact[]&gt;
 ```
 
 **Parameters:**
@@ -11374,7 +11497,7 @@ async semanticSearch(
     filter: FactFilter,
     scope: ScopeFilter,
     topK: number = DEFAULT_SEMANTIC_TOP_K,
-  ): Promise&lt;Array&lt;
+  ): Promise&lt;Array&lt;{ fact: IFact; score: number }&gt;&gt;
 ```
 
 **Parameters:**
@@ -11603,7 +11726,15 @@ wait for all in-flight embeds.
 ```typescript
 async backfillContentEmbeddings(
     scope: ScopeFilter,
-    opts?:
+    opts?: {
+      /** Narrow to specific entity types. Empty/omitted = all types. */
+      types?: string[];
+      /** Page size for the streaming scan. Default 500, max 1000. */
+      batchSize?: number;
+      /** Progress callback invoked after each page. */
+      onProgress?: (scanned: number, queued: number) =&gt; void;
+    },
+  ): Promise&lt;{ scanned: number; queued: number; skipped: number }&gt;
 ```
 
 **Parameters:**
@@ -11623,7 +11754,17 @@ semantically without waiting for each fact's next mutation.
 ```typescript
 async backfillFactEmbeddings(
     scope: ScopeFilter,
-    opts?:
+    opts?: {
+      /** Narrow to specific fact predicates. Empty/omitted = all predicates. */
+      predicates?: string[];
+      /** Narrow to fact kind. Empty/omitted = both atomic + document. */
+      kind?: IFact['kind'];
+      /** Page size for the streaming scan. Default 500, max 1000. */
+      batchSize?: number;
+      /** Progress callback invoked after each page. */
+      onProgress?: (scanned: number, queued: number) =&gt; void;
+    },
+  ): Promise&lt;{ scanned: number; queued: number; skipped: number }&gt;
 ```
 
 **Parameters:**
@@ -11647,44 +11788,6 @@ async shutdown(): Promise&lt;void&gt;
 ```
 
 **Returns:** `Promise&lt;void&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `store` | `store: IMemoryStore` | - |
-| `embedder?` | `embedder: IEmbedder | undefined` | - |
-| `profileGenerator?` | `profileGenerator: IProfileGenerator | undefined` | - |
-| `ruleEngine?` | `ruleEngine: IRuleEngine | undefined` | - |
-| `profileThreshold` | `profileThreshold: number` | - |
-| `ranking` | `ranking: RankingConfig` | - |
-| `onChange?` | `onChange: ((event: ChangeEvent) =&gt; void) | undefined` | - |
-| `onError?` | `onError: ((error: unknown, event: ChangeEvent) =&gt; void) | undefined` | - |
-| `queue` | `queue: EmbeddingQueue` | - |
-| `resolver` | `resolver: EntityResolver` | - |
-| `resolutionConfig` | `resolutionConfig: EntityResolutionConfig` | - |
-| `predicates?` | `predicates: PredicateRegistry | undefined` | - |
-| `predicateMode` | `predicateMode: "permissive" | "strict"` | - |
-| `predicateAutoSupersede` | `predicateAutoSupersede: boolean` | - |
-| `unknownPredicatePolicy` | `unknownPredicatePolicy: "fuzzy_map" | "keep" | "drop"` | - |
-| `unknownPredicateFuzzyMaxDistance` | `unknownPredicateFuzzyMaxDistance: number | undefined` | - |
-| `visibilityPolicy?` | `visibilityPolicy: VisibilityPolicy | undefined` | - |
-| `contentComposers` | `contentComposers: ReadonlyMap&lt;string, EntityContentComposer&gt;` | Per-type entity content-embedding composers. Built at construction from
-`DEFAULT_ENTITY_COMPOSERS` overlaid with `config.entityContentComposers`.
-Entries are looked up by `entity.type`; missing entries mean the type
-gets no content embedding. |
-| `factComposer` | `factComposer: FactContentComposer` | Fact content-embedding composer. `config.factContentComposer` overrides
-the default; default ships meaningful surface-form composition for
-atomic facts plus details-verbatim for document facts. |
-| `regenInFlight` | `regenInFlight: Map&lt;string, Promise&lt;IFact&gt;&gt;` | Single-flight registry for profile regenerations, keyed by entityId+scope.
-Concurrent callers for the same key SHARE the in-flight promise — both
-the explicit `regenerateProfile()` path and the threshold-driven
-`maybeRegenerateProfile()` path dedup through this map, so racing agent
-runs or pipeline ticks against a hot entity collapse to one LLM call. |
-| `destroyed` | `destroyed: boolean` | - |
 
 </details>
 
@@ -11813,25 +11916,6 @@ restoreState(_state: unknown): void
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "memory_write"` | - |
-| `memory` | `memory: MemorySystem` | - |
-| `agentId` | `agentId: string` | - |
-| `userId` | `userId: string` | - |
-| `groupId` | `groupId: string | undefined` | - |
-| `defaultVisibility` | `defaultVisibility: { forUser: Visibility; forAgent: Visibility; forOther: Visibility; }` | - |
-| `autoResolveThreshold` | `autoResolveThreshold: number` | - |
-| `getOwnSubjectIds` | `getOwnSubjectIds: () =&gt; { userEntityId?: string | undefined; agentEntityId?: string | undefined; }` | - |
-| `forgetRateLimit` | `forgetRateLimit: { maxCallsPerWindow?: number | undefined; windowMs?: number | undefined; } | undefined` | - |
-| `setAgentRuleRateLimit` | `setAgentRuleRateLimit: { maxCallsPerWindow?: number | undefined; windowMs?: number | undefined; } | undefined` | - |
-| `forbiddenEntityTypes` | `forbiddenEntityTypes: readonly string[] | undefined` | - |
-| `instructions` | `instructions: string` | Pre-rendered write-instructions block — built once at construction time
-from the configured (or `memory`-derived) predicate registry. Storing
-the string avoids re-rendering the registry on every system-message
-assembly, AND makes the token-size cache trivially correct (instructions
-never change for a given plugin instance). |
-| `estimator` | `estimator: ITokenEstimator` | - |
-| `instructionsTokenCache` | `instructionsTokenCache: number | null` | - |
-| `cachedTools` | `cachedTools: ToolFunction&lt;any, any&gt;[] | null` | - |
-| `destroyed` | `destroyed: boolean` | - |
 
 </details>
 
@@ -11966,7 +12050,7 @@ collection containing duplicates fails).
 async atomicCreateOrFindByNormalizedName(
     input: NewEntity,
     scope: ScopeFilter,
-  ): Promise&lt;
+  ): Promise&lt;{ entity: IEntity; created: boolean }&gt;
 ```
 
 **Parameters:**
@@ -11982,7 +12066,8 @@ async findEntitiesByNormalizedName(
     type: string | undefined,
     normalized: string,
     scope: ScopeFilter,
-    opts?:
+    opts?: { matchAliases?: boolean; limit?: number },
+  ): Promise&lt;IEntity[]&gt;
 ```
 
 **Parameters:**
@@ -12175,7 +12260,7 @@ async semanticSearch(
     filter: FactFilter,
     opts: SemanticSearchOptions,
     scope: ScopeFilter,
-  ): Promise&lt;Array&lt;
+  ): Promise&lt;Array&lt;{ fact: IFact; score: number }&gt;&gt;
 ```
 
 **Parameters:**
@@ -12192,7 +12277,9 @@ async semanticSearch(
 async semanticSearchEntities(
     queryVector: number[],
     filter: EntitySemanticSearchFilter,
-    opts: SemanticSearchOptions &
+    opts: SemanticSearchOptions & { minScore?: number; embeddingField?: EntityEmbeddingField },
+    scope: ScopeFilter,
+  ): Promise&lt;Array&lt;{ entity: IEntity; score: number }&gt;&gt;
 ```
 
 **Parameters:**
@@ -12245,7 +12332,37 @@ on the `$vectorSearch` fast path. See the field lists in
 creators must match or the filter is silently ignored (scope bypass).
 
 ```typescript
-async ensureVectorSearchIndexes(opts:
+async ensureVectorSearchIndexes(opts: {
+    /** Embedding dimensionality — MUST match your embedder. Must be a positive integer. */
+    dimensions: number;
+    /** Default: 'cosine'. Match the similarity your embedder was trained for. */
+    similarity?: 'cosine' | 'dotProduct' | 'euclidean';
+    /**
+     * Atlas index name for facts. Default: the adapter's own `vectorIndexName`
+     * option, or `'facts_vector'` when that's also unset. Pass `null` to skip
+     * the facts index entirely.
+     */
+    factsIndexName?: string | null;
+    /**
+     * Atlas index name for entities (identityEmbedding). Default: the
+     * adapter's own `entityVectorIndexName` option, or `'entities_vector'`
+     * when unset. Pass `null` to skip.
+     */
+    entitiesIndexName?: string | null;
+    /**
+     * Atlas index name for entity content (contentEmbedding) — used by
+     * document semantic search. **Opt-in.** Default: the adapter's own
+     * `entityContentVectorIndexName` option, or **`null` (skip)** when that's
+     * also unset. Hosts that use documents should either set the adapter's
+     * `entityContentVectorIndexName` (so the runtime path and this helper
+     * agree on the name) or pass `entitiesContentIndexName` explicitly here.
+     *
+     * Default-skip is deliberate: adding a third Atlas index automatically
+     * on `ensureVectorSearchIndexes()` would silently bill existing
+     * deployments that aren't using documents.
+     */
+    entitiesContentIndexName?: string | null;
+  }): Promise&lt;void&gt;
 ```
 
 **Parameters:**
@@ -12268,28 +12385,6 @@ async shutdown(): Promise&lt;void&gt;
 ```
 
 **Returns:** `Promise&lt;void&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `entities` | `entities: IMongoCollectionLike&lt;IEntity&gt;` | - |
-| `facts` | `facts: IMongoCollectionLike&lt;IFact&gt;` | - |
-| `factsArchive?` | `factsArchive: IMongoCollectionLike&lt;IFact&gt; | undefined` | - |
-| `disableWorldVisibility` | `disableWorldVisibility: boolean` | - |
-| `useNativeGraphLookup` | `useNativeGraphLookup: boolean` | - |
-| `vectorIndexName?` | `vectorIndexName: string | undefined` | - |
-| `entityVectorIndexName?` | `entityVectorIndexName: string | undefined` | - |
-| `entityContentVectorIndexName?` | `entityContentVectorIndexName: string | undefined` | - |
-| `vectorCandidateMultiplier` | `vectorCandidateMultiplier: number` | - |
-| `factsCollectionName?` | `factsCollectionName: string | undefined` | - |
-| `defaultPageSize` | `defaultPageSize: number` | - |
-| `vectorIndexDrainPollMs` | `vectorIndexDrainPollMs: number` | - |
-| `vectorIndexDrainTimeoutMs` | `vectorIndexDrainTimeoutMs: number` | - |
-| `destroyed` | `destroyed: boolean` | - |
 
 </details>
 
@@ -12352,20 +12447,6 @@ getFailedTaskIds(): string[]
 PlanningAgent class
 
 <details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(config: PlanningAgentConfig)
-```
-
-**Parameters:**
-- `config`: `PlanningAgentConfig`
-
-</details>
-
-<details>
 <summary><strong>Static Methods</strong></summary>
 
 #### `static create()`
@@ -12391,7 +12472,11 @@ static create(config: PlanningAgentConfig): PlanningAgent
 Generate a plan from a goal
 
 ```typescript
-async generatePlan(input:
+async generatePlan(input: {
+    goal: string;
+    context?: string;
+    constraints?: string[];
+  }): Promise&lt;GeneratedPlan&gt;
 ```
 
 **Parameters:**
@@ -12472,18 +12557,6 @@ finalizePlanning(): void
 ```
 
 **Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `agent` | `agent: Agent` | - |
-| `config` | `config: PlanningAgentConfig` | - |
-| `currentTasks` | `currentTasks: TaskInput[]` | - |
-| `planningComplete` | `planningComplete: boolean` | - |
 
 </details>
 
@@ -12629,7 +12702,12 @@ async store(
     key: string,
     description: string,
     value: unknown,
-    options?:
+    options?: {
+      scope?: MemoryScope;
+      priority?: MemoryPriority;
+      pinned?: boolean;
+    }
+  ): Promise&lt;void&gt;
 ```
 
 **Parameters:**
@@ -12661,7 +12739,8 @@ async storeForTasks(
     description: string,
     value: unknown,
     taskIds: string[],
-    options?:
+    options?: { priority?: MemoryPriority; pinned?: boolean }
+  ): Promise&lt;void&gt;
 ```
 
 **Parameters:**
@@ -12683,7 +12762,8 @@ async storeForPlan(
     key: string,
     description: string,
     value: unknown,
-    options?:
+    options?: { priority?: MemoryPriority; pinned?: boolean }
+  ): Promise&lt;void&gt;
 ```
 
 **Parameters:**
@@ -12988,7 +13068,8 @@ async storeRaw(
     key: string,
     description: string,
     value: unknown,
-    options?:
+    options?: { taskIds?: string[]; scope?: MemoryScope }
+  ): Promise&lt;void&gt;
 ```
 
 **Parameters:**
@@ -13012,7 +13093,8 @@ async storeSummary(
     description: string,
     value: unknown,
     derivedFrom: string | string[],
-    options?:
+    options?: { taskIds?: string[]; scope?: MemoryScope }
+  ): Promise&lt;void&gt;
 ```
 
 **Parameters:**
@@ -13037,7 +13119,8 @@ async storeFindings(
     description: string,
     value: unknown,
     _derivedFrom?: string | string[],
-    options?:
+    options?: { taskIds?: string[]; scope?: MemoryScope; pinned?: boolean }
+  ): Promise&lt;void&gt;
 ```
 
 **Parameters:**
@@ -13100,7 +13183,7 @@ async promote(key: string, toTier: MemoryTier): Promise&lt;string&gt;
 Get tier statistics
 
 ```typescript
-async getTierStats(): Promise&lt;Record&lt;MemoryTier,
+async getTierStats(): Promise&lt;Record&lt;MemoryTier, { count: number; sizeBytes: number }&gt;&gt;
 ```
 
 **Returns:** `Promise&lt;Record&lt;MemoryTier, { count: number; sizeBytes: number; }&gt;&gt;`
@@ -13110,7 +13193,13 @@ async getTierStats(): Promise&lt;Record&lt;MemoryTier,
 Get statistics about memory usage
 
 ```typescript
-async getStats(): Promise&lt;
+async getStats(): Promise&lt;{
+    totalEntries: number;
+    totalSizeBytes: number;
+    utilizationPercent: number;
+    byPriority: Record&lt;MemoryPriority, number&gt;;
+    pinnedCount: number;
+  }&gt;
 ```
 
 **Returns:** `Promise&lt;{ totalEntries: number; totalSizeBytes: number; utilizationPercent: number; byPriority: Record&lt;MemoryPriority, number&gt;; pinnedCount: number; }&gt;`
@@ -13167,18 +13256,6 @@ async restore(state: SerializedMemory): Promise&lt;void&gt;
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `storage` | `storage: IMemoryStorage` | - |
-| `config` | `config: WorkingMemoryConfig` | - |
-| `priorityCalculator` | `priorityCalculator: PriorityCalculator` | - |
-| `priorityContext` | `priorityContext: PriorityContext` | - |
-
-</details>
-
 ---
 
 ### WorkingMemoryPluginNextGen `class`
@@ -13191,7 +13268,7 @@ async restore(state: SerializedMemory): Promise&lt;void&gt;
 #### `constructor`
 
 ```typescript
-constructor(pluginConfig: WorkingMemoryPluginConfig =
+constructor(pluginConfig: WorkingMemoryPluginConfig = {})
 ```
 
 **Parameters:**
@@ -13375,7 +13452,13 @@ async store(
     key: string,
     description: string,
     value: unknown,
-    options?:
+    options?: {
+      scope?: MemoryScope;
+      priority?: MemoryPriority;
+      tier?: MemoryTier;
+      pinned?: boolean;
+    }
+  ): Promise&lt;{ key: string; sizeBytes: number }&gt;
 ```
 
 **Parameters:**
@@ -13417,7 +13500,20 @@ async delete(key: string): Promise&lt;boolean&gt;
 Query memory entries
 
 ```typescript
-async query(options?:
+async query(options?: {
+    pattern?: string;
+    tier?: MemoryTier;
+    includeValues?: boolean;
+    includeStats?: boolean;
+  }): Promise&lt;{
+    entries: Array&lt;{
+      key: string;
+      description: string;
+      tier?: MemoryTier;
+      value?: unknown;
+    }&gt;;
+    stats?: { count: number; totalBytes: number };
+  }&gt;
 ```
 
 **Parameters:**
@@ -13454,7 +13550,7 @@ async evict(count: number, strategy: EvictionStrategy = 'lru'): Promise&lt;strin
 Cleanup raw tier entries
 
 ```typescript
-async cleanupRaw(): Promise&lt;
+async cleanupRaw(): Promise&lt;{ deleted: number; keys: string[] }&gt;
 ```
 
 **Returns:** `Promise&lt;{ deleted: number; keys: string[]; }&gt;`
@@ -13467,11 +13563,6 @@ async cleanupRaw(): Promise&lt;
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "working_memory"` | - |
-| `storage` | `storage: IMemoryStorage` | - |
-| `config` | `config: WorkingMemoryConfig` | - |
-| `priorityCalculator` | `priorityCalculator: PriorityCalculator` | - |
-| `priorityContext` | `priorityContext: PriorityContext` | - |
-| `estimator` | `estimator: ITokenEstimator` | - |
 
 </details>
 
@@ -16008,7 +16099,8 @@ export function forPlan(
   key: string,
   description: string,
   value: unknown,
-  options?:
+  options?: { priority?: MemoryPriority; pinned?: boolean }
+): MemoryEntryInput
 ```
 
 ---
@@ -16025,7 +16117,8 @@ export function forTasks(
   description: string,
   value: unknown,
   taskIds: string[],
-  options?:
+  options?: { priority?: MemoryPriority; pinned?: boolean }
+): MemoryEntryInput
 ```
 
 ---
@@ -16381,8 +16474,6 @@ estimateSavings(component: IContextComponent): number
 |----------|------|-------------|
 | `name` | `name: "summarize"` | - |
 | `priority` | `priority: 5` | - |
-| `config` | `config: Required&lt;SummarizeCompactorConfig&gt;` | - |
-| `estimator` | `estimator: ITokenEstimator` | - |
 
 </details>
 
@@ -16974,7 +17065,7 @@ Get stored metadata for a connector
 ```typescript
 async getMetadata(
     name: string
-  ): Promise&lt;
+  ): Promise&lt;{ createdAt: number; updatedAt: number; version: number } | null&gt;
 ```
 
 **Parameters:**
@@ -16994,7 +17085,15 @@ async saveFromTemplate(
     vendorId: string,
     authTemplateId: string,
     credentials: TemplateCredentials,
-    options?:
+    options?: {
+      baseURL?: string;
+      displayName?: string;
+      description?: string;
+      defaultModel?: string;
+      vendor?: string;
+      serviceType?: string;
+    },
+  ): Promise&lt;ConnectorConfig&gt;
 ```
 
 **Parameters:**
@@ -17018,7 +17117,15 @@ async updateFromTemplate(
     vendorId: string,
     authTemplateId: string,
     credentials: TemplateCredentials,
-    options?:
+    options?: {
+      baseURL?: string;
+      displayName?: string;
+      description?: string;
+      defaultModel?: string;
+      vendor?: string;
+      serviceType?: string;
+    },
+  ): Promise&lt;ConnectorConfig&gt;
 ```
 
 **Parameters:**
@@ -17055,7 +17162,7 @@ File-based storage for agent definitions
 #### `constructor`
 
 ```typescript
-constructor(config: FileAgentDefinitionStorageConfig =
+constructor(config: FileAgentDefinitionStorageConfig = {})
 ```
 
 **Parameters:**
@@ -17170,18 +17277,6 @@ async rebuildIndex(): Promise&lt;void&gt;
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `baseDirectory` | `baseDirectory: string` | - |
-| `indexPath` | `indexPath: string` | - |
-| `prettyPrint` | `prettyPrint: boolean` | - |
-| `index` | `index: DefinitionIndex | null` | - |
-
-</details>
-
 ---
 
 ### FileConnectorStorage `class`
@@ -17275,17 +17370,6 @@ async clear(): Promise&lt;void&gt;
 ```
 
 **Returns:** `Promise&lt;void&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `directory` | `directory: string` | - |
-| `indexPath` | `indexPath: string` | - |
-| `initialized` | `initialized: boolean` | - |
 
 </details>
 
@@ -17450,11 +17534,6 @@ async rebuildIndex(): Promise&lt;void&gt;
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `agentId` | `agentId: string` | - |
-| `sessionsDirectory` | `sessionsDirectory: string` | - |
-| `indexPath` | `indexPath: string` | - |
-| `prettyPrint` | `prettyPrint: boolean` | - |
-| `index` | `index: SessionIndex | null` | - |
 | `journal` | `journal: IHistoryJournal` | History journal companion — appends full conversation history as JSONL |
 
 </details>
@@ -17569,15 +17648,6 @@ getPath(): string
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `baseDir` | `baseDir: string` | - |
-
-</details>
-
 ---
 
 ### FileCustomToolStorage `class`
@@ -17594,7 +17664,7 @@ Single instance handles all users. UserId is passed to each method.
 #### `constructor`
 
 ```typescript
-constructor(config: FileCustomToolStorageConfig =
+constructor(config: FileCustomToolStorageConfig = {})
 ```
 
 **Parameters:**
@@ -17702,16 +17772,6 @@ getPath(userId: string | undefined): string
 - `userId`: `string | undefined`
 
 **Returns:** `string`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `baseDirectory` | `baseDirectory: string` | - |
-| `prettyPrint` | `prettyPrint: boolean` | - |
 
 </details>
 
@@ -17858,16 +17918,6 @@ getLocation(sessionId: string): string
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `sessionsDirectory` | `sessionsDirectory: string` | - |
-| `directoryEnsured` | `directoryEnsured: boolean` | - |
-
-</details>
-
 ---
 
 ### FileMediaStorage `class`
@@ -17954,16 +18004,6 @@ getPath(): string
 ```
 
 **Returns:** `string`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `outputDir` | `outputDir: string` | - |
-| `initialized` | `initialized: boolean` | - |
 
 </details>
 
@@ -18060,18 +18100,6 @@ getAgentId(): string
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `directory` | `directory: string` | - |
-| `filePath` | `filePath: string` | - |
-| `legacyFilePath` | `legacyFilePath: string` | - |
-| `agentId` | `agentId: string` | - |
-
-</details>
-
 ---
 
 ### FileRoutineDefinitionStorage `class`
@@ -18088,7 +18116,7 @@ Single instance handles all users. UserId is passed to each method.
 #### `constructor`
 
 ```typescript
-constructor(config: FileRoutineDefinitionStorageConfig =
+constructor(config: FileRoutineDefinitionStorageConfig = {})
 ```
 
 **Parameters:**
@@ -18150,7 +18178,12 @@ async exists(context: StorageUserContextInput, id: string): Promise&lt;boolean&g
 #### `list()`
 
 ```typescript
-async list(context: StorageUserContextInput, options?:
+async list(context: StorageUserContextInput, options?: {
+    tags?: string[];
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise&lt;RoutineSummary[]&gt;
 ```
 
 **Parameters:**
@@ -18172,16 +18205,6 @@ getPath(context: StorageUserContextInput): string
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `baseDirectory` | `baseDirectory: string` | - |
-| `prettyPrint` | `prettyPrint: boolean` | - |
-
-</details>
-
 ---
 
 ### FileRoutineExecutionStorage `class`
@@ -18198,7 +18221,7 @@ Single instance handles all users. UserId is passed to each method.
 #### `constructor`
 
 ```typescript
-constructor(config: FileRoutineExecutionStorageConfig =
+constructor(config: FileRoutineExecutionStorageConfig = {})
 ```
 
 **Parameters:**
@@ -18279,7 +18302,13 @@ async load(id: string): Promise&lt;RoutineExecutionRecord | null&gt;
 ```typescript
 async list(
     context: StorageUserContextInput,
-    options?:
+    options?: {
+      routineId?: string;
+      status?: RoutineExecutionStatus;
+      limit?: number;
+      offset?: number;
+    },
+  ): Promise&lt;RoutineExecutionRecord[]&gt;
 ```
 
 **Parameters:**
@@ -18310,18 +18339,6 @@ getPath(context: StorageUserContextInput): string
 - `context`: `StorageUserContextInput`
 
 **Returns:** `string`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `baseDirectory` | `baseDirectory: string` | - |
-| `prettyPrint` | `prettyPrint: boolean` | - |
-| `maxRecords` | `maxRecords: number` | - |
-| `executionUserMap` | `executionUserMap: Map&lt;string, string | undefined&gt;` | - |
 
 </details>
 
@@ -18426,16 +18443,6 @@ async clearAll(): Promise&lt;void&gt;
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `directory` | `directory: string` | - |
-| `encryptionKey` | `encryptionKey: string` | - |
-
-</details>
-
 ---
 
 ### FileUserInfoStorage `class`
@@ -18531,16 +18538,6 @@ getPath(userId: string | undefined): string
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `baseDirectory` | `baseDirectory: string` | - |
-| `filename` | `filename: string` | - |
-
-</details>
-
 ---
 
 ### FileUserPermissionRulesStorage `class`
@@ -18622,16 +18619,6 @@ getPath(userId: string | undefined): string
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `baseDirectory` | `baseDirectory: string` | - |
-| `filename` | `filename: string` | - |
-
-</details>
-
 ---
 
 ### GrokRealtimeSession `class`
@@ -18675,9 +18662,220 @@ override updateSession(
 
 ---
 
+### OpenAIRealtimeAgentSession `class`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:123`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+
+Agent-aware controller for OpenAI Realtime voice sessions.
+
+It is deliberately transport-neutral: the default transport is the server
+WebSocket client, while browsers can provide a WebRTC data-channel adapter.
+Local functions execute through Agent (not ToolManager directly), remote MCP
+approvals fail closed, AgentContext is synchronized per turn, and usage is
+accumulated into both this session and Agent metrics.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(options: OpenAIRealtimeAgentSessionOptions)
+```
+
+**Parameters:**
+- `options`: `OpenAIRealtimeAgentSessionOptions`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `connect()`
+
+```typescript
+async connect(options: { signal?: AbortSignal } = {}): Promise&lt;OpenAIRealtimeServerEvent | undefined&gt;
+```
+
+**Parameters:**
+- `options`: `{ signal?: AbortSignal | undefined; }` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;OpenAIRealtimeServerEvent | undefined&gt;`
+
+#### `appendAudio()`
+
+```typescript
+appendAudio(audio: Buffer | string): boolean
+```
+
+**Parameters:**
+- `audio`: `string | Buffer&lt;ArrayBufferLike&gt;`
+
+**Returns:** `boolean`
+
+#### `commitAudio()`
+
+```typescript
+commitAudio(): void
+```
+
+**Returns:** `void`
+
+#### `clearAudio()`
+
+```typescript
+clearAudio(): void
+```
+
+**Returns:** `void`
+
+#### `cancelResponse()`
+
+```typescript
+cancelResponse(): void
+```
+
+**Returns:** `void`
+
+#### `createResponse()`
+
+```typescript
+createResponse(response: Record&lt;string, unknown&gt; = {}): void
+```
+
+**Parameters:**
+- `response`: `Record&lt;string, unknown&gt;` *(optional)* (default: `{}`)
+
+**Returns:** `void`
+
+#### `truncateItem()`
+
+```typescript
+truncateItem(itemId: string, audioEndMs: number, contentIndex = 0): void
+```
+
+**Parameters:**
+- `itemId`: `string`
+- `audioEndMs`: `number`
+- `contentIndex`: `number` *(optional)* (default: `0`)
+
+**Returns:** `void`
+
+#### `sendText()`
+
+```typescript
+async sendText(text: string, response: Record&lt;string, unknown&gt; = {}): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `text`: `string`
+- `response`: `Record&lt;string, unknown&gt;` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `sendImage()`
+
+```typescript
+async sendImage(imageUrl: string, response: Record&lt;string, unknown&gt; = {}): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `imageUrl`: `string`
+- `response`: `Record&lt;string, unknown&gt;` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getUsage()`
+
+```typescript
+getUsage(): OpenAIRealtimeAgentUsage
+```
+
+**Returns:** `OpenAIRealtimeAgentUsage`
+
+#### `handleServerEvent()`
+
+Public for custom transports that cannot expose EventEmitter-style events.
+
+```typescript
+async handleServerEvent(event: OpenAIRealtimeServerEvent): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `event`: `OpenAIRealtimeServerEvent`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `close()`
+
+```typescript
+async close(code = 1000, reason = 'OK'): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `code`: `number` *(optional)* (default: `1000`)
+- `reason`: `string` *(optional)* (default: `'OK'`)
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `on()`
+
+```typescript
+on&lt;K extends keyof OpenAIRealtimeAgentSessionEvents&gt;(
+    event: K,
+    handler: OpenAIRealtimeAgentSessionEvents[K],
+  ): this
+```
+
+**Parameters:**
+- `event`: `K`
+- `handler`: `OpenAIRealtimeAgentSessionEvents[K]`
+
+**Returns:** `this`
+
+#### `updateSession()`
+
+Apply a partial/complete Realtime session update.
+
+```typescript
+updateSession(session: OpenAIRealtimeSessionConfig): void
+```
+
+**Parameters:**
+- `session`: `OpenAIRealtimeSessionConfig`
+
+**Returns:** `void`
+
+#### `send()`
+
+Send an advanced Realtime client event through the configured transport.
+
+```typescript
+send(event: OpenAIRealtimeClientEvent): void
+```
+
+**Parameters:**
+- `event`: `OpenAIRealtimeClientEvent`
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `agent` | `agent: Agent` | - |
+| `transport` | `transport: OpenAIRealtimeAgentTransport` | - |
+
+</details>
+
+---
+
 ### OpenAIRealtimeSession `class`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:64`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:68`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
 
 Connector-first, server-side WebSocket client for OpenAI's GA Realtime API.
 It intentionally exposes the raw event stream while providing helpers for
@@ -18703,7 +18901,7 @@ constructor(options: OpenAIRealtimeSessionOptions)
 #### `connect()`
 
 ```typescript
-async connect(options: OpenAIRealtimeConnectOptions =
+async connect(options: OpenAIRealtimeConnectOptions = {}): Promise&lt;OpenAIRealtimeServerEvent&gt;
 ```
 
 **Parameters:**
@@ -18725,13 +18923,13 @@ updateSession(session: NonNullable&lt;OpenAIRealtimeSessionOptions['session']&gt
 #### `appendAudio()`
 
 ```typescript
-appendAudio(audio: Buffer | string): void
+appendAudio(audio: Buffer | string): boolean
 ```
 
 **Parameters:**
 - `audio`: `string | Buffer&lt;ArrayBufferLike&gt;`
 
-**Returns:** `void`
+**Returns:** `boolean`
 
 #### `commitAudio()`
 
@@ -18752,7 +18950,7 @@ clearAudio(): void
 #### `createResponse()`
 
 ```typescript
-createResponse(response: Record&lt;string, unknown&gt; =
+createResponse(response: Record&lt;string, unknown&gt; = {}): void
 ```
 
 **Parameters:**
@@ -18858,11 +19056,6 @@ on&lt;K extends keyof OpenAIRealtimeSessionEvents&gt;(event: K, handler: OpenAIR
 | `connector` | `connector: Connector` | - |
 | `model` | `model: OpenAIRealtimeModel` | - |
 | `initialSession?` | `initialSession: OpenAIRealtimeSessionConfig | OpenAIRealtimeTranscriptionSessionConfig | OpenAIRealtimeTranslationSessionConfig | undefined` | - |
-| `options` | `options: OpenAIRealtimeSessionOptions` | - |
-| `socket` | `socket: WebSocketLike | null` | - |
-| `connected` | `connected: boolean` | - |
-| `connectAbortController` | `connectAbortController: AbortController | null` | - |
-| `inputAudioTransport` | `inputAudioTransport: "json" | "binary"` | - |
 
 </details>
 
@@ -19062,33 +19255,6 @@ isDisabled(): boolean
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "session_ingestor"` | - |
-| `memory` | `memory: MemorySystem` | - |
-| `agentId` | `agentId: string` | - |
-| `userId` | `userId: string` | - |
-| `groupId` | `groupId: string | undefined` | - |
-| `connectorName` | `connectorName: string` | - |
-| `model` | `model: string` | - |
-| `diligence` | `diligence: SessionIngestorDiligence` | - |
-| `temperature` | `temperature: number` | - |
-| `maxOutputTokens` | `maxOutputTokens: number | undefined` | - |
-| `maxTranscriptChars` | `maxTranscriptChars: number` | - |
-| `minBatchMessages` | `minBatchMessages: number` | - |
-| `forbiddenEntityTypes` | `forbiddenEntityTypes: ReadonlySet&lt;string&gt;` | - |
-| `userEntityId` | `userEntityId: string | undefined` | - |
-| `agentEntityId` | `agentEntityId: string | undefined` | - |
-| `bootstrapInFlight` | `bootstrapInFlight: Promise&lt;void&gt; | null` | - |
-| `bootstrapFailed` | `bootstrapFailed: boolean` | Set to true if bootstrap returned a foreign-owned entity — we disable
- the plugin for the rest of the session to prevent ghost-writes. |
-| `lastIngestedMessageId` | `lastIngestedMessageId: string | null` | Stable watermark — id of the last message we've successfully ingested.
- Index-based watermarks break on compaction (AgentContextNextGen mutates
- _conversation via filter → indices shift), so we track a message id
- instead and scan forward for it on each turn. |
-| `ingestInFlight` | `ingestInFlight: Promise&lt;void&gt; | null` | - |
-| `destroyed` | `destroyed: boolean` | - |
-| `lastSnapshot` | `lastSnapshot: PluginPrepareSnapshot | null` | Most recent `onBeforePrepare` snapshot, kept so `flush()` can run ingest
-on the current conversation without the caller supplying one. Updated on
-every hook invocation (including the "below threshold, skip" path). |
-| `llmAgent` | `llmAgent: Agent | null` | - |
 
 </details>
 
@@ -19569,9 +19735,238 @@ Unified agent storage interface
 
 ---
 
+### OpenAIRealtimeAgentSessionEvents `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:79`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `event` | `event: (event: OpenAIRealtimeServerEvent) =&gt; void;` | - |
+| `audio` | `audio: (audio: Buffer) =&gt; void;` | - |
+| `'transcript:input'` | `'transcript:input': (transcript: string) =&gt; void;` | - |
+| `'transcript:output'` | `'transcript:output': (transcript: string) =&gt; void;` | - |
+| `'tool:start'` | `'tool:start': (call: { callId: string; name: string }) =&gt; void;` | - |
+| `'tool:complete'` | `'tool:complete': (result: ToolResult) =&gt; void;` | - |
+| `'mcp:approval'` | `'mcp:approval': (
+    request: OpenAIRealtimeMCPApprovalRequest,
+    decision: OpenAIRealtimeMCPApprovalDecision,
+  ) =&gt; void;` | - |
+| `'mcp:tools'` | `'mcp:tools': (event: OpenAIRealtimeServerEvent) =&gt; void;` | - |
+| `'mcp:call'` | `'mcp:call': (event: OpenAIRealtimeServerEvent) =&gt; void;` | - |
+| `usage` | `usage: (usage: OpenAIRealtimeAgentUsage) =&gt; void;` | - |
+| `'rate_limits'` | `'rate_limits': (rateLimits: unknown) =&gt; void;` | - |
+| `'session:expiring'` | `'session:expiring': () =&gt; void;` | - |
+| `backpressure` | `backpressure: (info: { bufferedAmount: number; limit: number }) =&gt; void;` | - |
+| `error` | `error: (error: Error) =&gt; void;` | - |
+| `close` | `close: (code: number, reason: string) =&gt; void;` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeAgentSessionOptions `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:47`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `agent` | `agent: Agent;` | - |
+| `session?` | `session?: Omit&lt;OpenAIRealtimeSessionConfig, 'type' | 'model'&gt;;` | Base Realtime session options. Agent instructions and local tools are merged into this object. |
+| `transport?` | `transport?: OpenAIRealtimeAgentTransport;` | Custom transport for WebRTC/SIP bridges and tests. Defaults to the connector-first WebSocket transport. |
+| `realtimeSessionFactory?` | `realtimeSessionFactory?: (
+    options: ConstructorParameters&lt;typeof OpenAIRealtimeSession&gt;[0],
+  ) =&gt; OpenAIRealtimeSession;` | Factory used when a custom WebSocket implementation is required. |
+| `safetyIdentifier?` | `safetyIdentifier?: string;` | - |
+| `contextSync?` | `contextSync?: 'per_turn' | 'initial';` | `per_turn` refreshes plugin/memory instructions before every model response
+and therefore manages response.create itself. `initial` keeps server VAD's
+automatic response behavior. Default: `per_turn`. |
+| `approveMCP?` | `approveMCP?: (
+    request: OpenAIRealtimeMCPApprovalRequest,
+  ) =&gt; Promise&lt;OpenAIRealtimeMCPApprovalDecision&gt; | OpenAIRealtimeMCPApprovalDecision;` | Called for provider-hosted MCP tools. Missing handlers reject approval requests. |
+| `sessionExpiryWarningMs?` | `sessionExpiryWarningMs?: number;` | Emit session:expiring before OpenAI's hard 60-minute limit. Default: 55 minutes. |
+
+</details>
+
+---
+
+### OpenAIRealtimeAgentTransport `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:18`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+
+Transport contract implemented by WebSocket, WebRTC data-channel, and SIP control adapters.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `connect()?`
+
+```typescript
+connect?(options?: { signal?: AbortSignal }): Promise&lt;OpenAIRealtimeServerEvent&gt;;
+```
+
+**Parameters:**
+- `options`: `{ signal?: AbortSignal | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;OpenAIRealtimeServerEvent&gt;`
+
+#### `updateSession()?`
+
+```typescript
+updateSession?(session: OpenAIRealtimeSessionConfig): void;
+```
+
+**Parameters:**
+- `session`: `OpenAIRealtimeSessionConfig`
+
+**Returns:** `void`
+
+#### `appendAudio()?`
+
+```typescript
+appendAudio?(audio: Buffer | string): boolean;
+```
+
+**Parameters:**
+- `audio`: `string | Buffer&lt;ArrayBufferLike&gt;`
+
+**Returns:** `boolean`
+
+#### `send()`
+
+```typescript
+send(event: OpenAIRealtimeClientEvent): void;
+```
+
+**Parameters:**
+- `event`: `OpenAIRealtimeClientEvent`
+
+**Returns:** `void`
+
+#### `close()`
+
+```typescript
+close(code?: number, reason?: string): void;
+```
+
+**Parameters:**
+- `code`: `number | undefined` *(optional)*
+- `reason`: `string | undefined` *(optional)*
+
+**Returns:** `void`
+
+#### `on()`
+
+```typescript
+on(event: 'event', handler: (event: OpenAIRealtimeServerEvent) =&gt; void): unknown;
+```
+
+**Parameters:**
+- `event`: `"event"`
+- `handler`: `(event: OpenAIRealtimeServerEvent) =&gt; void`
+
+**Returns:** `unknown`
+
+#### `on()`
+
+```typescript
+on(event: 'audio', handler: (audio: Buffer) =&gt; void): unknown;
+```
+
+**Parameters:**
+- `event`: `"audio"`
+- `handler`: `(audio: Buffer&lt;ArrayBufferLike&gt;) =&gt; void`
+
+**Returns:** `unknown`
+
+#### `on()`
+
+```typescript
+on(event: 'error', handler: (error: Error) =&gt; void): unknown;
+```
+
+**Parameters:**
+- `event`: `"error"`
+- `handler`: `(error: Error) =&gt; void`
+
+**Returns:** `unknown`
+
+#### `on()`
+
+```typescript
+on(event: 'close', handler: (code: number, reason: string) =&gt; void): unknown;
+```
+
+**Parameters:**
+- `event`: `"close"`
+- `handler`: `(code: number, reason: string) =&gt; void`
+
+**Returns:** `unknown`
+
+#### `on()`
+
+```typescript
+on(event: 'backpressure', handler: (info: { bufferedAmount: number; limit: number }) =&gt; void): unknown;
+```
+
+**Parameters:**
+- `event`: `"backpressure"`
+- `handler`: `(info: { bufferedAmount: number; limit: number; }) =&gt; void`
+
+**Returns:** `unknown`
+
+#### `off()?`
+
+```typescript
+off?(event: string, handler: (...args: any[]) =&gt; void): unknown;
+```
+
+**Parameters:**
+- `event`: `string`
+- `handler`: `(...args: any[]) =&gt; void`
+
+**Returns:** `unknown`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `isConnected` | `readonly isConnected: boolean;` | - |
+| `emitsOutputAudioFromEvents?` | `readonly emitsOutputAudioFromEvents?: boolean;` | Set when the transport already converts JSON output-audio events to `audio`. |
+
+</details>
+
+---
+
+### OpenAIRealtimeAgentUsage `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:72`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `input_audio_tokens` | `input_audio_tokens: number;` | - |
+| `output_audio_tokens` | `output_audio_tokens: number;` | - |
+| `input_text_tokens` | `input_text_tokens: number;` | - |
+| `output_text_tokens` | `output_text_tokens: number;` | - |
+
+</details>
+
+---
+
 ### OpenAIRealtimeConnectOptions `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:47`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:50`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -19579,6 +19974,40 @@ Unified agent storage interface
 | Property | Type | Description |
 |----------|------|-------------|
 | `signal?` | `signal?: AbortSignal;` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeMCPApprovalDecision `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:42`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `approve` | `approve: boolean;` | - |
+| `reason?` | `reason?: string;` | - |
+
+</details>
+
+---
+
+### OpenAIRealtimeMCPApprovalRequest `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:35`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+| `serverLabel?` | `serverLabel?: string;` | - |
+| `name` | `name: string;` | - |
+| `arguments` | `arguments: string;` | - |
 
 </details>
 
@@ -19639,7 +20068,7 @@ Unified agent storage interface
 
 ### OpenAIRealtimeSessionEvents `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:51`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:54`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -19650,6 +20079,7 @@ Unified agent storage interface
 | `audio` | `audio: (audio: Buffer) =&gt; void;` | Raw assistant audio when xAI binary output transport is enabled. |
 | `error` | `error: (error: Error) =&gt; void;` | - |
 | `close` | `close: (code: number, reason: string) =&gt; void;` | - |
+| `backpressure` | `backpressure: (info: { bufferedAmount: number; limit: number }) =&gt; void;` | - |
 
 </details>
 
@@ -19657,7 +20087,7 @@ Unified agent storage interface
 
 ### OpenAIRealtimeSessionOptions `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:22`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:23`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -19676,6 +20106,7 @@ Unified agent storage interface
 | `safetyIdentifier?` | `safetyIdentifier?: string;` | Stable, privacy-preserving end-user identifier sent as a header. |
 | `headers?` | `headers?: Record&lt;string, string&gt;;` | - |
 | `connectTimeoutMs?` | `connectTimeoutMs?: number;` | - |
+| `maxBufferedAmountBytes?` | `maxBufferedAmountBytes?: number;` | Stop accepting audio frames when WebSocket buffering exceeds this size. Default: 1 MiB. Set 0 to disable. |
 | `webSocketFactory?` | `webSocketFactory?: (
     url: string,
     options: { headers: Record&lt;string, string&gt;; signal: AbortSignal },
@@ -19898,7 +20329,7 @@ Full session state wrapper (includes metadata)
 
 ### VoiceSessionInfo `interface`
 
-📍 [`src/capabilities/voice/types.ts:102`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:107`](src/capabilities/voice/types.ts)
 
 Read-only snapshot of a voice session's state.
 Exposed to lifecycle hooks and event handlers.
@@ -19935,7 +20366,7 @@ type SessionIngestorDiligence = 'minimal' | 'normal' | 'thorough'
 
 ### SessionState `type`
 
-📍 [`src/capabilities/voice/types.ts:84`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:89`](src/capabilities/voice/types.ts)
 
 ```typescript
 type SessionState = | 'idle'        // Created, not yet connected
@@ -19957,7 +20388,11 @@ type SessionState = | 'idle'        // Created, not yet connected
 Create agent storage with defaults
 
 ```typescript
-export function createAgentStorage(options:
+export function createAgentStorage(options: {
+  memory?: IMemoryStorage;
+  plan?: IPlanStorage;
+  agent?: IAgentStateStorage;
+} = {}): IAgentStorage
 ```
 
 ---
@@ -20270,7 +20705,8 @@ Each identity gets its own tool set with unique name prefixes.
 static forIdentities(
     identities: AuthIdentity[],
     userId?: string,
-    options?:
+    options?: { registry?: IConnectorRegistry }
+  ): Map&lt;string, ToolFunction[]&gt;
 ```
 
 **Parameters:**
@@ -20279,18 +20715,6 @@ static forIdentities(
 - `options`: `{ registry?: IConnectorRegistry | undefined; } | undefined` *(optional)*
 
 **Returns:** `Map&lt;string, ToolFunction&lt;any, any&gt;[]&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `factories` | `factories: Map&lt;string, ServiceToolFactory&gt;` | Registry of service-specific tool factories |
-| `serviceTypeCache` | `serviceTypeCache: Map&lt;string, string | undefined&gt;` | Cache for detected service types (connector name -> service type) |
-| `toolCache` | `toolCache: Map&lt;string, ToolFunction&lt;any, any&gt;[]&gt;` | Cache for generated tools (cacheKey -> tools) |
-| `MAX_CACHE_SIZE` | `MAX_CACHE_SIZE: 100` | Maximum cache size to prevent memory issues |
 
 </details>
 
@@ -20450,15 +20874,6 @@ buildOverview(): string
 ```
 
 **Returns:** `string`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `handlers` | `handlers: Map&lt;string, IStoreHandler&gt;` | - |
 
 </details>
 
@@ -20655,7 +21070,7 @@ NOTE: The dynamic require() path fails in bundled environments (Meteor, Webpack)
 Call setConnectorToolsModule() at app startup to inject the module explicitly.
 
 ```typescript
-static getConnectorToolsModule():
+static getConnectorToolsModule(): { ConnectorTools: any } | null
 ```
 
 **Returns:** `{ ConnectorTools: any; } | null`
@@ -20668,7 +21083,7 @@ Use this in bundled environments (Meteor, Webpack, etc.) where the lazy
 require('../../tools/connector/ConnectorTools.js') fails due to path resolution.
 
 ```typescript
-static setConnectorToolsModule(mod:
+static setConnectorToolsModule(mod: { ConnectorTools: any }): void
 ```
 
 **Parameters:**
@@ -20810,7 +21225,7 @@ static getAllCatalogTools(): CatalogToolEntry[]
 Find a tool by name across all categories.
 
 ```typescript
-static findTool(name: string):
+static findTool(name: string): { category: string; entry: CatalogToolEntry } | undefined
 ```
 
 **Parameters:**
@@ -20854,7 +21269,10 @@ per-account categories (e.g., 'connector:microsoft:work', 'connector:microsoft:p
 Without accountIds, falls back to ConnectorTools.discoverAll() for backward compatibility.
 
 ```typescript
-static discoverConnectorCategories(options?:
+static discoverConnectorCategories(options?: {
+    scope?: ToolCategoryScope;
+    identities?: Array&lt;{ connector: string; accountId?: string }&gt;;
+  }): ConnectorCategoryInfo[]
 ```
 
 **Parameters:**
@@ -20871,7 +21289,7 @@ Supports both legacy format ('connector:github') and multi-account format
 account-prefixed tools via ConnectorTools.for(connectorName, { accountId }).
 
 ```typescript
-static resolveConnectorCategoryTools(category: string): Array&lt;
+static resolveConnectorCategoryTools(category: string): Array&lt;{ tool: ToolFunction; name: string }&gt;
 ```
 
 **Parameters:**
@@ -20889,7 +21307,8 @@ Used by app-level executors (e.g., V25's OneRingAgentExecutor).
 ```typescript
 static resolveTools(
     toolNames: string[],
-    options?:
+    options?: { includeConnectors?: boolean; userId?: string; context?: Record&lt;string, unknown&gt; },
+  ): ToolFunction[]
 ```
 
 **Parameters:**
@@ -20909,7 +21328,8 @@ Supports factory-based tool creation via `createTool` when context is provided.
 static resolveToolsGrouped(
     toolNames: string[],
     context?: Record&lt;string, unknown&gt;,
-    options?:
+    options?: { includeConnectors?: boolean },
+  ): { plain: ToolFunction[]; byConnector: Map&lt;string, ToolFunction[]&gt; }
 ```
 
 **Parameters:**
@@ -20956,15 +21376,6 @@ static reset(): void
 ```
 
 **Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `BUILTIN_DESCRIPTIONS` | `BUILTIN_DESCRIPTIONS: Record&lt;string, string&gt;` | - |
 
 </details>
 
@@ -21023,7 +21434,7 @@ const result = await pipeline.execute(myTool, { arg: 'value' });
 #### `constructor`
 
 ```typescript
-constructor(options: ToolExecutionPipelineOptions =
+constructor(options: ToolExecutionPipelineOptions = {})
 ```
 
 **Parameters:**
@@ -21118,17 +21529,6 @@ async execute(tool: ToolFunction, args: unknown): Promise&lt;unknown&gt;
 - `args`: `unknown`
 
 **Returns:** `Promise&lt;unknown&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `plugins` | `plugins: Map&lt;string, IToolExecutionPlugin&gt;` | - |
-| `sortedPlugins` | `sortedPlugins: IToolExecutionPlugin[]` | - |
-| `useRandomUUID` | `useRandomUUID: boolean` | - |
 
 </details>
 
@@ -21247,7 +21647,7 @@ hasPermissionEnforcement(): boolean
 Register a tool with optional configuration
 
 ```typescript
-register(tool: ToolFunction, options: ToolOptions =
+register(tool: ToolFunction, options: ToolOptions = {}): void
 ```
 
 **Parameters:**
@@ -21261,7 +21661,7 @@ register(tool: ToolFunction, options: ToolOptions =
 Register multiple tools at once
 
 ```typescript
-registerMany(tools: ToolFunction[], options: Omit&lt;ToolOptions, 'conditions'&gt; =
+registerMany(tools: ToolFunction[], options: Omit&lt;ToolOptions, 'conditions'&gt; = {}): void
 ```
 
 **Parameters:**
@@ -21277,7 +21677,7 @@ Sets `source: 'connector:<connectorName>'` (or `'connector:<name>:<accountId>'` 
 so agent-level filtering can restrict which connector tools are visible to a given agent.
 
 ```typescript
-registerConnectorTools(connectorName: string, tools: ToolFunction[], options: Omit&lt;ToolOptions, 'source'&gt; &
+registerConnectorTools(connectorName: string, tools: ToolFunction[], options: Omit&lt;ToolOptions, 'source'&gt; & { accountId?: string } = {}): void
 ```
 
 **Parameters:**
@@ -21432,7 +21832,7 @@ getNamespaces(): string[]
 Create a namespace with tools
 
 ```typescript
-createNamespace(namespace: string, tools: ToolFunction[], options: Omit&lt;ToolOptions, 'namespace'&gt; =
+createNamespace(namespace: string, tools: ToolFunction[], options: Omit&lt;ToolOptions, 'namespace'&gt; = {}): void
 ```
 
 **Parameters:**
@@ -21867,19 +22267,6 @@ loadState(state: SerializedToolState): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `registry` | `registry: Map&lt;string, ToolRegistration&gt;` | - |
-| `namespaceIndex` | `namespaceIndex: Map&lt;string, Set&lt;string&gt;&gt;` | - |
-| `circuitBreakers` | `circuitBreakers: Map&lt;string, CircuitBreaker&lt;any&gt;&gt;` | - |
-| `toolLogger` | `toolLogger: FrameworkLogger` | - |
-| `pipeline` | `pipeline: ToolExecutionPipeline` | - |
-
-</details>
-
 ---
 
 ### ToolNotFoundError `class`
@@ -22267,7 +22654,7 @@ loadState(state: SerializedApprovalState): void
 Get defaults
 
 ```typescript
-getDefaults():
+getDefaults(): { scope: PermissionScope; riskLevel: RiskLevel }
 ```
 
 **Returns:** `{ scope: PermissionScope; riskLevel: RiskLevel; }`
@@ -22277,7 +22664,7 @@ getDefaults():
 Set defaults
 
 ```typescript
-setDefaults(defaults:
+setDefaults(defaults: { scope?: PermissionScope; riskLevel?: RiskLevel }): void
 ```
 
 **Parameters:**
@@ -22290,7 +22677,12 @@ setDefaults(defaults:
 Get summary statistics
 
 ```typescript
-getStats():
+getStats(): {
+    approvedCount: number;
+    allowlistedCount: number;
+    blocklistedCount: number;
+    configuredCount: number;
+  }
 ```
 
 **Returns:** `{ approvedCount: number; allowlistedCount: number; blocklistedCount: number; configuredCount: number; }`
@@ -22314,21 +22706,6 @@ destroy(): void
 ```
 
 **Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `approvalCache` | `approvalCache: Map&lt;string, ApprovalCacheEntry&gt;` | - |
-| `allowlist` | `allowlist: Set&lt;string&gt;` | - |
-| `blocklist` | `blocklist: Set&lt;string&gt;` | - |
-| `toolConfigs` | `toolConfigs: Map&lt;string, ToolPermissionConfig&gt;` | - |
-| `defaultScope` | `defaultScope: PermissionScope` | - |
-| `defaultRiskLevel` | `defaultRiskLevel: RiskLevel` | - |
-| `onApprovalRequired?` | `onApprovalRequired: ((context: any) =&gt; Promise&lt;ApprovalDecision&gt;) | undefined` | - |
 
 </details>
 
@@ -24544,7 +24921,7 @@ export function createAddReactionTool(
 Create a Bash tool with the given configuration
 
 ```typescript
-export function createBashTool(config: ShellToolConfig =
+export function createBashTool(config: ShellToolConfig = {}): ToolFunction&lt;BashArgs, BashResult&gt;
 ```
 
 ---
@@ -24782,7 +25159,7 @@ export function createDraftEmailTool(
 Create an Edit File tool with the given configuration
 
 ```typescript
-export function createEditFileTool(config: FilesystemToolConfig =
+export function createEditFileTool(config: FilesystemToolConfig = {}): ToolFunction&lt;EditFileArgs, EditFileResult&gt;
 ```
 
 ---
@@ -24991,7 +25368,7 @@ export function createGitHubReadFileTool(
 Create a Glob tool with the given configuration
 
 ```typescript
-export function createGlobTool(config: FilesystemToolConfig =
+export function createGlobTool(config: FilesystemToolConfig = {}): ToolFunction&lt;GlobArgs, GlobResult&gt;
 ```
 
 ---
@@ -25013,7 +25390,7 @@ export function createGraphTool(deps: MemoryToolDeps): ToolFunction&lt;GraphArgs
 Create a Grep tool with the given configuration
 
 ```typescript
-export function createGrepTool(config: FilesystemToolConfig =
+export function createGrepTool(config: FilesystemToolConfig = {}): ToolFunction&lt;GrepArgs, GrepResult&gt;
 ```
 
 ---
@@ -25063,7 +25440,7 @@ export function createListChannelsTool(
 Create a List Directory tool with the given configuration
 
 ```typescript
-export function createListDirectoryTool(config: FilesystemToolConfig =
+export function createListDirectoryTool(config: FilesystemToolConfig = {}): ToolFunction&lt;ListDirectoryArgs, ListDirectoryResult&gt;
 ```
 
 ---
@@ -25205,7 +25582,7 @@ export function createPRFilesTool(
 Create a Read File tool with the given configuration
 
 ```typescript
-export function createReadFileTool(config: FilesystemToolConfig =
+export function createReadFileTool(config: FilesystemToolConfig = {}): ToolFunction&lt;ReadFileArgs, ReadFileResult&gt;
 ```
 
 ---
@@ -25244,7 +25621,8 @@ saves the session, persists the correlation, and returns
 ```typescript
 export function createRequestUserInputTool(
   delivery: IUserInteractionDelivery,
-  options: CreateRequestUserInputToolOptions =
+  options: CreateRequestUserInputToolOptions = {},
+): ToolFunction&lt;RequestUserInputToolArgs, SuspendSignal&gt;
 ```
 
 ---
@@ -25442,7 +25820,7 @@ export function createUpsertEntityTool(
 Create a Write File tool with the given configuration
 
 ```typescript
-export function createWriteFileTool(config: FilesystemToolConfig =
+export function createWriteFileTool(config: FilesystemToolConfig = {}): ToolFunction&lt;WriteFileArgs, WriteFileResult&gt;
 ```
 
 ---
@@ -25686,7 +26064,7 @@ but forgetting accountId.
 export function resolveConnectorContext(
   context: ToolContext | undefined,
   fallbackUserId?: string,
-):
+): { userId: string | undefined; accountId: string | undefined }
 ```
 
 ---
@@ -25824,7 +26202,7 @@ Yields tagged objects so consumers can distinguish them
 ```typescript
 static async *textAndThinking(
     stream: AsyncIterableIterator&lt;StreamEvent&gt;
-  ): AsyncIterableIterator&lt;
+  ): AsyncIterableIterator&lt;{ type: 'text' | 'thinking'; delta: string }&gt;
 ```
 
 **Parameters:**
@@ -26024,7 +26402,7 @@ getAllReasoning(): string
 Reasoning blocks with provider item IDs, used by stateless replay APIs.
 
 ```typescript
-getReasoningEntries(): Array&lt;
+getReasoningEntries(): Array&lt;{ itemId: string; thinking: string }&gt;
 ```
 
 **Returns:** `{ itemId: string; thinking: string; }[]`
@@ -26303,11 +26681,6 @@ createSnapshot()
 | `responseId` | `responseId: string` | - |
 | `model` | `model: string` | - |
 | `createdAt` | `createdAt: number` | - |
-| `textBuffers` | `textBuffers: Map&lt;string, string[]&gt;` | - |
-| `reasoningBuffers` | `reasoningBuffers: Map&lt;string, string[]&gt;` | - |
-| `toolCallBuffers` | `toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;` | - |
-| `completedToolCalls` | `completedToolCalls: ToolCall[]` | - |
-| `toolResults` | `toolResults: Map&lt;string, any&gt;` | - |
 | `currentIteration` | `currentIteration: number` | - |
 | `usage` | `usage: TokenUsage` | - |
 | `status` | `status: "in_progress" | "completed" | "failed" | "incomplete"` | - |
@@ -26327,20 +26700,6 @@ createSnapshot()
 ### VoiceStream `class`
 
 📍 [`src/capabilities/speech/VoiceStream.ts:55`](src/capabilities/speech/VoiceStream.ts)
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(config: VoiceStreamConfig)
-```
-
-**Parameters:**
-- `config`: `VoiceStreamConfig`
-
-</details>
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -26413,35 +26772,6 @@ destroy(): void
 ```
 
 **Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `tts` | `tts: TextToSpeech` | - |
-| `chunker` | `chunker: IChunkingStrategy` | - |
-| `format` | `format: string` | - |
-| `speed` | `speed: number` | - |
-| `maxConcurrentTTS` | `maxConcurrentTTS: number` | - |
-| `maxQueuedChunks` | `maxQueuedChunks: number` | - |
-| `vendorOptions?` | `vendorOptions: Record&lt;string, unknown&gt; | undefined` | - |
-| `streaming` | `streaming: boolean` | - |
-| `chunkIndex` | `chunkIndex: number` | - |
-| `totalCharacters` | `totalCharacters: number` | - |
-| `totalDuration` | `totalDuration: number` | - |
-| `activeJobs` | `activeJobs: Map&lt;number, TTSJob&gt;` | - |
-| `activeTTSCount` | `activeTTSCount: number` | - |
-| `interrupted` | `interrupted: boolean` | - |
-| `lastResponseId` | `lastResponseId: string` | - |
-| `slotWaiters` | `slotWaiters: (() =&gt; void)[]` | - |
-| `audioEventBuffer` | `audioEventBuffer: StreamEvent[]` | - |
-| `bufferNotify` | `bufferNotify: (() =&gt; void) | null` | - |
-| `queueWaiters` | `queueWaiters: (() =&gt; void)[]` | - |
-| `nextEmitChunkIndex` | `nextEmitChunkIndex: number` | Next chunk_index we're allowed to emit (ordering gate) |
-| `holdBackBuffer` | `holdBackBuffer: StreamEvent[]` | Events from future chunks held back until their turn |
 
 </details>
 
@@ -27490,7 +27820,26 @@ export function calculateCost(
   model: string,
   inputTokens: number,
   outputTokens: number,
-  options?:
+  options?: {
+    /** @deprecated Prefer cachedInputTokens for mixed cached/uncached requests. */
+    useCachedInput?: boolean;
+    cachedInputTokens?: number;
+    cacheCreationInputTokens?: number;
+    cacheCreationDetails?: {
+      shortTtlInputTokens?: number;
+      extendedTtlInputTokens?: number;
+    };
+    processingMode?: ProcessingMode;
+    /** Override automatic long-context selection for estimates and quotes. */
+    contextTier?: 'auto' | 'standard' | 'long';
+    /** Price using the selected modality when the registry provides it. */
+    modality?: 'text' | 'audio' | 'image';
+    /** Duration for models billed per minute instead of per token. */
+    audioMinutes?: number;
+    /** Number of billable text-input events for event-priced realtime agents. */
+    inputMessages?: number;
+  }
+): number | null
 ```
 
 ---
@@ -27505,7 +27854,8 @@ Calculate embedding cost for a given model and token count
 export function calculateEmbeddingCost(
   modelName: string,
   tokens: number,
-  options: EmbeddingCostOptions =
+  options: EmbeddingCostOptions = {}
+): number | null
 ```
 
 ---
@@ -31411,15 +31761,6 @@ async removeAccount(userId: string, accountId: string): Promise&lt;boolean&gt;
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `flow` | `flow: AuthCodePKCEFlow | ClientCredentialsFlow | JWTBearerFlow | StaticTokenFlow` | - |
-
-</details>
-
 ---
 
 ### AuthTemplate `interface`
@@ -32370,7 +32711,8 @@ Generic circuit breaker for any async operation
 ```typescript
 constructor(
     public readonly name: string,
-    config: Partial&lt;CircuitBreakerConfig&gt; =
+    config: Partial&lt;CircuitBreakerConfig&gt; = {}
+  )
 ```
 
 **Parameters:**
@@ -32444,27 +32786,6 @@ getConfig(): CircuitBreakerConfig
 ```
 
 **Returns:** `CircuitBreakerConfig`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `state` | `state: CircuitState` | - |
-| `config` | `config: CircuitBreakerConfig` | - |
-| `failures` | `failures: FailureRecord[]` | - |
-| `lastError` | `lastError: string` | - |
-| `consecutiveSuccesses` | `consecutiveSuccesses: number` | - |
-| `openedAt?` | `openedAt: number | undefined` | - |
-| `lastStateChange` | `lastStateChange: number` | - |
-| `totalRequests` | `totalRequests: number` | - |
-| `successCount` | `successCount: number` | - |
-| `failureCount` | `failureCount: number` | - |
-| `rejectedCount` | `rejectedCount: number` | - |
-| `lastFailureTime?` | `lastFailureTime: number | undefined` | - |
-| `lastSuccessTime?` | `lastSuccessTime: number | undefined` | - |
 
 </details>
 
@@ -32577,15 +32898,6 @@ histogram(metric: string, value: number, tags?: MetricTags): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `prefix` | `prefix: string` | - |
-
-</details>
-
 ---
 
 ### FrameworkLogger `class`
@@ -32600,7 +32912,7 @@ Framework logger
 #### `constructor`
 
 ```typescript
-constructor(config: LoggerConfig =
+constructor(config: LoggerConfig = {})
 ```
 
 **Parameters:**
@@ -32742,18 +33054,6 @@ isLevelEnabled(level: LogLevel): boolean
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `config` | `config: LoggerConfig` | - |
-| `context` | `context: Record&lt;string, any&gt;` | - |
-| `levelValue` | `levelValue: number` | - |
-| `fileStream?` | `fileStream: WriteStream | undefined` | - |
-
-</details>
-
 ---
 
 ### NoOpMetrics `class`
@@ -32842,7 +33142,7 @@ when the time window expires.
 #### `constructor`
 
 ```typescript
-constructor(config: Partial&lt;RateLimiterConfig&gt; =
+constructor(config: Partial&lt;RateLimiterConfig&gt; = {})
 ```
 
 **Parameters:**
@@ -32932,21 +33232,6 @@ getConfig(): Required&lt;RateLimiterConfig&gt;
 ```
 
 **Returns:** `Required&lt;RateLimiterConfig&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `tokens` | `tokens: number` | - |
-| `lastRefill` | `lastRefill: number` | - |
-| `config` | `config: Required&lt;RateLimiterConfig&gt;` | - |
-| `waitQueue` | `waitQueue: { resolve: () =&gt; void; reject: (e: Error) =&gt; void; timeout?: NodeJS.Timeout | undefined; }[]` | - |
-| `totalRequests` | `totalRequests: number` | - |
-| `throttledRequests` | `throttledRequests: number` | - |
-| `totalWaitMs` | `totalWaitMs: number` | - |
 
 </details>
 
@@ -33546,7 +33831,7 @@ getDegradationSummary(): string
 Get the top token consumers
 
 ```typescript
-getTopConsumers(count = 5): Array&lt;
+getTopConsumers(count = 5): Array&lt;{ component: string; tokens: number }&gt;
 ```
 
 **Parameters:**
@@ -33626,7 +33911,7 @@ const result = await errorHandler.executeWithRetry(
 #### `constructor`
 
 ```typescript
-constructor(config: ErrorHandlerConfig =
+constructor(config: ErrorHandlerConfig = {})
 ```
 
 **Parameters:**
@@ -33748,16 +34033,6 @@ getConfig(): Readonly&lt;Required&lt;ErrorHandlerConfig&gt;&gt;
 ```
 
 **Returns:** `Readonly&lt;Required&lt;ErrorHandlerConfig&gt;&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `config` | `config: Required&lt;ErrorHandlerConfig&gt;` | - |
-| `logger` | `logger: FrameworkLogger` | - |
 
 </details>
 
@@ -34722,15 +34997,6 @@ count(): number
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `messages` | `messages: InputItem[]` | - |
-
-</details>
-
 ---
 
 ### JSONExtractionResult `interface`
@@ -34805,7 +35071,8 @@ Convert a DocumentResult to Content[] for LLM input.
 ```typescript
 export function documentToContent(
   result: DocumentResult,
-  options: DocumentToContentOptions =
+  options: DocumentToContentOptions = {}
+): Content[]
 ```
 
 ---
@@ -34874,7 +35141,12 @@ Extract a number from text, trying JSON first, then regex patterns
 export function extractNumber(
   text: string,
   patterns: RegExp[] = [
-    /(\d
+    /(\d{1,3})%?\s*(?:complete|score|percent)/i,
+    /(?:score|completion|rating)[:\s]+(\d{1,3})/i,
+    /(\d{1,3})\s*(?:out of|\/)\s*100/i,
+  ],
+  defaultValue: number = 0
+): number
 ```
 
 **Example:**
@@ -34909,7 +35181,8 @@ One-call convenience: read a document and convert to Content[] for LLM input.
 ```typescript
 export async function readDocumentAsContent(
   source: DocumentSource | string,
-  options: DocumentReadOptions & DocumentToContentOptions =
+  options: DocumentReadOptions & DocumentToContentOptions = {}
+): Promise&lt;Content[]&gt;
 ```
 
 **Example:**
@@ -38442,7 +38715,7 @@ Validate API key format and presence
 Can be overridden by providers with specific key formats
 
 ```typescript
-protected validateApiKey():
+protected validateApiKey(): { isValid: boolean; warning?: string }
 ```
 
 **Returns:** `{ isValid: boolean; warning?: string | undefined; }`
@@ -38452,7 +38725,7 @@ protected validateApiKey():
 Override this method in provider implementations for specific key format validation
 
 ```typescript
-protected validateProviderSpecificKeyFormat(_apiKey: string):
+protected validateProviderSpecificKeyFormat(_apiKey: string): { isValid: boolean; warning?: string }
 ```
 
 **Parameters:**
@@ -38760,20 +39033,6 @@ ctx.addAssistantResponse(response.output);
 ```
 
 <details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(config: AgentContextNextGenConfig)
-```
-
-**Parameters:**
-- `config`: `AgentContextNextGenConfig`
-
-</details>
-
-<details>
 <summary><strong>Static Methods</strong></summary>
 
 #### `static create()`
@@ -38906,7 +39165,7 @@ Register a plugin.
 Plugin's tools are automatically registered with ToolManager.
 
 ```typescript
-registerPlugin(plugin: IContextPluginNextGen, options?:
+registerPlugin(plugin: IContextPluginNextGen, options?: { skipDestroyOnContextDestroy?: boolean }): void
 ```
 
 **Parameters:**
@@ -39143,7 +39402,7 @@ Load raw state from storage without restoring.
 Used by BaseAgent for custom state restoration.
 
 ```typescript
-async loadRaw(sessionId: string): Promise&lt;
+async loadRaw(sessionId: string): Promise&lt;{ state: SerializedContextState; stored: StoredContextSession } | null&gt;
 ```
 
 **Parameters:**
@@ -39227,7 +39486,7 @@ into plugin internals. Plugin data is auto-discovered from the plugin
 registry — new/custom plugins appear automatically.
 
 ```typescript
-async getSnapshot(toolStats?:
+async getSnapshot(toolStats?: { mostUsed?: Array&lt;{ name: string; count: number }&gt; }): Promise&lt;IContextSnapshot&gt;
 ```
 
 **Parameters:**
@@ -39307,17 +39566,6 @@ reset(): void
 ```
 
 **Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `buffer` | `buffer: Map&lt;number, AudioChunkReadyEvent&gt;` | - |
-| `nextPlayIndex` | `nextPlayIndex: number` | - |
-| `onReady` | `onReady: AudioChunkPlaybackCallback` | - |
 
 </details>
 
@@ -39652,7 +39900,7 @@ constructor(readonly connector: Connector)
 #### `search()`
 
 ```typescript
-async search(query: string, options: SearchOptions =
+async search(query: string, options: SearchOptions = {}): Promise&lt;SearchResponse&gt;
 ```
 
 **Parameters:**
@@ -39684,7 +39932,7 @@ async search(query: string, options: SearchOptions =
 #### `constructor`
 
 ```typescript
-constructor(opts: CalendarSignalAdapterOptions =
+constructor(opts: CalendarSignalAdapterOptions = {})
 ```
 
 **Parameters:**
@@ -39714,7 +39962,6 @@ extract(raw: CalendarSignal): ExtractedSignal
 | Property | Type | Description |
 |----------|------|-------------|
 | `kind` | `kind: "calendar"` | - |
-| `skipDeclinedAttendance` | `skipDeclinedAttendance: boolean` | - |
 
 </details>
 
@@ -39748,7 +39995,14 @@ resolving one from the Connector registry. Intended for callers that
 already have an IEmbeddingProvider (testing, unusual plumbing).
 
 ```typescript
-static withProvider(args:
+static withProvider(args: {
+    provider: IEmbeddingProvider;
+    model: string;
+    dimensions: number;
+    requestedDimensions?: number;
+    maxInputTokens?: number;
+    oversizeInputReducer?: OversizeEmbeddingReducer;
+  }): ConnectorEmbedder
 ```
 
 **Parameters:**
@@ -39791,11 +40045,6 @@ async embedBatch(texts: string[]): Promise&lt;number[][]&gt;
 | Property | Type | Description |
 |----------|------|-------------|
 | `dimensions` | `dimensions: number` | - |
-| `provider` | `provider: IEmbeddingProvider` | - |
-| `model` | `model: string` | - |
-| `requestedDimensions?` | `requestedDimensions: number | undefined` | - |
-| `maxInputTokens?` | `maxInputTokens: number | undefined` | - |
-| `oversizeInputReducer?` | `oversizeInputReducer: OversizeEmbeddingReducer | undefined` | - |
 
 </details>
 
@@ -39829,7 +40078,11 @@ callers with their own LLM plumbing. The object must expose `runDirect`
 (returning `{ output_text }`) and `destroy`.
 
 ```typescript
-static withAgent(args:
+static withAgent(args: {
+    agent: { runDirect: Agent['runDirect']; destroy: Agent['destroy'] };
+    temperature?: number;
+    maxOutputTokens?: number;
+  }): ConnectorExtractor
 ```
 
 **Parameters:**
@@ -39863,17 +40116,6 @@ destroy(): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `agent` | `agent: Agent` | - |
-| `temperature` | `temperature: number` | - |
-| `maxOutputTokens` | `maxOutputTokens: number | undefined` | - |
-
-</details>
-
 ---
 
 ### ConnectorProfileGenerator `class`
@@ -39903,7 +40145,12 @@ Construct from a pre-built agent-like object. Intended for testing and
 unusual callers that already have their own LLM plumbing.
 
 ```typescript
-static withAgent(args:
+static withAgent(args: {
+    agent: { runDirect: Agent['runDirect']; destroy: Agent['destroy'] };
+    promptTemplate?: (ctx: PromptContext) =&gt; string;
+    temperature?: number;
+    maxOutputTokens?: number;
+  }): ConnectorProfileGenerator
 ```
 
 **Parameters:**
@@ -39921,7 +40168,7 @@ static withAgent(args:
 ```typescript
 async generate(
     input: ProfileGeneratorInput,
-  ): Promise&lt;
+  ): Promise&lt;{ details: string; summaryForEmbedding: string }&gt;
 ```
 
 **Parameters:**
@@ -39941,18 +40188,6 @@ destroy(): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `agent` | `agent: Agent` | - |
-| `promptFn` | `promptFn: (ctx: ProfileGeneratorInput) =&gt; string` | - |
-| `temperature` | `temperature: number` | - |
-| `maxOutputTokens` | `maxOutputTokens: number | undefined` | - |
-
-</details>
-
 ---
 
 ### DeepSeekAPI `class`
@@ -39960,20 +40195,6 @@ destroy(): void
 📍 [`src/infrastructure/providers/deepseek/DeepSeekAPI.ts:15`](src/infrastructure/providers/deepseek/DeepSeekAPI.ts)
 
 Connector-backed access to DeepSeek account and completion APIs.
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(private readonly provider: DeepSeekTextProvider)
-```
-
-**Parameters:**
-- `provider`: `DeepSeekTextProvider`
-
-</details>
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -40133,20 +40354,6 @@ console.log(result.pieces); // DocumentPiece[]
 ```
 
 <details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(config: DocumentReaderConfig =
-```
-
-**Parameters:**
-- `config`: `DocumentReaderConfig` *(optional)* (default: `{}`)
-
-</details>
-
-<details>
 <summary><strong>Static Methods</strong></summary>
 
 #### `static create()`
@@ -40154,7 +40361,7 @@ private constructor(config: DocumentReaderConfig =
 Create a new DocumentReader instance
 
 ```typescript
-static create(config: DocumentReaderConfig =
+static create(config: DocumentReaderConfig = {}): DocumentReader
 ```
 
 **Parameters:**
@@ -40188,7 +40395,8 @@ Read a document from any source
 ```typescript
 async read(
     source: DocumentSource | string,
-    options: DocumentReadOptions =
+    options: DocumentReadOptions = {}
+  ): Promise&lt;DocumentResult&gt;
 ```
 
 **Parameters:**
@@ -40196,16 +40404,6 @@ async read(
 - `options`: `DocumentReadOptions` *(optional)* (default: `{}`)
 
 **Returns:** `Promise&lt;DocumentResult&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `handlers` | `handlers: Map&lt;DocumentFamily, IFormatHandler&gt;` | - |
-| `config` | `config: DocumentReaderConfig` | - |
 
 </details>
 
@@ -40221,7 +40419,7 @@ async read(
 #### `constructor`
 
 ```typescript
-constructor(opts: EmailSignalAdapterOptions =
+constructor(opts: EmailSignalAdapterOptions = {})
 ```
 
 **Parameters:**
@@ -40251,8 +40449,6 @@ extract(raw: EmailSignal): ExtractedSignal
 | Property | Type | Description |
 |----------|------|-------------|
 | `kind` | `kind: "email"` | - |
-| `seedOrganizations` | `seedOrganizations: boolean` | - |
-| `freeProviders` | `freeProviders: Set&lt;string&gt;` | - |
 
 </details>
 
@@ -40263,22 +40459,6 @@ extract(raw: EmailSignal): ExtractedSignal
 📍 [`src/capabilities/embeddings/Embeddings.ts:57`](src/capabilities/embeddings/Embeddings.ts)
 
 Embeddings capability class
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(connector: Connector, model?: string, dimensions?: number)
-```
-
-**Parameters:**
-- `connector`: `Connector`
-- `model`: `string | undefined` *(optional)*
-- `dimensions`: `number | undefined` *(optional)*
-
-</details>
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -40308,7 +40488,13 @@ Generate embeddings for one or more inputs
 ```typescript
 async embed(
     input: string | string[],
-    options?:
+    options?: {
+      model?: string;
+      dimensions?: number;
+      encodingFormat?: 'float' | 'base64';
+      vendorOptions?: Record&lt;string, unknown&gt;;
+    }
+  ): Promise&lt;EmbeddingResponse&gt;
 ```
 
 **Parameters:**
@@ -40325,7 +40511,12 @@ Currently supported by Google's Gemini Embedding 2 model.
 ```typescript
 async embedMultimodal(
     content: EmbeddingContentPart[],
-    options?:
+    options?: {
+      model?: string;
+      dimensions?: number;
+      vendorOptions?: Record&lt;string, unknown&gt;;
+    }
+  ): Promise&lt;EmbeddingResponse&gt;
 ```
 
 **Parameters:**
@@ -40379,18 +40570,6 @@ getConnector(): Connector
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `provider` | `provider: IEmbeddingProvider` | - |
-| `connector` | `connector: Connector` | - |
-| `defaultModel` | `defaultModel: string` | - |
-| `defaultDimensions?` | `defaultDimensions: number | undefined` | - |
-
-</details>
-
 ---
 
 ### EnergyVAD `class`
@@ -40432,20 +40611,6 @@ reset(): void
 ```
 
 **Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `config` | `config: Required&lt;EnergyVADConfig&gt;` | - |
-| `isSpeaking` | `isSpeaking: boolean` | - |
-| `consecutiveSpeechFrames` | `consecutiveSpeechFrames: number` | - |
-| `speechStartTime` | `speechStartTime: number` | - |
-| `lastSpeechTime` | `lastSpeechTime: number` | - |
-| `nonPcmWarned` | `nonPcmWarned: boolean` | - |
 
 </details>
 
@@ -40520,21 +40685,6 @@ async upsertBySurface(
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `autoResolveThreshold` | `autoResolveThreshold: number` | - |
-| `semanticEnabled` | `semanticEnabled: boolean` | - |
-| `displayNameConfidence` | `displayNameConfidence: number` | - |
-| `aliasConfidence` | `aliasConfidence: number` | - |
-| `semanticAutoResolveTypes` | `semanticAutoResolveTypes: ReadonlySet&lt;string&gt;` | - |
-| `semanticConfidenceCap` | `semanticConfidenceCap: number` | - |
-| `semanticMinScore` | `semanticMinScore: number` | - |
-
-</details>
-
 ---
 
 ### EventEmitterTrigger `class`
@@ -40582,15 +40732,6 @@ destroy(): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `listeners` | `listeners: Map&lt;string, Set&lt;(payload: unknown) =&gt; void | Promise&lt;void&gt;&gt;&gt;` | - |
-
-</details>
-
 ---
 
 ### ExecutionContext `class`
@@ -40605,7 +40746,8 @@ destroy(): void
 ```typescript
 constructor(
     executionId: string,
-    config: ExecutionContextConfig =
+    config: ExecutionContextConfig = {}
+  )
 ```
 
 **Parameters:**
@@ -40710,7 +40852,11 @@ addToolResult(result: ToolResult): void
 Check resource limits
 
 ```typescript
-checkLimits(limits?:
+checkLimits(limits?: {
+    maxExecutionTime?: number;
+    maxToolCalls?: number;
+    maxContextSize?: number;
+  }): void
 ```
 
 **Parameters:**
@@ -40756,11 +40902,7 @@ getSummary()
 | `cancelled` | `cancelled: boolean` | - |
 | `cancelReason?` | `cancelReason: string | undefined` | - |
 | `metadata` | `metadata: Map&lt;string, any&gt;` | - |
-| `config` | `config: ExecutionContextConfig` | - |
-| `iterations` | `iterations: IterationRecord[]` | - |
-| `iterationSummaries` | `iterationSummaries: IterationSummary[]` | - |
 | `metrics` | `metrics: ExecutionMetrics` | - |
-| `auditTrail` | `auditTrail: AuditEntry[]` | - |
 
 </details>
 
@@ -40809,17 +40951,6 @@ async resolveAndIngest(
 - `opts`: `ExtractionResolverOptions | undefined` *(optional)*
 
 **Returns:** `Promise&lt;IngestionResult&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `warnedNoSourceObservedAt` | `warnedNoSourceObservedAt: boolean` | Latched after the first `sourceObservedAt`-missing warning so callers
-don't drown logs on steady-state ingest. The first warning is the
-actionable one; the next 10k aren't. |
 
 </details>
 
@@ -41011,7 +41142,10 @@ async referCall(callId: string, targetUri: string): Promise&lt;void&gt;
 
 ```typescript
 constructor(
-    config: HookConfig =
+    config: HookConfig = {},
+    emitter: EventEmitter,
+    errorHandling?: { maxConsecutiveErrors?: number }
+  )
 ```
 
 **Parameters:**
@@ -41143,21 +41277,6 @@ getDisabledHooks(): string[]
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `hooks` | `hooks: Map&lt;"before:execution" | "after:execution" | "before:llm" | "after:llm" | "before:tool" | "after:tool" | "approve:tool" | "pause:check", Hook&lt;any, any&gt;[]&gt;` | - |
-| `timeout` | `timeout: number` | - |
-| `parallel` | `parallel: boolean` | - |
-| `hookErrorCounts` | `hookErrorCounts: Map&lt;string, number&gt;` | - |
-| `disabledHooks` | `disabledHooks: Set&lt;string&gt;` | - |
-| `maxConsecutiveErrors` | `maxConsecutiveErrors: number` | - |
-| `emitter` | `emitter: EventEmitter&lt;string | symbol, any&gt;` | - |
-
-</details>
-
 ---
 
 ### IntegrationTestRunner `class`
@@ -41256,7 +41375,7 @@ pipeline.use(new LoggingPlugin({
 #### `constructor`
 
 ```typescript
-constructor(options: LoggingPluginOptions =
+constructor(options: LoggingPluginOptions = {})
 ```
 
 **Parameters:**
@@ -41311,12 +41430,6 @@ async onError(ctx: PluginExecutionContext, error: Error): Promise&lt;unknown&gt;
 |----------|------|-------------|
 | `name` | `name: "logging"` | - |
 | `priority` | `priority: 5` | - |
-| `logger` | `logger: FrameworkLogger` | - |
-| `level` | `level: "error" | "warn" | "trace" | "debug" | "info"` | - |
-| `errorLevel` | `errorLevel: "error" | "warn"` | - |
-| `logArgs` | `logArgs: boolean` | - |
-| `logResult` | `logResult: boolean` | - |
-| `maxLogLength` | `maxLogLength: number` | - |
 
 </details>
 
@@ -41538,14 +41651,6 @@ destroy(): void
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: string` | - |
-| `config` | `config: Required&lt;Omit&lt;MCPServerConfig, "permissions" | "displayName" | "description" | "toolNamespace" | "connectorBindings"&gt;&gt; & { displayName?: string | undefined; description?: string | undefined; permissions?: { defaultScope?: "session" | "once" | "always" | "never" | undefined; defaultRiskLevel?: "low" | "medium" | "high" | "critical" | undefined; } | undefined; toolNamespace: string; connectorBindings?: Record&lt;string, string&gt; | undefined; }` | - |
-| `client` | `client: Client&lt;{ method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; "io.modelcontextprotocol/related-task"?: { taskId: string; } | undefined; } | undefined; } | undefined; }, { method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; "io.modelcontextprotocol/related-task"?: { taskId: string; } | undefined; } | undefined; } | undefined; }, { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; "io.modelcontextprotocol/related-task"?: { taskId: string; } | undefined; } | undefined; }&gt; | null` | - |
-| `transport` | `transport: Transport | null` | - |
-| `reconnectAttempts` | `reconnectAttempts: number` | - |
-| `reconnectTimer?` | `reconnectTimer: NodeJS.Timeout | undefined` | - |
-| `healthCheckTimer?` | `healthCheckTimer: NodeJS.Timeout | undefined` | - |
-| `subscribedResources` | `subscribedResources: Set&lt;string&gt;` | - |
-| `registeredToolNames` | `registeredToolNames: Set&lt;string&gt;` | - |
 
 </details>
 
@@ -41615,7 +41720,12 @@ static list(): string[]
 Get info about a registered MCP client
 
 ```typescript
-static getInfo(name: string):
+static getInfo(name: string): {
+    name: string;
+    state: string;
+    connected: boolean;
+    toolCount: number;
+  }
 ```
 
 **Parameters:**
@@ -41628,7 +41738,12 @@ static getInfo(name: string):
 Get info about all registered MCP clients
 
 ```typescript
-static getAllInfo(): Array&lt;
+static getAllInfo(): Array&lt;{
+    name: string;
+    state: string;
+    connected: boolean;
+    toolCount: number;
+  }&gt;
 ```
 
 **Returns:** `{ name: string; state: string; connected: boolean; toolCount: number; }[]`
@@ -41711,15 +41826,6 @@ static clear(): void
 ```
 
 **Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `clients` | `clients: Map&lt;string, IMCPClient&gt;` | - |
 
 </details>
 
@@ -41858,7 +41964,14 @@ async aggregate(pipeline: unknown[]): Promise&lt;unknown[]&gt;
 ```typescript
 async createIndex(
     spec: Record&lt;string, 1 | -1&gt;,
-    opts?:
+    opts?: {
+      unique?: boolean;
+      name?: string;
+      background?: boolean;
+      sparse?: boolean;
+      partialFilterExpression?: Record&lt;string, unknown&gt;;
+    },
+  ): Promise&lt;void&gt;
 ```
 
 **Parameters:**
@@ -41936,7 +42049,7 @@ async initialize(): Promise&lt;void&gt;
 #### `screenshot()`
 
 ```typescript
-async screenshot(region?:
+async screenshot(region?: { x: number; y: number; width: number; height: number }): Promise&lt;DesktopScreenshot&gt;
 ```
 
 **Parameters:**
@@ -42063,7 +42176,7 @@ async focusWindow(windowId: number): Promise&lt;void&gt;
 
 ### OpenAIRealtimeAPI `class`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:22`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:30`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
 
 REST helpers for browser/WebRTC credentials and server-side SIP call control.
 
@@ -42107,6 +42220,19 @@ async createTranslationClientSecret(
 - `options`: `CreateRealtimeTranslationClientSecretOptions`
 
 **Returns:** `Promise&lt;OpenAIRealtimeClientSecret&gt;`
+
+#### `createWebRTCCall()`
+
+Exchange a WebRTC SDP offer for OpenAI's SDP answer.
+
+```typescript
+async createWebRTCCall(options: CreateRealtimeWebRTCCallOptions): Promise&lt;string&gt;
+```
+
+**Parameters:**
+- `options`: `CreateRealtimeWebRTCCallOptions`
+
+**Returns:** `Promise&lt;string&gt;`
 
 #### `acceptCall()`
 
@@ -42178,7 +42304,7 @@ async referCall(callId: string, targetUri: string): Promise&lt;void&gt;
 #### `constructor`
 
 ```typescript
-constructor(config: PermissionPolicyManagerConfig =
+constructor(config: PermissionPolicyManagerConfig = {})
 ```
 
 **Parameters:**
@@ -42319,7 +42445,11 @@ async check(context: PolicyContext): Promise&lt;PolicyCheckResult&gt;
 Record an approval in the session cache.
 
 ```typescript
-approve(approvalKey: string, options?:
+approve(approvalKey: string, options?: {
+    scope?: PermissionScope;
+    approvedBy?: string;
+    ttlMs?: number;
+  }): void
 ```
 
 **Parameters:**
@@ -42438,17 +42568,6 @@ destroy(): void
 ```
 
 **Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `chain` | `chain: PolicyChain` | - |
-| `parentEvaluator?` | `parentEvaluator: PermissionPolicyManager | undefined` | - |
-| `onApprovalRequired?` | `onApprovalRequired: ((context: ApprovalRequestContext) =&gt; Promise&lt;ApprovalDecision&gt;) | undefined` | - |
 
 </details>
 
@@ -42624,7 +42743,7 @@ async get(key?: string): Promise&lt;InstructionEntry | InstructionEntry[] | null
 List metadata for all entries
 
 ```typescript
-async list(): Promise&lt;
+async list(): Promise&lt;{ key: string; contentLength: number; createdAt: number; updatedAt: number }[]&gt;
 ```
 
 **Returns:** `Promise&lt;{ key: string; contentLength: number; createdAt: number; updatedAt: number; }[]&gt;`
@@ -42717,11 +42836,6 @@ async storeAction(action: string, params?: Record&lt;string, unknown&gt;, _conte
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "persistent_instructions"` | - |
-| `storage` | `storage: IPersistentInstructionsStorage` | - |
-| `maxTotalLength` | `maxTotalLength: number` | - |
-| `maxEntries` | `maxEntries: number` | - |
-| `agentId` | `agentId: string` | - |
-| `estimator` | `estimator: ITokenEstimator` | - |
 
 </details>
 
@@ -42852,15 +42966,6 @@ static getAll(): ReadonlyMap&lt;string, PluginRegistryEntry&gt;
 ```
 
 **Returns:** `ReadonlyMap&lt;string, PluginRegistryEntry&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `registry` | `registry: Map&lt;string, PluginRegistryEntry&gt;` | - |
 
 </details>
 
@@ -43002,7 +43107,8 @@ by passing a very low value.
 ```typescript
 findClosest(
     input: string,
-    opts?:
+    opts?: { maxDistance?: number },
+  ): { name: string; distance: number } | null
 ```
 
 **Parameters:**
@@ -43021,7 +43127,7 @@ tagged `excludeFromExtractionPrompt`), use `renderForPrompt` or filter
 the result yourself on `excludeFromExtractionPrompt`.
 
 ```typescript
-list(filter?:
+list(filter?: { categories?: string[]; subjectType?: string }): PredicateDefinition[]
 ```
 
 **Parameters:**
@@ -43062,7 +43168,26 @@ Use `list()` (or filter on `excludeFromExtractionPrompt` yourself) when
 you need the full registered set for non-prompt purposes.
 
 ```typescript
-renderForPrompt(opts?:
+renderForPrompt(opts?: {
+    categories?: string[];
+    subjectType?: string;
+    maxPerCategory?: number;
+    /** When true, include `excludeFromExtractionPrompt` predicates. */
+    includeExcluded?: boolean;
+    /**
+     * Bucketing dimension for the rendered vocabulary.
+     *
+     * - `'category'` (default) — groups by `def.category`. Original behavior.
+     * - `'subjectType'` — groups by the `subjectTypes` hint, with predicates
+     *   appearing under EACH of their listed types. Predicates without
+     *   `subjectTypes` land in a `### generic` bucket. Used by hosts that
+     *   want the LLM to extract subject-of facts for non-person subjects
+     *   (projects, organizations, events) without a person being the actor.
+     *   Pair with `ExtractionPromptContext.subjectOfHintsEnabled` to render
+     *   the matching narrative section in `defaultExtractionPrompt`.
+     */
+    groupBy?: 'category' | 'subjectType';
+  }): string
 ```
 
 **Parameters:**
@@ -43085,16 +43210,6 @@ toRankingWeights(base?: Record&lt;string, number&gt;): Record&lt;string, number&
 - `base`: `Record&lt;string, number&gt; | undefined` *(optional)*
 
 **Returns:** `Record&lt;string, number&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `byName` | `byName: Map&lt;string, PredicateDefinition&gt;` | - |
-| `byAlias` | `byAlias: Map&lt;string, string&gt;` | - |
 
 </details>
 
@@ -43174,17 +43289,6 @@ destroy(): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `agent` | `agent: Agent | null` | - |
-| `conversationHistory` | `conversationHistory: InputItem[]` | - |
-| `connectorName` | `connectorName: string` | - |
-
-</details>
-
 ---
 
 ### RapidAPIProvider `class`
@@ -43211,7 +43315,7 @@ constructor(readonly connector: Connector)
 #### `search()`
 
 ```typescript
-async search(query: string, options: SearchOptions =
+async search(query: string, options: SearchOptions = {}): Promise&lt;SearchResponse&gt;
 ```
 
 **Parameters:**
@@ -43373,7 +43477,14 @@ async aggregate(pipeline: unknown[]): Promise&lt;unknown[]&gt;
 ```typescript
 async createIndex(
     spec: Record&lt;string, 1 | -1&gt;,
-    opts?:
+    opts?: {
+      unique?: boolean;
+      name?: string;
+      background?: boolean;
+      sparse?: boolean;
+      partialFilterExpression?: Record&lt;string, unknown&gt;;
+    },
+  ): Promise&lt;void&gt;
 ```
 
 **Parameters:**
@@ -43432,7 +43543,7 @@ async withTransaction&lt;R&gt;(fn: () =&gt; Promise&lt;R&gt;): Promise&lt;R&gt;
 
 ### RealtimePipeline `class`
 
-📍 [`src/capabilities/voice/pipelines/RealtimePipeline.ts:82`](src/capabilities/voice/pipelines/RealtimePipeline.ts)
+📍 [`src/capabilities/voice/pipelines/RealtimePipeline.ts:91`](src/capabilities/voice/pipelines/RealtimePipeline.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -43500,7 +43611,7 @@ interrupt(): void
 #### `onPlaybackAck()`
 
 ```typescript
-onPlaybackAck(_ack:
+onPlaybackAck(_ack: { name: string; playedMs: number }): void
 ```
 
 **Parameters:**
@@ -43568,42 +43679,6 @@ async destroy(): Promise&lt;void&gt;
 ```
 
 **Returns:** `Promise&lt;void&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `config` | `config: RealtimePipelineInitConfig` | - |
-| `session` | `session: VoiceSession` | - |
-| `agent` | `agent: Agent` | - |
-| `toolManager` | `toolManager: ToolManager` | - |
-| `tools` | `tools: ToolFunction&lt;any, any&gt;[]` | - |
-| `realtime` | `realtime: OpenAIRealtimeSession | null` | - |
-| `state` | `state: SessionState` | - |
-| `destroyed` | `destroyed: boolean` | - |
-| `ignoringEvents` | `ignoringEvents: boolean` | - |
-| `sessionInfo` | `sessionInfo: VoiceSessionInfo | null` | - |
-| `transcript` | `transcript: TranscriptMessage[]` | - |
-| `agentTranscriptBuffer` | `agentTranscriptBuffer: string` | - |
-| `pendingToolCalls` | `pendingToolCalls: Map&lt;string, { name: string; arguments: string; }&gt;` | - |
-| `activeToolExecutions` | `activeToolExecutions: number` | - |
-| `awaitingToolContinuation` | `awaitingToolContinuation: boolean` | - |
-| `isResponseActive` | `isResponseActive: boolean` | - |
-| `currentResponseId` | `currentResponseId: string | null` | - |
-| `currentAssistantItemId` | `currentAssistantItemId: string | null` | - |
-| `currentAssistantContentIndex` | `currentAssistantContentIndex: number` | - |
-| `responseStartTimestamp` | `responseStartTimestamp: number | null` | - |
-| `latestMediaTimestamp` | `latestMediaTimestamp: number` | - |
-| `hasStartedAudioForCurrentResponse` | `hasStartedAudioForCurrentResponse: boolean` | - |
-| `interruptingResponseId` | `interruptingResponseId: string | null` | - |
-| `tailResponseId` | `tailResponseId: string | null` | - |
-| `tailAssistantItemId` | `tailAssistantItemId: string | null` | - |
-| `tailAssistantContentIndex` | `tailAssistantContentIndex: number` | - |
-| `tailResponseStartTimestamp` | `tailResponseStartTimestamp: number | null` | - |
-| `tailExpiresAt` | `tailExpiresAt: number` | - |
 
 </details>
 
@@ -43691,7 +43766,7 @@ getDescriptionsForTools(): string
 #### `getInfo()`
 
 ```typescript
-getInfo(): Record&lt;string,
+getInfo(): Record&lt;string, { displayName: string; description: string; baseURL: string }&gt;
 ```
 
 **Returns:** `Record&lt;string, { displayName: string; description: string; baseURL: string; }&gt;`
@@ -43865,19 +43940,6 @@ reset(): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `buffer` | `buffer: string` | - |
-| `inCodeBlock` | `inCodeBlock: boolean` | - |
-| `codeBlockBuffer` | `codeBlockBuffer: string` | - |
-| `options` | `options: Required&lt;ChunkingOptions&gt;` | - |
-| `abbreviations` | `abbreviations: Set&lt;string&gt;` | - |
-
-</details>
-
 ---
 
 ### SerperProvider `class`
@@ -43904,7 +43966,7 @@ constructor(readonly connector: Connector)
 #### `search()`
 
 ```typescript
-async search(query: string, options: SearchOptions =
+async search(query: string, options: SearchOptions = {}): Promise&lt;SearchResponse&gt;
 ```
 
 **Parameters:**
@@ -43966,7 +44028,7 @@ async getContent(): Promise&lt;string | null&gt;
 #### `getContents()`
 
 ```typescript
-getContents():
+getContents(): { entries: SharedWorkspaceEntry[]; log: WorkspaceLogEntry[] }
 ```
 
 **Returns:** `{ entries: SharedWorkspaceEntry[]; log: WorkspaceLogEntry[]; }`
@@ -44166,10 +44228,6 @@ appendLog(author: string, message: string): void
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "shared_workspace"` | - |
-| `entries` | `entries: Map&lt;string, SharedWorkspaceEntry&gt;` | - |
-| `log` | `log: WorkspaceLogEntry[]` | - |
-| `config` | `config: Required&lt;Omit&lt;SharedWorkspaceConfig, "onEntriesChanged"&gt;&gt; & { onEntriesChanged?: ((entries: SharedWorkspaceEntry[]) =&gt; void) | undefined; }` | - |
-| `estimator` | `estimator: ITokenEstimator` | - |
 
 </details>
 
@@ -44261,21 +44319,6 @@ async ingestExtracted(input: IngestExtractedInput): Promise&lt;IngestionResult&g
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `memory` | `memory: MemorySystem` | - |
-| `extractor` | `extractor: IExtractor` | - |
-| `adapters` | `adapters: Map&lt;string, SignalSourceAdapter&lt;unknown&gt;&gt;` | - |
-| `promptFn` | `promptFn: (ctx: ExtractionPromptContext) =&gt; string` | - |
-| `maxPredicatesPerCategory` | `maxPredicatesPerCategory: number` | - |
-| `predicateRegistry` | `predicateRegistry: PredicateRegistry | undefined` | - |
-| `contextHints` | `contextHints: ContextHintsConfig | undefined` | - |
-
-</details>
-
 ---
 
 ### SimpleScheduler `class`
@@ -44338,15 +44381,6 @@ destroy(): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `timers` | `timers: Map&lt;string, { timer: NodeJS.Timeout; type: "timeout" | "interval"; }&gt;` | - |
-
-</details>
-
 ---
 
 ### SkepticPass `class`
@@ -44376,7 +44410,15 @@ Construct from a pre-built agent-like object. Intended for testing — same
 pattern as `ConnectorProfileGenerator.withAgent`.
 
 ```typescript
-static withAgent(args:
+static withAgent(args: {
+    agent: AgentLike;
+    connector?: string;
+    model?: string;
+    promptTemplate?: (ctx: SkepticPromptContext) =&gt; string;
+    temperature?: number;
+    onDecision?: RestraintEventListener;
+    maxOutputTokens?: number;
+  }): SkepticPass
 ```
 
 **Parameters:**
@@ -44399,7 +44441,8 @@ logged — never silently swallowed.
 ```typescript
 async review(
     items: SkepticReviewItem[],
-    ctx: SkepticReviewContext =
+    ctx: SkepticReviewContext = {},
+  ): Promise&lt;SkepticReviewResult&gt;
 ```
 
 **Parameters:**
@@ -44418,20 +44461,6 @@ destroy(): void
 ```
 
 **Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `agent` | `agent: AgentLike` | - |
-| `promptFn` | `promptFn: (ctx: SkepticPromptContext) =&gt; string` | - |
-| `temperature` | `temperature: number` | - |
-| `defaultListener?` | `defaultListener: RestraintEventListener | undefined` | - |
-| `maxOutputTokens` | `maxOutputTokens: number | undefined` | - |
-| `modelInfo` | `modelInfo: { connector: string; model: string; }` | - |
 
 </details>
 
@@ -44622,15 +44651,6 @@ static reset(): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `entries` | `entries: Map&lt;string, unknown&gt;` | Internal storage map |
-
-</details>
-
 ---
 
 ### StrategyRegistry `class`
@@ -44758,16 +44778,6 @@ static getIfExists(name: string): StrategyRegistryEntry | undefined
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `registry` | `registry: Map&lt;string, StrategyRegistryEntry&gt;` | - |
-| `initialized` | `initialized: boolean` | - |
-
-</details>
-
 ---
 
 ### SuspendSignal `class`
@@ -44776,20 +44786,6 @@ static getIfExists(name: string): StrategyRegistryEntry | undefined
 
 Signal that a tool has initiated an external operation and the agent
 loop should suspend until an external event resumes it.
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(options: SuspendSignalOptions)
-```
-
-**Parameters:**
-- `options`: `SuspendSignalOptions`
-
-</details>
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -44861,7 +44857,7 @@ constructor(readonly connector: Connector)
 #### `search()`
 
 ```typescript
-async search(query: string, options: SearchOptions =
+async search(query: string, options: SearchOptions = {}): Promise&lt;SearchResponse&gt;
 ```
 
 **Parameters:**
@@ -45102,53 +45098,11 @@ async destroy(): Promise&lt;void&gt;
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `agent` | `agent: Agent | null` | - |
-| `session` | `session: VoiceSession` | - |
-| `stt` | `stt: SpeechToText | null` | - |
-| `tts` | `tts: TextToSpeech | null` | - |
-| `voiceStream` | `voiceStream: VoiceStream | null` | - |
-| `vad` | `vad: IVoiceActivityDetector` | - |
-| `hooks` | `hooks: VoiceHooks` | - |
-| `interruptible` | `interruptible: boolean` | - |
-| `greeting?` | `greeting: string | undefined` | - |
-| `ttsVoice` | `ttsVoice: string` | - |
-| `destroyed` | `destroyed: boolean` | - |
-| `isProcessingUtterance` | `isProcessingUtterance: boolean` | - |
-| `utteranceBuffer` | `utteranceBuffer: Buffer&lt;ArrayBufferLike&gt;[]` | - |
-| `utteranceStartTime` | `utteranceStartTime: number` | - |
-| `currentStreamAbort` | `currentStreamAbort: AbortController | null` | - |
-| `audioChunkCount` | `audioChunkCount: number` | - |
-| `bargeInFrames` | `bargeInFrames: number` | Consecutive high-energy frames during speaking state (for barge-in) |
-| `bargeInDiagCounter` | `bargeInDiagCounter: number` | - |
-| `BARGE_IN_ENERGY_THRESHOLD` | `BARGE_IN_ENERGY_THRESHOLD: 0.05` | Energy threshold for barge-in during speaking (higher than normal to reject echo) |
-| `BARGE_IN_FRAMES_REQUIRED` | `BARGE_IN_FRAMES_REQUIRED: 5` | Consecutive frames needed to confirm barge-in (not just a brief noise spike) |
-
-</details>
-
 ---
 
 ### TwilioAdapter `class`
 
 📍 [`src/capabilities/voice/adapters/twilio/TwilioAdapter.ts:123`](src/capabilities/voice/adapters/twilio/TwilioAdapter.ts)
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(config: TwilioAdapterConfig)
-```
-
-**Parameters:**
-- `config`: `TwilioAdapterConfig`
-
-</details>
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -45167,7 +45121,7 @@ static create(config: TwilioAdapterConfig): TwilioAdapter
 #### `static createStandalone()`
 
 ```typescript
-static createStandalone(config: TwilioAdapterConfig &
+static createStandalone(config: TwilioAdapterConfig & { publicUrl: string; port?: number }): TwilioAdapter
 ```
 
 **Parameters:**
@@ -45314,22 +45268,6 @@ outboundWebhookHandler(): (req: any, res: any) =&gt; void
 ```
 
 **Returns:** `(req: any, res: any) =&gt; void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `config` | `config: TwilioAdapterConfig` | - |
-| `connector` | `connector: Connector` | - |
-| `streams` | `streams: Map&lt;string, MediaStreamState&gt;` | - |
-| `streamSidToCallId` | `streamSidToCallId: Map&lt;string, string&gt;` | - |
-| `pendingOutbound` | `pendingOutbound: Set&lt;string&gt;` | - |
-| `destroyed` | `destroyed: boolean` | - |
-| `server` | `server: any` | - |
-| `sendDiagCount` | `sendDiagCount: number` | Counter for diagnostic logging (first few frames only) |
 
 </details>
 
@@ -45528,10 +45466,6 @@ async storeAction(action: string, params?: Record&lt;string, unknown&gt;, contex
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "user_info"` | - |
-| `maxTotalSize` | `maxTotalSize: number` | - |
-| `maxEntries` | `maxEntries: number` | - |
-| `estimator` | `estimator: ITokenEstimator` | - |
-| `explicitStorage?` | `explicitStorage: IUserInfoStorage | undefined` | - |
 | `userId` | `userId: string | undefined` | UserId for getContent() and lazy initialization |
 
 </details>
@@ -45732,36 +45666,11 @@ destroy(): void
 
 </details>
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `rules` | `rules: UserPermissionRule[]` | - |
-| `storage?` | `storage: IUserPermissionRulesStorage | null | undefined` | - |
-| `ruleIndex` | `ruleIndex: Map&lt;string, UserPermissionRule[]&gt;` | Index: toolName → rules for O(1) lookup. Wildcard '*' rules stored under '*'. |
-
-</details>
-
 ---
 
 ### VoiceBridge `class`
 
 📍 [`src/capabilities/voice/VoiceBridge.ts:68`](src/capabilities/voice/VoiceBridge.ts)
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-private constructor(config: VoiceBridgeConfig)
-```
-
-**Parameters:**
-- `config`: `VoiceBridgeConfig`
-
-</details>
 
 <details>
 <summary><strong>Static Methods</strong></summary>
@@ -45855,27 +45764,6 @@ async destroy(): Promise&lt;void&gt;
 ```
 
 **Returns:** `Promise&lt;void&gt;`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `config` | `config: VoiceBridgeConfig` | - |
-| `sessions` | `sessions: Map&lt;string, VoiceSession&gt;` | - |
-| `callToSession` | `callToSession: Map&lt;string, string&gt;` | - |
-| `pendingOutbound` | `pendingOutbound: Map&lt;string, CallDirection&gt;` | - |
-| `cleanupTimers` | `cleanupTimers: Set&lt;NodeJS.Timeout&gt;` | - |
-| `endingSessions` | `endingSessions: Set&lt;string&gt;` | - |
-| `adapter` | `adapter: ITelephonyAdapter | null` | - |
-| `destroyed` | `destroyed: boolean` | - |
-| `handleCallConnected` | `handleCallConnected: (callId: string, info: IncomingCallInfo) =&gt; Promise&lt;void&gt;` | - |
-| `handleCallAudio` | `handleCallAudio: (callId: string, frame: AudioFrame) =&gt; void` | - |
-| `handleCallEnded` | `handleCallEnded: (callId: string, _reason: string) =&gt; Promise&lt;void&gt;` | - |
-| `handleMediaTimestamp` | `handleMediaTimestamp: (callId: string, info: { timestamp: number; }) =&gt; void` | - |
-| `handleAdapterError` | `handleAdapterError: (error: Error, callId?: string | undefined) =&gt; void` | - |
 
 </details>
 
@@ -46421,7 +46309,7 @@ Extends PolicyContext with the deny decision and UI-relevant info.
 
 ### AudioFrame `interface`
 
-📍 [`src/capabilities/voice/types.ts:33`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:38`](src/capabilities/voice/types.ts)
 
 A single frame of audio data exchanged between adapter and pipeline.
 All voice processing operates on these frames.
@@ -46650,7 +46538,7 @@ in signalText; only the deterministic `attended` seed fact is skipped). |
 
 ### CallSummary `interface`
 
-📍 [`src/capabilities/voice/types.ts:131`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:136`](src/capabilities/voice/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47252,6 +47140,23 @@ Conversation message in history
 | Property | Type | Description |
 |----------|------|-------------|
 | `session` | `session: OpenAIRealtimeTranslationClientSessionConfig;` | - |
+| `safetyIdentifier?` | `safetyIdentifier?: string;` | - |
+
+</details>
+
+---
+
+### CreateRealtimeWebRTCCallOptions `interface`
+
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAPI.ts:21`](src/capabilities/voice/openai/OpenAIRealtimeAPI.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `sdp` | `sdp: string;` | SDP offer generated by RTCPeerConnection.createOffer(). |
+| `session?` | `session?: OpenAIRealtimeSessionConfig;` | Optional initial session configuration sent atomically with the offer. |
 | `safetyIdentifier?` | `safetyIdentifier?: string;` | - |
 
 </details>
@@ -48191,7 +48096,7 @@ Options for creating an Embeddings instance
 
 ### EnergyVADConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:67`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:72`](src/capabilities/voice/types.ts)
 
 Configuration for the default energy-based VAD
 
@@ -51022,7 +50927,7 @@ withTransaction?&lt;R&gt;(fn: () =&gt; Promise&lt;R&gt;): Promise&lt;R&gt;;
 
 ### IncomingCallInfo `interface`
 
-📍 [`src/capabilities/voice/types.ts:421`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:437`](src/capabilities/voice/types.ts)
 
 Metadata for an incoming call from the telephony provider.
 The adapter maps provider-specific data to this structure.
@@ -51705,7 +51610,7 @@ storeAction?(action: string, params?: Record&lt;string, unknown&gt;, context?: T
 
 ### ITelephonyAdapter `interface`
 
-📍 [`src/capabilities/voice/types.ts:458`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:474`](src/capabilities/voice/types.ts)
 
 Abstraction over telephony providers (Twilio, Vonage, etc.).
 The adapter handles the provider-specific protocol and exposes
@@ -51993,7 +51898,7 @@ Used by "View Full Context" UI panels.
 
 ### IVoiceActivityDetector `interface`
 
-📍 [`src/capabilities/voice/types.ts:57`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:62`](src/capabilities/voice/types.ts)
 
 Voice Activity Detector interface.
 Implementations detect when the caller starts and stops speaking.
@@ -52056,7 +51961,7 @@ Eliminates duplication across TTS model registries
 
 ### IVoicePipeline `interface`
 
-📍 [`src/capabilities/voice/types.ts:383`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:399`](src/capabilities/voice/types.ts)
 
 Voice pipeline strategy interface.
 TextPipeline and RealtimePipeline both implement this.
@@ -53258,7 +53163,7 @@ Default: false |
 
 ### OutboundCallConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:489`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:505`](src/capabilities/voice/types.ts)
 
 Configuration for initiating an outbound call.
 
@@ -54299,7 +54204,7 @@ Result of a file read operation
 
 ### RealtimePipelineConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:233`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:238`](src/capabilities/voice/types.ts)
 
 Realtime pipeline configuration — direct voice-to-voice via OpenAI Realtime API.
 No separate STT/TTS needed — the model handles audio natively.
@@ -54329,6 +54234,11 @@ No separate STT/TTS needed — the model handles audio natively.
 prompts, remote MCP tools, parallel tool calls, and safety identifier.
 Agent instructions and local tools are merged automatically. |
 | `safetyIdentifier?` | `safetyIdentifier?: string;` | Stable, privacy-preserving end-user identifier sent in the OpenAI header. |
+| `approveMCP?` | `approveMCP?: (
+    request: OpenAIRealtimeMCPApprovalRequest,
+    session: VoiceSessionInfo,
+  ) =&gt; Promise&lt;OpenAIRealtimeMCPApprovalDecision&gt; | OpenAIRealtimeMCPApprovalDecision;` | Approval handler for provider-hosted OpenAI MCP tools. Requests fail closed
+when this callback is omitted. |
 
 </details>
 
@@ -56532,7 +56442,7 @@ Telegram User object
 
 ### TelephonyAdapterEvents `interface`
 
-📍 [`src/capabilities/voice/types.ts:440`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:456`](src/capabilities/voice/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -56687,7 +56597,7 @@ Result of running a full test suite against a connector.
 
 ### TextPipelineConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:203`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:208`](src/capabilities/voice/types.ts)
 
 Text pipeline configuration — STT → Agent → TTS
 
@@ -56775,7 +56685,7 @@ Token usage statistics
 
 ### TranscriptMessage `interface`
 
-📍 [`src/capabilities/voice/types.ts:298`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:312`](src/capabilities/voice/types.ts)
 
 A single entry in the voice call transcript.
 Emitted by pipelines for UI display and logging.
@@ -56816,7 +56726,7 @@ Emitted by pipelines for UI display and logging.
 
 ### TwilioAdapterConfig `interface`
 
-📍 [`src/capabilities/voice/types.ts:504`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:520`](src/capabilities/voice/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -57286,7 +57196,7 @@ according to `kind`:
 
 ### VoiceHooks `interface`
 
-📍 [`src/capabilities/voice/types.ts:157`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:162`](src/capabilities/voice/types.ts)
 
 Lifecycle hooks for voice sessions.
 All hooks are async and called in order. Errors in hooks are logged
@@ -57317,7 +57227,7 @@ is generated concurrently; its return value is ignored. |
 
 ### VoicePipelineEvents `interface`
 
-📍 [`src/capabilities/voice/types.ts:364`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:378`](src/capabilities/voice/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -57330,6 +57240,7 @@ is generated concurrently; its return value is ignored. |
 | `'playback:ack'` | `'playback:ack': (ack: VoicePipelinePlaybackAck) =&gt; void;` | Telephony playback progress acknowledgement |
 | `'transcript'` | `'transcript': (entry: TranscriptMessage) =&gt; void;` | Transcript entry for UI display (caller text, agent text, tool calls) |
 | `'error'` | `'error': (error: Error) =&gt; void;` | Error during processing |
+| `'usage'` | `'usage': (usage: OpenAIRealtimeAgentUsage) =&gt; void;` | Cumulative provider usage for native OpenAI Realtime sessions. |
 
 </details>
 
@@ -57513,7 +57424,7 @@ type AudioChunkPlaybackCallback = (event: AudioChunkReadyEvent) =&gt; void
 
 ### AudioEncoding `type`
 
-📍 [`src/capabilities/voice/types.ts:27`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:32`](src/capabilities/voice/types.ts)
 
 Audio encoding formats used in voice pipelines.
 - pcm_s16le: 16-bit signed little-endian PCM (standard for STT/TTS)
@@ -57559,7 +57470,7 @@ type BeforeExecuteResult = | void
 
 ### CallDirection `type`
 
-📍 [`src/capabilities/voice/types.ts:82`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:87`](src/capabilities/voice/types.ts)
 
 ```typescript
 type CallDirection = 'inbound' | 'outbound'
@@ -57569,7 +57480,7 @@ type CallDirection = 'inbound' | 'outbound'
 
 ### CallEndReason `type`
 
-📍 [`src/capabilities/voice/types.ts:129`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:134`](src/capabilities/voice/types.ts)
 
 ```typescript
 type CallEndReason = 'caller_hangup' | 'agent_hangup' | 'timeout' | 'error' | 'rejected'
@@ -58326,7 +58237,7 @@ type PermissionScope = 'once' | 'session' | 'always' | 'never'
 
 ### PipelineConfig `type`
 
-📍 [`src/capabilities/voice/types.ts:288`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:302`](src/capabilities/voice/types.ts)
 
 ```typescript
 type PipelineConfig = TextPipelineConfig | RealtimePipelineConfig
@@ -58798,7 +58709,7 @@ type TransportConfig = StdioTransportConfig | HTTPTransportConfig
 
 ### VADEvent `type`
 
-📍 [`src/capabilities/voice/types.ts:51`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:56`](src/capabilities/voice/types.ts)
 
 Result of VAD processing a single audio frame
 
@@ -58833,7 +58744,7 @@ type VisibilityPolicy = (ctx: VisibilityContext) =&gt; Permissions | undefined
 
 ### VoiceBridgeConfig `type`
 
-📍 [`src/capabilities/voice/types.ts:346`](src/capabilities/voice/types.ts)
+📍 [`src/capabilities/voice/types.ts:360`](src/capabilities/voice/types.ts)
 
 VoiceBridge configuration — discriminated union by pipeline type.
 
@@ -58926,7 +58837,12 @@ write when an embedder is configured; consumed by the future entity-level
 semantic search tier (not yet wired — see file header).
 
 ```typescript
-export function buildIdentityString(args:
+export function buildIdentityString(args: {
+  type: string;
+  displayName: string;
+  aliases: string[];
+  identifiers: Identifier[];
+}): string
 ```
 
 ---
@@ -58988,7 +58904,10 @@ to fall back to the legacy owner/group/world check in that case.
 
 ```typescript
 export function canByPrincipals(
-  record:
+  record: { readPrincipals?: string[]; writePrincipals?: string[] },
+  principals: string[],
+  need: 'read' | 'write',
+): boolean
 ```
 
 ---
@@ -59008,7 +58927,8 @@ want all parts slugified, slugify them before calling.
 export function canonicalIdentifier(
   type: string,
   parts: Record&lt;string, string | undefined&gt;,
-  opts: CanonicalIdentifierOptions =
+  opts: CanonicalIdentifierOptions = {},
+): Identifier
 ```
 
 **Example:**
@@ -59283,7 +59203,7 @@ defaults. The `group` level is `'none'` when the record has no `groupId`
 ```typescript
 export function effectivePermissions(
   record: AccessControlled,
-):
+): { group: AccessLevel; world: AccessLevel }
 ```
 
 ---
@@ -59368,7 +59288,8 @@ Idempotent — `createIndex` with the same `{spec, opts}` is a no-op.
 ```typescript
 export async function ensureNormalizedNameUniqueIndex(
   entities: IMongoCollectionLike&lt;IEntity&gt;,
-  opts?:
+  opts?: { name?: string },
+): Promise&lt;void&gt;
 ```
 
 ---
@@ -59465,7 +59386,8 @@ its `disableWorldVisibility` option uniformly across read paths.
 export function factFilterToMongo(
   filter: FactFilter,
   scope: ScopeFilter,
-  scopeOpts: ScopeToFilterOptions =
+  scopeOpts: ScopeToFilterOptions = {},
+): MongoFilter
 ```
 
 ---
@@ -59516,7 +59438,8 @@ export async function findDuplicateCandidates(
   memory: MemorySystem,
   entity: IEntity,
   scope: ScopeFilter,
-  opts: FindCandidatesOptions =
+  opts: FindCandidatesOptions = {},
+): Promise&lt;IEntity[]&gt;
 ```
 
 ---
@@ -59537,7 +59460,8 @@ Adapters wanting a native aggregation can override.
 export async function findDuplicateClusters(
   memory: MemorySystem,
   scope: ScopeFilter,
-  opts: FindClustersOptions =
+  opts: FindClustersOptions = {},
+): Promise&lt;DuplicateCluster[]&gt;
 ```
 
 ---
@@ -59563,7 +59487,8 @@ Same client-side scale envelope as `findDuplicateClusters` — fast under
 export async function findIdentifierClusters(
   memory: MemorySystem,
   scope: ScopeFilter,
-  opts: FindIdentifierClustersOptions =
+  opts: FindIdentifierClustersOptions = {},
+): Promise&lt;IdentifierCluster[]&gt;
 ```
 
 ---
@@ -59576,7 +59501,7 @@ Convert an array of email addresses (any format) to Microsoft Graph attendee for
 Normalizes input first, so it's safe to pass LLM output directly.
 
 ```typescript
-export function formatAttendees(emails: unknown[]):
+export function formatAttendees(emails: unknown[]): { emailAddress: { address: string }; type: string }[]
 ```
 
 ---
@@ -59626,7 +59551,7 @@ Convert an array of email addresses (any format) to Microsoft Graph recipient fo
 Normalizes input first, so it's safe to pass LLM output directly.
 
 ```typescript
-export function formatRecipients(emails: unknown[]):
+export function formatRecipients(emails: unknown[]): { emailAddress: { address: string } }[]
 ```
 
 ---
@@ -59645,7 +59570,10 @@ projection.
 
 ```typescript
 export function fromLibraryPermissions(
-  perms:
+  perms: { group?: 'none' | 'read' | 'write'; world?: 'none' | 'read' | 'write' } | undefined,
+  ownerId: string | undefined,
+  groupId: string | undefined,
+): AccessInput
 ```
 
 ---
@@ -59754,7 +59682,7 @@ export async function getAuthenticatedUserId(
 Get output from a background process
 
 ```typescript
-export function getBackgroundOutput(bgId: string):
+export function getBackgroundOutput(bgId: string): { found: boolean; output?: string; running?: boolean }
 ```
 
 ---
@@ -59798,7 +59726,8 @@ Priority:
 ```typescript
 export function getDrivePrefix(
   userPrefix: string,
-  options?:
+  options?: { siteId?: string; driveId?: string }
+): string
 ```
 
 ---
@@ -59963,7 +59892,8 @@ Check if a command should be blocked
 ```typescript
 export function isBlockedCommand(
   command: string,
-  config: ShellToolConfig =
+  config: ShellToolConfig = {}
+): { blocked: boolean; reason?: string }
 ```
 
 ---
@@ -60355,7 +60285,7 @@ export function parseProfileResponse(
   raw: string,
   entity: IEntity,
   priorProfile: IFact | undefined,
-):
+): { details: string; summaryForEmbedding: string }
 ```
 
 ---
@@ -60482,7 +60412,12 @@ Convenience used at the storage boundary: compute the principal arrays for a
 library record (entity or fact) from its `permissions` + owner/group + `acl`.
 
 ```typescript
-export function principalsForLibraryRecord(rec:
+export function principalsForLibraryRecord(rec: {
+  ownerId?: string;
+  groupId?: string;
+  permissions?: { group?: 'none' | 'read' | 'write'; world?: 'none' | 'read' | 'write' };
+  acl?: ACLEntry[];
+}): MaterializedPrincipals
 ```
 
 ---
@@ -60504,7 +60439,9 @@ export function rankFacts(facts: IFact[], config: RankingConfig, now: Date): IFa
 Mongo read filter for a caller's principal set.
 
 ```typescript
-export function readFilterForPrincipals(principals: string[]):
+export function readFilterForPrincipals(principals: string[]): {
+  readPrincipals: { $in: string[] };
+}
 ```
 
 ---
@@ -60605,7 +60542,7 @@ export function resolveConnector(connectorOrName: string | Connector): Connector
 📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:152`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
 
 ```typescript
-export function resolveDeepSeekHost(options: ResolveDeepSeekHostOptions =
+export function resolveDeepSeekHost(options: ResolveDeepSeekHostOptions = {}): ResolvedDeepSeekHost
 ```
 
 ---
@@ -60647,7 +60584,7 @@ Handles three input types:
 export function resolveFileEndpoints(
   source: string,
   drivePrefix: string
-):
+): { metadataEndpoint: string; contentEndpoint: string; isSharedUrl: boolean }
 ```
 
 ---
@@ -60665,7 +60602,13 @@ Resolve the source array for a map/fold control flow using layered resolution:
 
 ```typescript
 export async function resolveFlowSource(
-  flow:
+  flow: { source: ControlFlowSource; maxIterations?: number },
+  flowType: string,
+  agent: Agent,
+  execution: RoutineExecution | undefined,
+  icmPlugin: InContextMemoryPluginNextGen | null,
+  wmPlugin: WorkingMemoryPluginNextGen | null
+): Promise&lt;{ array: unknown[]; maxIter: number } | ControlFlowResult&gt;
 ```
 
 ---
@@ -60702,7 +60645,7 @@ export async function resolveMeetingId(
   prefix: string,
   effectiveUserId?: string,
   effectiveAccountId?: string
-): Promise&lt;
+): Promise&lt;{ meetingId: string; subject?: string }&gt;
 ```
 
 ---
@@ -60721,7 +60664,7 @@ Priority:
 export function resolveRepository(
   repository: string | undefined,
   connector: Connector
-):
+): { success: true; repo: GitHubRepository } | { success: false; error: string }
 ```
 
 ---
@@ -60816,7 +60759,8 @@ export function rewritePrincipalReferences(
 ```typescript
 export function scopeToFilter(
   scope: ScopeFilter,
-  opts: ScopeToFilterOptions =
+  opts: ScopeToFilterOptions = {},
+): MongoFilter
 ```
 
 ---
@@ -60835,7 +60779,9 @@ cheaper structural-only score.
 
 ```typescript
 export function scoreEntityPair(
-  inputs:
+  inputs: { a: IEntity; b: IEntity; factsA?: IFact[]; factsB?: IFact[] },
+  thresholds?: ScoreThresholds,
+): DedupDecision
 ```
 
 ---
@@ -60915,7 +60861,13 @@ export async function slackPaginate&lt;TResponse extends SlackBaseResponse, TIte
   method: string,
   params: Record&lt;string, unknown&gt;,
   extractItems: (response: TResponse) =&gt; TItem[],
-  options?:
+  options?: {
+    maxPages?: number;
+    limit?: number;
+    userId?: string;
+    accountId?: string;
+  }
+): Promise&lt;{ items: TItem[]; hasMore: boolean }&gt;
 ```
 
 ---
@@ -60929,7 +60881,7 @@ leading/trailing dashes, collapsed dash runs. Stable across calls for the
 same input — that's the whole point.
 
 ```typescript
-export function slugify(text: string, opts: SlugifyOptions =
+export function slugify(text: string, opts: SlugifyOptions = {}): string
 ```
 
 ---
@@ -60965,7 +60917,8 @@ impactful merges first and can stop early.
 export async function* sweepDuplicates(
   memory: MemorySystem,
   scope: ScopeFilter,
-  opts: SweepOptions =
+  opts: SweepOptions = {},
+): AsyncIterable&lt;DedupDecision&gt;
 ```
 
 ---
@@ -61117,7 +61070,8 @@ Validate and resolve a path within allowed boundaries
 ```typescript
 export function validatePath(
   inputPath: string,
-  config: FilesystemToolConfig =
+  config: FilesystemToolConfig = {}
+): { valid: boolean; resolvedPath: string; error?: string }
 ```
 
 ---
@@ -61141,7 +61095,9 @@ export function validatePath(path: string): boolean
 Mongo write filter for a caller's principal set.
 
 ```typescript
-export function writeFilterForPrincipals(principals: string[]):
+export function writeFilterForPrincipals(principals: string[]): {
+  writePrincipals: { $in: string[] };
+}
 ```
 
 ---

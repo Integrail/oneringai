@@ -249,6 +249,34 @@ describe('Agent - Async Tools', () => {
     agent.destroy();
   });
 
+  it('flushes queued async results when an external execution releases the Agent', async () => {
+    const agent = Agent.create({
+      connector: 'test-openai',
+      model: 'gpt-4',
+      asyncTools: { autoContinue: true, batchWindowMs: 10 },
+      tools: [createAsyncTool()],
+    });
+
+    mockGenerate
+      .mockResolvedValueOnce(toolCallResponse([
+        { id: 'call_external_overlap', name: 'long_analysis', args: { data: 'test' } },
+      ]))
+      .mockResolvedValueOnce(textResponse('Analysis is running.'))
+      .mockResolvedValueOnce(textResponse('Queued analysis delivered.'));
+
+    await agent.run('Start the analysis');
+    await agent.beginExternalExecution({ source: 'test-realtime' });
+    asyncToolResolve!({ result: 'done during voice session' });
+
+    await vi.waitFor(() => expect(agent.hasPendingAsyncTools()).toBe(false));
+    expect(mockGenerate).toHaveBeenCalledTimes(2);
+
+    await agent.completeExternalExecution();
+    await vi.waitFor(() => expect(mockGenerate).toHaveBeenCalledTimes(3));
+
+    agent.destroy();
+  });
+
   it('should deliver error results for failed async tools', async () => {
     const failingExecute = vi.fn(async () => {
       throw new Error('Analysis failed: invalid data');
