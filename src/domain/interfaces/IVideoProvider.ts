@@ -59,6 +59,8 @@ export interface VideoRemixOptions {
  * Edit = apply a prompt-described change to a completed video.
  */
 export interface VideoEditOptions {
+  /** Model to use when the provider exposes multiple editing models. */
+  model?: string;
   /** Identifier of the completed video to edit */
   videoId: string;
   /** Prompt describing the edit */

@@ -207,7 +207,7 @@ export class ImageGeneration {
       case Vendor.Google:
         return IMAGE_MODELS[Vendor.Google].GEMINI_3_1_FLASH_IMAGE;
       case Vendor.Grok:
-        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE_QUALITY;
+        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE_2;
       default:
         throw new Error(`No default image model for vendor: ${vendor}`);
     }
@@ -225,7 +225,7 @@ export class ImageGeneration {
       case Vendor.Google:
         return IMAGE_MODELS[Vendor.Google].GEMINI_3_1_FLASH_IMAGE;
       case Vendor.Grok:
-        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE_QUALITY;
+        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE_2;
       default:
         throw new Error(`No edit model for vendor: ${vendor}`);
     }

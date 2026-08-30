@@ -306,7 +306,7 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - ✨ **Unified API** - One interface for 12 AI providers (OpenAI, Anthropic, Google, Vertex, Groq, Together, Perplexity, Grok, DeepSeek, Mistral, Ollama, Custom)
 - 🧩 **[Agent Runtime preview](./USER_GUIDE.md#agent-runtime-preview)** - Plug-compatible OneRingAI/Codex agent drivers with model and thinking selection, live reasoning/activity events, and capability-gated future interaction
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
-- 📊 **Model Registry v2** - Lifecycle, aliases, endpoints, official sources, and modality-aware pricing for 92 text/realtime models plus dedicated image, video, voice, STT, and embedding registries
+- 📊 **Model Registry v2** - Lifecycle, aliases, endpoints, official sources, and modality-aware pricing for 95 text/realtime models plus dedicated image, video, voice, STT, and embedding registries
 - 🎤 **Audio Capabilities** - Text-to-Speech and Speech-to-Text with OpenAI, Google, and xAI, including xAI WebSocket streaming
 - ☎️ **[OpenAI Realtime API](./USER_GUIDE.md#openai-realtime-api)** - GA voice agents, live transcription, and speech translation over WebSocket/WebRTC, plus SIP call control, tools, VAD, and Twilio bridging
 - 📞 **[xAI Voice Agent API](./USER_GUIDE.md#xai-realtime-voice-agent-api)** - JSON or binary audio, browser credentials, conversation resumption, reasoning controls, and SIP refer/hangup
@@ -519,7 +519,7 @@ const googleResult = await googleGen.generate({
 ```typescript
 import { VideoGeneration } from '@everworker/oneringai';
 
-// OpenAI Sora
+// OpenAI Sora (deprecated; callable until the Videos API shuts down 2026-09-24)
 const videoGen = VideoGeneration.create({ connector: 'openai' });
 
 // Start video generation (async - returns a job)
@@ -618,7 +618,7 @@ console.log(result.embeddings[0].length);  // 512
 // Ollama (local, free)
 const local = Embeddings.create({ connector: 'ollama-local' });
 const localResult = await local.embed('search query');
-// Uses qwen3-embedding (4096 dims, #1 on MTEB multilingual)
+// Uses embeddinggemma by default (compact, multilingual, 768 dims)
 ```
 
 ### Document Reader
@@ -2119,7 +2119,7 @@ the xAI-specific facade retains its full rate range for both paths. See the
 
 **Available Models:**
 - **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-3.1-flash-tts-preview`, Gemini 2.5 TTS), xAI (`xai-tts`, REST and WebSocket)
-- **STT**: OpenAI (`gpt-transcribe`, `gpt-live-transcribe`, `gpt-realtime-whisper`, GPT-4o, Whisper), Google (`gemini-3.6-flash`), xAI (`xai-stt`, REST and WebSocket)
+- **STT**: OpenAI (`gpt-transcribe`, `gpt-live-transcribe`, `gpt-realtime-whisper`, GPT-4o, Whisper), Google (`gemini-3.5-transcribe`, `gemini-3.5-transcribe-live`), Groq (`whisper-large-v3`, `whisper-large-v3-turbo`), xAI (`xai-stt`, REST and WebSocket)
 
 ### Embeddings
 
@@ -2175,7 +2175,7 @@ Connector.create({
 
 const local = Embeddings.create({ connector: 'ollama-local' });
 const localResult = await local.embed('semantic search query');
-// Uses qwen3-embedding by default (4096 dims, #1 on MTEB multilingual)
+// Uses embeddinggemma by default (compact, multilingual, 768 dims)
 ```
 
 External media is streamed into a bounded buffer with a 30-second default
@@ -2209,7 +2209,7 @@ console.log(`$${cost} per 1M tokens`);  // $0.02
 // Browse models by vendor
 const ollamaModels = getEmbeddingModelsByVendor(Vendor.Ollama);
 console.log(ollamaModels.map(m => `${m.name} (${m.capabilities.defaultDimensions}d)`));
-// ['qwen3-embedding (4096d)', 'qwen3-embedding:4b (4096d)', 'qwen3-embedding:0.6b (1024d)', ...]
+// ['embeddinggemma (768d)', 'all-minilm (384d)', 'qwen3-embedding (4096d)', ...]
 ```
 
 **Available Embedding Models:**
@@ -2218,16 +2218,20 @@ console.log(ollamaModels.map(m => `${m.name} (${m.capabilities.defaultDimensions
 |--------|-------|------|-----|--------|----------|
 | OpenAI | `text-embedding-3-small` | 1536 | yes | 8191 | $0.02 |
 | OpenAI | `text-embedding-3-large` | 3072 | yes | 8191 | $0.13 |
+| OpenAI | `text-embedding-ada-002` (legacy) | 1536 | no | 8191 | $0.10 |
 | Google | `gemini-embedding-2` | 3072 | yes | 8192 | $0.20 text; modality-specific rates |
 | Google | `gemini-embedding-001` | 3072 | yes | 2048 | $0.15 |
 | Mistral | `mistral-embed` | 1024 | no | 8192 | $0.10 |
+| Mistral | `codestral-embed` | 3072 | yes | 8192 | $0.15 |
+| Ollama | `embeddinggemma` (default) | 768 | yes | 2048 | Free (local) |
+| Ollama | `all-minilm` | 384 | no | 512 | Free (local) |
 | Ollama | `qwen3-embedding` (8B) | 4096 | yes | 8192 | Free (local) |
 | Ollama | `qwen3-embedding:0.6b` | 1024 | yes | 8192 | Free (local) |
 | Ollama | `nomic-embed-text` | 768 | yes | 8192 | Free (local) |
 
 ### 14. Model Registry
 
-Schema-v2 metadata for 92 text/realtime models, with lifecycle, aliases,
+Schema-v2 metadata for 95 text/realtime models, with lifecycle, aliases,
 snapshots, endpoints, replacement models, pricing modes, context windows, and
 feature flags:
 
@@ -3485,7 +3489,7 @@ Each vendor has different model names. Check the [User Guide](./USER_GUIDE.md) f
 
 ### Vision not working
 Use a current vision-capable model: `gpt-5.6-terra`, `claude-fable-5`, or
-`gemini-3.6-flash`.
+`gemini-3.7-flash`.
 
 ## Contributing
 

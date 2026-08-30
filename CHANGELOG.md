@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **August 2026 model catalog.** Added Gemini 3.7 Flash, Gemini Omni 1.1 Flash,
+  Gemini 3.5 Transcribe/Live, Grok 4.6, Grok Imagine Image 2.0, DeepSeek V4
+  Flash Vision Experimental, Groq Whisper Large v3 Turbo, Codestral Embed,
+  EmbeddingGemma, and All MiniLM.
+
+### Changed
+
+- **Current pricing and defaults.** Updated GPT-5.6 Sol promotional pricing,
+  DeepSeek peak/off-peak rates, Groq Whisper pricing, Google/xAI media defaults,
+  current provider routing, Agent Runtime reasoning maps, and downstream app,
+  integration-test, and AMOS documentation.
+- **Lifecycle metadata.** Retired elapsed OpenAI aliases, Google Imagen 4, and
+  Groq Distil Whisper entries. Sora 2 and Sora 2 Pro remain callable but are
+  marked deprecated from 2026-03-24 through the 2026-09-24 Videos API shutdown.
+
 ## [1.1.2] — 2026-08-30
 
 Version 1.1.2 strengthens long-lived provider sessions, distributed Agent

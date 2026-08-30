@@ -19,10 +19,11 @@ describe('DeepSeek host registry', () => {
     ]);
   });
 
-  it('auto-routes first-party Flash to Responses and Pro to Chat Completions', () => {
+  it('auto-routes current first-party models to Responses', () => {
     const host = resolveDeepSeekHost();
     expect(resolveDeepSeekModel('deepseek-v4-flash', host).transport).toBe('responses');
-    expect(resolveDeepSeekModel('deepseek-v4-pro', host).transport).toBe('chat_completions');
+    expect(resolveDeepSeekModel('deepseek-v4-pro', host).transport).toBe('responses');
+    expect(resolveDeepSeekModel('deepseek-v4-flash-vision-exp', host).transport).toBe('responses');
   });
 
   it('maps canonical model IDs for hosted providers', () => {

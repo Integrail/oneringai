@@ -131,7 +131,7 @@ const OPENAI_TTS_BASE: Omit<TTSModelCapabilities, 'features' | 'limits'> = {
 
 /**
  * Complete TTS model registry
- * Last full audit: January 2026
+ * Last full audit: August 2026
  */
 export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
   // ======================== OpenAI ========================
@@ -146,7 +146,7 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/text-to-speech',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...OPENAI_TTS_BASE,
@@ -179,7 +179,7 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/text-to-speech',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...OPENAI_TTS_BASE,
@@ -205,7 +205,7 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/text-to-speech',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...OPENAI_TTS_BASE,
@@ -237,7 +237,7 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-tts-preview',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -266,7 +266,7 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/speech-generation',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -299,7 +299,7 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/speech-generation',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -338,7 +338,7 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
     sources: {
       documentation: 'https://docs.x.ai/developers/model-capabilities/audio/text-to-speech',
       pricing: 'https://docs.x.ai/developers/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       voices: XAI_VOICES,

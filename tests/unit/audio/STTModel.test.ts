@@ -126,7 +126,7 @@ describe('STTModel Registry', () => {
 
     it('should calculate cost for Groq (ultra cheap)', () => {
       const cost = calculateSTTCost('whisper-large-v3', 60);
-      expect(cost).toBe(0.0005); // 12x cheaper than OpenAI
+      expect(cost).toBe(0.00185);
     });
 
     it('should calculate cost for partial minutes', () => {
@@ -153,6 +153,8 @@ describe('STTModel Registry', () => {
       expect(STT_MODELS[Vendor.OpenAI].GPT_REALTIME_WHISPER).toBe('gpt-realtime-whisper');
       expect(STT_MODELS[Vendor.OpenAI].GPT_LIVE_TRANSCRIBE).toBe('gpt-live-transcribe');
       expect(STT_MODELS[Vendor.Groq].WHISPER_LARGE_V3).toBe('whisper-large-v3');
+      expect(STT_MODELS[Vendor.Groq].WHISPER_LARGE_V3_TURBO).toBe('whisper-large-v3-turbo');
+      expect(STT_MODELS[Vendor.Google].GEMINI_3_5_TRANSCRIBE).toBe('gemini-3.5-transcribe');
     });
   });
 
@@ -186,10 +188,10 @@ describe('STTModel Registry', () => {
     });
 
     it('describes Gemini native transcription accurately', () => {
-      const model = getSTTModelInfo('gemini-3.6-flash');
+      const model = getSTTModelInfo('gemini-3.5-transcribe');
       expect(model?.endpoints).toEqual(['interactions']);
       expect(model?.capabilities.outputFormats).toEqual(['text']);
-      expect(model?.capabilities.timestamps).toEqual({ supported: true, granularities: ['segment'] });
+      expect(model?.capabilities.timestamps).toEqual({ supported: true, granularities: ['word', 'segment'] });
       expect(model?.capabilities.features.diarization).toBe(true);
       expect(model?.capabilities.inputFormats).toEqual(['wav', 'mp3', 'aiff', 'aac', 'ogg', 'flac']);
     });

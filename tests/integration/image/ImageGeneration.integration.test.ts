@@ -63,7 +63,7 @@ describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
     }
   });
 
-  describe('Basic generation with DALL-E 3', () => {
+  describe('Basic generation with GPT Image 2', () => {
     it('should generate an image from a prompt', async () => {
       const imageGen = ImageGeneration.create({
         connector: 'openai-image-test',
@@ -71,7 +71,7 @@ describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A simple red circle on a white background',
-        model: 'dall-e-3',
+        model: 'gpt-image-2',
         size: '1024x1024',
         quality: 'standard',
       });
@@ -81,38 +81,35 @@ describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
       expect(response.data[0].b64_json).toBeDefined();
       expect(response.data[0].b64_json!.length).toBeGreaterThan(1000);
 
-      // DALL-E 3 often revises prompts
       if (response.data[0].revised_prompt) {
         expect(response.data[0].revised_prompt.length).toBeGreaterThan(0);
       }
     }, 60000); // 60s timeout for image generation
 
-    it('should generate with vivid style', async () => {
+    it('should generate another square image', async () => {
       const imageGen = ImageGeneration.create({
         connector: 'openai-image-test',
       });
 
       const response = await imageGen.generate({
         prompt: 'A sunset over mountains',
-        model: 'dall-e-3',
+        model: 'gpt-image-2',
         size: '1024x1024',
-        style: 'vivid',
       });
 
       expect(response.data).toHaveLength(1);
       expect(response.data[0].b64_json).toBeDefined();
     }, 60000);
 
-    it('should generate with natural style', async () => {
+    it('should generate from a second prompt', async () => {
       const imageGen = ImageGeneration.create({
         connector: 'openai-image-test',
       });
 
       const response = await imageGen.generate({
         prompt: 'A forest path in autumn',
-        model: 'dall-e-3',
+        model: 'gpt-image-2',
         size: '1024x1024',
-        style: 'natural',
       });
 
       expect(response.data).toHaveLength(1);
@@ -120,31 +117,31 @@ describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
     }, 60000);
   });
 
-  describe('DALL-E 2 generation', () => {
-    it('should generate an image with DALL-E 2', async () => {
+  describe('GPT Image 2 batch generation', () => {
+    it('should generate an image', async () => {
       const imageGen = ImageGeneration.create({
         connector: 'openai-image-test',
       });
 
       const response = await imageGen.generate({
         prompt: 'A blue square',
-        model: 'dall-e-2',
-        size: '512x512',
+        model: 'gpt-image-2',
+        size: '1024x1024',
       });
 
       expect(response.data).toHaveLength(1);
       expect(response.data[0].b64_json).toBeDefined();
     }, 60000);
 
-    it('should generate multiple images with DALL-E 2', async () => {
+    it('should generate multiple images', async () => {
       const imageGen = ImageGeneration.create({
         connector: 'openai-image-test',
       });
 
       const response = await imageGen.generate({
         prompt: 'A green triangle',
-        model: 'dall-e-2',
-        size: '256x256',
+        model: 'gpt-image-2',
+        size: '1024x1024',
         n: 2,
       });
 
@@ -162,7 +159,7 @@ describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A detailed cityscape at night',
-        model: 'dall-e-3',
+        model: 'gpt-image-2',
         size: '1024x1024',
         quality: 'hd',
       });
@@ -182,8 +179,8 @@ describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A panoramic mountain view',
-        model: 'dall-e-3',
-        size: '1792x1024', // Landscape
+        model: 'gpt-image-2',
+        size: '1536x1024', // Landscape
       });
 
       expect(response.data).toHaveLength(1);
@@ -197,8 +194,8 @@ describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A tall waterfall',
-        model: 'dall-e-3',
-        size: '1024x1792', // Portrait
+        model: 'gpt-image-2',
+        size: '1024x1536', // Portrait
       });
 
       expect(response.data).toHaveLength(1);
@@ -214,8 +211,8 @@ describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A simple star shape',
-        model: 'dall-e-2',
-        size: '256x256',
+        model: 'gpt-image-2',
+        size: '1024x1024',
       });
 
       expect(response.data[0].b64_json).toBeDefined();
@@ -244,8 +241,8 @@ describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
 
       const models = await imageGen.listModels();
 
-      expect(models).toContain('dall-e-3');
-      expect(models).toContain('dall-e-2');
+      expect(models).toContain('gpt-image-2');
+      expect(models).toContain('gpt-image-1.5');
       expect(models).toContain('gpt-image-1');
     });
   });
@@ -256,30 +253,25 @@ describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
         connector: 'openai-image-test',
       });
 
-      const info = imageGen.getModelInfo('dall-e-3');
+      const info = imageGen.getModelInfo('gpt-image-2');
 
       expect(info).toBeDefined();
-      expect(info?.name).toBe('dall-e-3');
-      expect(info?.capabilities.features.styleControl).toBe(true);
-      expect(info?.capabilities.features.promptRevision).toBe(true);
+      expect(info?.name).toBe('gpt-image-2');
+      expect(info?.capabilities.features.styleControl).toBe(false);
+      expect(info?.capabilities.features.qualityControl).toBe(true);
     });
   });
 
-  describe('Image editing (DALL-E 2)', () => {
-    // Note: DALL-E 2 edit requires images with alpha channel (RGBA/PNG format)
-    // Generated images from DALL-E are RGB, so we skip real edit tests
-    // In production, you would need to provide properly formatted RGBA images
-    it.skip('should edit an image with a mask (requires RGBA image)', async () => {
+  describe('Image editing (GPT Image 2)', () => {
+    it('should edit a generated image', async () => {
       const imageGen = ImageGeneration.create({
         connector: 'openai-image-test',
       });
 
-      // Note: This test is skipped because DALL-E 2 edit requires RGBA images
-      // Generated images are RGB format which causes: "format must be in ['RGBA', 'LA', 'L'], got RGB"
       const baseResponse = await imageGen.generate({
         prompt: 'A simple white square on a light gray background',
-        model: 'dall-e-2',
-        size: '256x256',
+        model: 'gpt-image-2',
+        size: '1024x1024',
       });
 
       expect(baseResponse.data[0].b64_json).toBeDefined();
@@ -288,110 +280,18 @@ describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
       const editResponse = await imageGen.edit({
         image: imageBuffer,
         prompt: 'Add a small red circle in the center',
-        model: 'dall-e-2',
-        size: '256x256',
+        model: 'gpt-image-2',
+        size: '1024x1024',
       });
 
       expect(editResponse.data).toHaveLength(1);
       expect(editResponse.data[0].b64_json).toBeDefined();
     }, 120000);
   });
-
-  // DALL-E 2 is a legacy model and the variations endpoint is no longer reliably
-  // available (returns 404). Skipped — we don't ship DALL-E 2 as a current option.
-  describe.skip('Image variations (DALL-E 2)', () => {
-    it('should create a variation of an image', async () => {
-      const imageGen = ImageGeneration.create({
-        connector: 'openai-image-test',
-      });
-
-      // First generate a base image
-      const baseResponse = await imageGen.generate({
-        prompt: 'A colorful abstract pattern',
-        model: 'dall-e-2',
-        size: '256x256',
-      });
-
-      expect(baseResponse.data[0].b64_json).toBeDefined();
-      const imageBuffer = Buffer.from(baseResponse.data[0].b64_json!, 'base64');
-
-      // Create a variation
-      const variationResponse = await imageGen.createVariation({
-        image: imageBuffer,
-        model: 'dall-e-2',
-        size: '256x256',
-      });
-
-      expect(variationResponse.data).toHaveLength(1);
-      expect(variationResponse.data[0].b64_json).toBeDefined();
-      expect(variationResponse.data[0].b64_json!.length).toBeGreaterThan(1000);
-    }, 120000);
-
-    it('should create multiple variations', async () => {
-      const imageGen = ImageGeneration.create({
-        connector: 'openai-image-test',
-      });
-
-      // First generate a base image
-      const baseResponse = await imageGen.generate({
-        prompt: 'A simple geometric shape',
-        model: 'dall-e-2',
-        size: '256x256',
-      });
-
-      expect(baseResponse.data[0].b64_json).toBeDefined();
-      const imageBuffer = Buffer.from(baseResponse.data[0].b64_json!, 'base64');
-
-      // Create 2 variations
-      const variationResponse = await imageGen.createVariation({
-        image: imageBuffer,
-        model: 'dall-e-2',
-        size: '256x256',
-        n: 2,
-      });
-
-      expect(variationResponse.data).toHaveLength(2);
-      expect(variationResponse.data[0].b64_json).toBeDefined();
-      expect(variationResponse.data[1].b64_json).toBeDefined();
-    }, 120000);
-  });
-
-  describe('Image editing (gpt-image-1)', () => {
-    // Note: gpt-image-1 has different API requirements:
-    // - Doesn't support response_format parameter (returns URLs by default)
-    // - May have different image format requirements
-    // This test is skipped until we can properly handle gpt-image-1 specifics
-    it.skip('should edit an image with gpt-image-1 (requires URL handling)', async () => {
-      const imageGen = ImageGeneration.create({
-        connector: 'openai-image-test',
-      });
-
-      // First generate a base image with gpt-image-1
-      const baseResponse = await imageGen.generate({
-        prompt: 'A simple blue circle on white background',
-        model: 'gpt-image-1',
-        size: '1024x1024',
-      });
-
-      // Note: gpt-image-1 may return URL instead of b64_json
-      const imageData = baseResponse.data[0].b64_json || baseResponse.data[0].url;
-      expect(imageData).toBeDefined();
-
-      // Edit would require downloading the image first if URL
-      const editResponse = await imageGen.edit({
-        image: Buffer.from(baseResponse.data[0].b64_json || '', 'base64'),
-        prompt: 'Change the circle to red',
-        model: 'gpt-image-1',
-        size: '1024x1024',
-      });
-
-      expect(editResponse.data).toHaveLength(1);
-    }, 180000);
-  });
 });
 
 // ============================================================================
-// Google Imagen Tests
+// Google Gemini Image Tests
 // ============================================================================
 
 describeIfGoogle('ImageGeneration Integration (Google)', () => {
@@ -427,7 +327,7 @@ describeIfGoogle('ImageGeneration Integration (Google)', () => {
     }
   });
 
-  describe('Basic generation with Imagen 4.0', () => {
+  describe('Basic generation with Gemini 3.1 Flash Image', () => {
     it('should generate an image from a prompt', async () => {
       const imageGen = ImageGeneration.create({
         connector: 'google-image-test',
@@ -435,7 +335,7 @@ describeIfGoogle('ImageGeneration Integration (Google)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A simple red apple on a white background',
-        model: 'imagen-4.0-generate-001',
+        model: 'gemini-3.1-flash-image',
       });
 
       expect(response.created).toBeGreaterThan(0);
@@ -451,7 +351,7 @@ describeIfGoogle('ImageGeneration Integration (Google)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A colorful butterfly',
-        model: 'imagen-4.0-generate-001',
+        model: 'gemini-3.1-flash-image',
         n: 2,
       });
 
@@ -460,7 +360,7 @@ describeIfGoogle('ImageGeneration Integration (Google)', () => {
     }, 60000);
   });
 
-  describe('Imagen 4.0 Fast model', () => {
+  describe('Gemini 3.1 Flash Lite Image model', () => {
     it('should generate with fast model', async () => {
       const imageGen = ImageGeneration.create({
         connector: 'google-image-test',
@@ -468,7 +368,7 @@ describeIfGoogle('ImageGeneration Integration (Google)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A simple blue circle',
-        model: 'imagen-4.0-fast-generate-001',
+        model: 'gemini-3.1-flash-lite-image',
       });
 
       expect(response.data).toHaveLength(1);
@@ -484,7 +384,7 @@ describeIfGoogle('ImageGeneration Integration (Google)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A simple green square',
-        model: 'imagen-4.0-fast-generate-001',
+        model: 'gemini-3.1-flash-lite-image',
       });
 
       expect(response.data[0].b64_json).toBeDefined();
@@ -509,9 +409,9 @@ describeIfGoogle('ImageGeneration Integration (Google)', () => {
 
       const models = await imageGen.listModels();
 
-      expect(models).toContain('imagen-4.0-generate-001');
-      expect(models).toContain('imagen-4.0-fast-generate-001');
-      expect(models).toContain('imagen-4.0-ultra-generate-001');
+      expect(models).toContain('gemini-3.1-flash-image');
+      expect(models).toContain('gemini-3.1-flash-lite-image');
+      expect(models).toContain('gemini-3-pro-image');
     });
   });
 
@@ -521,10 +421,10 @@ describeIfGoogle('ImageGeneration Integration (Google)', () => {
         connector: 'google-image-test',
       });
 
-      const info = imageGen.getModelInfo('imagen-4.0-generate-001');
+      const info = imageGen.getModelInfo('gemini-3.1-flash-image');
 
       expect(info).toBeDefined();
-      expect(info?.name).toBe('imagen-4.0-generate-001');
+      expect(info?.name).toBe('gemini-3.1-flash-image');
       expect(info?.capabilities.aspectRatios).toBeDefined();
       expect(info?.capabilities.aspectRatios).toContain('16:9');
     });
@@ -576,7 +476,7 @@ describeIfGrok('ImageGeneration Integration (Grok)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A simple red circle on a white background',
-        model: 'grok-imagine-image',
+        model: 'grok-imagine-image-2.0',
         size: '1024x1024',
       });
 
@@ -592,7 +492,7 @@ describeIfGrok('ImageGeneration Integration (Grok)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A colorful abstract pattern',
-        model: 'grok-imagine-image',
+        model: 'grok-imagine-image-2.0',
         size: '1024x1024',
         n: 2,
       });
@@ -601,17 +501,16 @@ describeIfGrok('ImageGeneration Integration (Grok)', () => {
     }, 90000);
   });
 
-  describe('HD quality', () => {
-    it('should generate HD quality image', async () => {
+  describe('Medium quality', () => {
+    it('should generate a 2K medium-quality image', async () => {
       const imageGen = ImageGeneration.create({
         connector: 'grok-image-test',
       });
 
       const response = await imageGen.generate({
         prompt: 'A detailed cityscape at night',
-        model: 'grok-imagine-image',
-        size: '1024x1024',
-        quality: 'hd',
+        model: 'grok-imagine-image-2.0',
+        vendorOptions: { resolution: '2K', quality: 'medium' },
       });
 
       expect(response.data).toHaveLength(1);
@@ -627,8 +526,8 @@ describeIfGrok('ImageGeneration Integration (Grok)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A panoramic mountain view',
-        model: 'grok-imagine-image',
-        size: '1536x1024', // Landscape
+        model: 'grok-imagine-image-2.0',
+        aspectRatio: '16:9',
       });
 
       expect(response.data).toHaveLength(1);
@@ -641,8 +540,8 @@ describeIfGrok('ImageGeneration Integration (Grok)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A tall waterfall',
-        model: 'grok-imagine-image',
-        size: '1024x1536', // Portrait
+        model: 'grok-imagine-image-2.0',
+        aspectRatio: '9:16',
       });
 
       expect(response.data).toHaveLength(1);
@@ -657,7 +556,7 @@ describeIfGrok('ImageGeneration Integration (Grok)', () => {
 
       const response = await imageGen.generate({
         prompt: 'A simple star shape',
-        model: 'grok-imagine-image',
+        model: 'grok-imagine-image-2.0',
         size: '1024x1024',
       });
 
@@ -685,8 +584,8 @@ describeIfGrok('ImageGeneration Integration (Grok)', () => {
 
       const models = await imageGen.listModels();
 
-      expect(models).toContain('grok-imagine-image');
-      // Note: Only grok-imagine-image is registered in the model registry
+      expect(models).toContain('grok-imagine-image-2.0');
+      expect(models).toContain('grok-imagine-image-quality');
     });
   });
 
@@ -696,10 +595,10 @@ describeIfGrok('ImageGeneration Integration (Grok)', () => {
         connector: 'grok-image-test',
       });
 
-      const info = imageGen.getModelInfo('grok-imagine-image');
+      const info = imageGen.getModelInfo('grok-imagine-image-2.0');
 
       expect(info).toBeDefined();
-      expect(info?.name).toBe('grok-imagine-image');
+      expect(info?.name).toBe('grok-imagine-image-2.0');
       expect(info?.capabilities.features.generation).toBe(true);
       expect(info?.capabilities.features.editing).toBe(true);
       expect(info?.capabilities.maxImagesPerRequest).toBe(10);

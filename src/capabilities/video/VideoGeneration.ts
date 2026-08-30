@@ -9,12 +9,12 @@
  * import { VideoGeneration, Connector, Vendor } from '@everworker/oneringai';
  *
  * Connector.create({
- *   name: 'openai',
- *   vendor: Vendor.OpenAI,
- *   auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+ *   name: 'google-video',
+ *   vendor: Vendor.Google,
+ *   auth: { type: 'api_key', apiKey: process.env.GEMINI_API_KEY! },
  * });
  *
- * const videoGen = VideoGeneration.create({ connector: 'openai' });
+ * const videoGen = VideoGeneration.create({ connector: 'google-video' });
  *
  * // Start video generation
  * const job = await videoGen.generate({
@@ -208,7 +208,7 @@ export class VideoGeneration {
 
   /**
    * Remix a completed video with a new prompt — same length,
-   * prompt-steered re-generation. Provider-dependent (OpenAI Sora today).
+   * prompt-steered re-generation. Provider-dependent.
    */
   async remix(options: VideoRemixOptions): Promise<VideoResponse> {
     if (!this.provider.remixVideo) {
@@ -219,7 +219,7 @@ export class VideoGeneration {
 
   /**
    * Edit a completed video using a prompt-described change.
-   * Provider-dependent (OpenAI Sora today).
+   * Provider-dependent.
    */
   async edit(options: VideoEditOptions): Promise<VideoResponse> {
     if (!this.provider.editVideo) {
@@ -230,7 +230,7 @@ export class VideoGeneration {
 
   /**
    * Create a reusable character from a reference video.
-   * Provider-dependent (OpenAI Sora today). Returns a `CharacterRef` whose
+   * Provider-dependent. Returns a `CharacterRef` whose
    * `id` can be passed back via `vendorOptions.characterId` on a later
    * `generate` call.
    */
@@ -267,7 +267,8 @@ export class VideoGeneration {
    */
   async listModels(): Promise<string[]> {
     if (this.provider.listModels) {
-      return this.provider.listModels();
+      const models = await this.provider.listModels();
+      return models.filter((model) => getVideoModelInfo(model)?.isActive);
     }
 
     // Fallback to registry
@@ -310,9 +311,9 @@ export class VideoGeneration {
       case Vendor.OpenAI:
         return VIDEO_MODELS[Vendor.OpenAI].SORA_2;
       case Vendor.Google:
-        return VIDEO_MODELS[Vendor.Google].VEO_3_1_LITE;
+        return VIDEO_MODELS[Vendor.Google].GEMINI_OMNI_1_1_FLASH;
       case Vendor.Grok:
-        return VIDEO_MODELS[Vendor.Grok].GROK_IMAGINE_VIDEO;
+        return VIDEO_MODELS[Vendor.Grok].GROK_IMAGINE_VIDEO_1_5;
       default:
         throw new Error(`No default video model for vendor: ${vendor}`);
     }

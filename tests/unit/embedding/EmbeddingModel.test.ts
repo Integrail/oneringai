@@ -28,9 +28,12 @@ describe('EmbeddingModel Registry', () => {
 
     it('should have all declared Mistral models', () => {
       expect(EMBEDDING_MODEL_REGISTRY['mistral-embed']).toBeDefined();
+      expect(EMBEDDING_MODEL_REGISTRY['codestral-embed']).toBeDefined();
     });
 
     it('should have all declared Ollama models', () => {
+      expect(EMBEDDING_MODEL_REGISTRY['embeddinggemma']).toBeDefined();
+      expect(EMBEDDING_MODEL_REGISTRY['all-minilm']).toBeDefined();
       expect(EMBEDDING_MODEL_REGISTRY['qwen3-embedding']).toBeDefined();
       expect(EMBEDDING_MODEL_REGISTRY['qwen3-embedding:4b']).toBeDefined();
       expect(EMBEDDING_MODEL_REGISTRY['qwen3-embedding:0.6b']).toBeDefined();
@@ -115,14 +118,13 @@ describe('EmbeddingModel Registry', () => {
 
     it('should return Ollama models', () => {
       const models = getEmbeddingModelsByVendor(Vendor.Ollama);
-      expect(models.length).toBe(5);
+      expect(models.length).toBe(7);
       expect(models.every((m) => m.provider === Vendor.Ollama)).toBe(true);
     });
 
     it('should return Mistral models', () => {
       const models = getEmbeddingModelsByVendor(Vendor.Mistral);
-      expect(models.length).toBe(1);
-      expect(models[0]?.name).toBe('mistral-embed');
+      expect(models.map((model) => model.name)).toEqual(['mistral-embed', 'codestral-embed']);
     });
 
     it('should return empty for unsupported vendor', () => {
@@ -137,9 +139,9 @@ describe('EmbeddingModel Registry', () => {
       expect(models.every((m) => m.isActive)).toBe(true);
     });
 
-    it('should not include deprecated ada-002', () => {
+    it('should include callable legacy ada-002', () => {
       const models = getActiveEmbeddingModels();
-      expect(models.find((m) => m.name === 'text-embedding-ada-002')).toBeUndefined();
+      expect(models.find((m) => m.name === 'text-embedding-ada-002')?.lifecycle).toBe('legacy');
     });
   });
 
@@ -229,6 +231,8 @@ describe('EmbeddingModel Registry', () => {
     });
 
     it('should have EMBEDDING_MODELS constants for Ollama', () => {
+      expect(EMBEDDING_MODELS[Vendor.Ollama].EMBEDDINGGEMMA).toBe('embeddinggemma');
+      expect(EMBEDDING_MODELS[Vendor.Ollama].ALL_MINILM).toBe('all-minilm');
       expect(EMBEDDING_MODELS[Vendor.Ollama].QWEN3_EMBEDDING).toBe('qwen3-embedding');
       expect(EMBEDDING_MODELS[Vendor.Ollama].QWEN3_EMBEDDING_4B).toBe('qwen3-embedding:4b');
       expect(EMBEDDING_MODELS[Vendor.Ollama].QWEN3_EMBEDDING_0_6B).toBe('qwen3-embedding:0.6b');
@@ -238,6 +242,7 @@ describe('EmbeddingModel Registry', () => {
 
     it('should have EMBEDDING_MODELS constants for Mistral', () => {
       expect(EMBEDDING_MODELS[Vendor.Mistral].MISTRAL_EMBED).toBe('mistral-embed');
+      expect(EMBEDDING_MODELS[Vendor.Mistral].CODESTRAL_EMBED).toBe('codestral-embed');
     });
   });
 
@@ -254,9 +259,10 @@ describe('EmbeddingModel Registry', () => {
       expect(model?.capabilities.features.matryoshka).toBe(false);
     });
 
-    it('should mark ada-002 as inactive', () => {
+    it('should mark ada-002 as callable legacy', () => {
       const model = getEmbeddingModelInfo('text-embedding-ada-002');
-      expect(model?.isActive).toBe(false);
+      expect(model?.isActive).toBe(true);
+      expect(model?.lifecycle).toBe('legacy');
     });
 
     it('should mark all Qwen3 models as instruction-aware and multilingual', () => {

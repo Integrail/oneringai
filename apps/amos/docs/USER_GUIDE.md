@@ -121,7 +121,7 @@ Most commands have short aliases:
 Examples:
   /model gpt-5.6-terra
   /model claude-sonnet-5
-  /model gemini-3.6-flash
+  /model gemini-3.7-flash
 ```
 
 ### Vendor Management
@@ -238,7 +238,7 @@ AMOS supports multiple AI providers:
 |--------|---------------|
 | OpenAI | gpt-5.6-terra, gpt-5.4-mini |
 | Anthropic | claude-sonnet-5, claude-opus-5 |
-| Google | gemini-3.6-flash, gemini-3.1-pro-preview |
+| Google | gemini-3.7-flash, gemini-3.6-flash, gemini-3.1-pro-preview |
 | Groq | llama-3.3-70b-versatile |
 | Together | mixtral-8x7b-instruct |
 | Mistral | mistral-large |

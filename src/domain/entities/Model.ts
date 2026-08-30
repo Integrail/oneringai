@@ -185,7 +185,8 @@ export type ProcessingMode =
   | 'batch'
   | 'flex'
   | 'fast'
-  | 'priority';
+  | 'priority'
+  | 'off_peak';
 
 export interface LongContextTokenPricing {
   /** Apply this tier when total request input is at least this many tokens. */
@@ -300,6 +301,7 @@ export const LLM_MODELS = {
   },
   [Vendor.Google]: {
     // Current Gemini 3.x production models
+    GEMINI_3_7_FLASH: 'gemini-3.7-flash',
     GEMINI_3_6_FLASH: 'gemini-3.6-flash',
     GEMINI_3_5_FLASH: 'gemini-3.5-flash',
     GEMINI_3_5_FLASH_LITE: 'gemini-3.5-flash-lite',
@@ -320,6 +322,7 @@ export const LLM_MODELS = {
   },
   [Vendor.Grok]: {
     // Current production models
+    GROK_4_6: 'grok-4.6',
     GROK_4_5: 'grok-4.5',
     GROK_4_3: 'grok-4.3',
     GROK_BUILD_0_1: 'grok-build-0.1',
@@ -339,6 +342,7 @@ export const LLM_MODELS = {
     // Current first-party models
     DEEPSEEK_V4_FLASH: 'deepseek-v4-flash',
     DEEPSEEK_V4_PRO: 'deepseek-v4-pro',
+    DEEPSEEK_V4_FLASH_VISION_EXP: 'deepseek-v4-flash-vision-exp',
     // Retired compatibility IDs (kept explicit; never silently remapped)
     DEEPSEEK_CHAT: 'deepseek-chat',
     DEEPSEEK_REASONER: 'deepseek-reasoner',
@@ -347,11 +351,11 @@ export const LLM_MODELS = {
 
 /**
  * Complete model registry with all model metadata
- * Registry schema v2. Last full first-party documentation audit: 2026-08-08.
+ * Registry schema v2. Last full first-party documentation audit: 2026-08-30.
  */
 export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   // ============================================================================
-  // OpenAI Models (Verified from developers.openai.com - March 2026)
+  // OpenAI Models (Verified from developers.openai.com - August 2026)
   // ============================================================================
 
   // GPT-5.6 Series (current frontier family - July 2026)
@@ -368,18 +372,18 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['responses', 'chat_completions', 'batch'],
     releaseDate: '2026-07-09',
     knowledgeCutoff: '2026-02-16',
-    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-sol', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-sol', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
       audio: false, video: false, batchAPI: true, promptCaching: true,
       parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
-      input: { tokens: 1050000, text: true, image: true, cpm: 5, cpmCached: 0.5 },
-      output: { tokens: 128000, text: true, cpm: 30 },
+      input: { tokens: 1050000, text: true, image: true, cpm: 4, cpmCached: 0.4 },
+      output: { tokens: 128000, text: true, cpm: 20 },
       pricing: {
         text: {
-          input: 5, cachedInput: 0.5, cacheWrite: 6.25, output: 30,
-          longContext: { thresholdTokens: 272000, input: 10, cachedInput: 1, cacheWrite: 12.5, output: 45 },
+          input: 4, cachedInput: 0.4, cacheWrite: 5, output: 20,
+          longContext: { thresholdTokens: 272000, input: 8, cachedInput: 0.8, cacheWrite: 10, output: 30 },
         },
         processingMultipliers: { batch: 0.5, fast: 2 },
       },
@@ -398,7 +402,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['responses', 'chat_completions', 'batch'],
     releaseDate: '2026-07-09',
     knowledgeCutoff: '2026-02-16',
-    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-terra', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-terra', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -427,7 +431,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['responses', 'chat_completions', 'batch'],
     releaseDate: '2026-07-09',
     knowledgeCutoff: '2026-02-16',
-    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-luna', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-luna', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -455,7 +459,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['responses', 'batch'],
     releaseDate: '2026-04-25',
     knowledgeCutoff: '2025-12-01',
-    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.5-pro', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.5-pro', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -727,8 +731,12 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   'gpt-5.3-chat-latest': {
     name: 'gpt-5.3-chat-latest',
     provider: Vendor.OpenAI,
-    description: 'Latest GPT-5.3 chat model for general-purpose use',
-    isActive: true,
+    description: 'Retired GPT-5.3 chat alias retained for migration metadata',
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-05-08',
+    retirementDate: '2026-08-10',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2026-02-01',
     knowledgeCutoff: '2025-08-31',
     features: {
@@ -848,7 +856,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-5.2-codex',
     provider: Vendor.OpenAI,
     description: 'GPT-5.2 codex for coding and agentic tasks. Reasoning.effort: low, medium, high, xhigh',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-12-01',
     knowledgeCutoff: '2025-08-31',
     features: {
@@ -889,7 +901,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-5.2-chat-latest',
     provider: Vendor.OpenAI,
     description: 'GPT-5.2 chat model for general-purpose use',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-05-08',
+    retirementDate: '2026-08-10',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-12-01',
     knowledgeCutoff: '2025-08-31',
     features: {
@@ -966,7 +982,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-5.1-codex',
     provider: Vendor.OpenAI,
     description: 'GPT-5.1 codex for coding and agentic tasks with reasoning',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-10-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -1007,7 +1027,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-5.1-codex-max',
     provider: Vendor.OpenAI,
     description: 'GPT-5.1 codex max for maximum reasoning depth on coding tasks',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-10-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -1048,7 +1072,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-5.1-codex-mini',
     provider: Vendor.OpenAI,
     description: 'GPT-5.1 codex mini for cost-efficient coding tasks',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-terra',
     releaseDate: '2025-10-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -1089,7 +1117,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-5.1-chat-latest',
     provider: Vendor.OpenAI,
     description: 'GPT-5.1 chat model for general-purpose use',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-10-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -1248,7 +1280,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-5-codex',
     provider: Vendor.OpenAI,
     description: 'GPT-5 codex for coding and agentic tasks with reasoning',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-08-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -1289,7 +1325,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-5-chat-latest',
     provider: Vendor.OpenAI,
     description: 'GPT-5 chat model for general-purpose use',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-08-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -1396,6 +1436,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     provider: Vendor.OpenAI,
     description: 'Fastest and cheapest model with 1M context. 80.1% MMLU, ideal for classification/autocompletion',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-10-23',
+    replacementModel: 'gpt-5.6-luna',
     releaseDate: '2025-04-14',
     knowledgeCutoff: '2024-06-01',
     features: {
@@ -1539,6 +1583,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     provider: Vendor.OpenAI,
     description: 'Audio model with text+audio input/output. 128K context',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-20',
+    retirementDate: '2027-01-20',
+    replacementModel: 'gpt-audio-1.5',
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     features: {
@@ -1574,6 +1622,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     provider: Vendor.OpenAI,
     description: 'Cost-efficient audio model. 128K context',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-20',
+    retirementDate: '2027-01-20',
+    replacementModel: 'gpt-audio-1.5',
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     features: {
@@ -1768,7 +1820,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-realtime',
     provider: Vendor.OpenAI,
     description: 'Realtime model for voice/audio streaming. Text+audio+image input, text+audio output',
-    isActive: false,
+    isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-20',
+    retirementDate: '2027-01-20',
+    replacementModel: 'gpt-realtime-2.1',
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     voices: OPENAI_REALTIME_VOICES,
@@ -1810,7 +1866,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     name: 'gpt-realtime-mini',
     provider: Vendor.OpenAI,
     description: 'Cost-efficient realtime model for voice/audio streaming',
-    isActive: false,
+    isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-20',
+    retirementDate: '2027-01-20',
+    replacementModel: 'gpt-realtime-2.1-mini',
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     voices: OPENAI_REALTIME_VOICES,
@@ -2175,7 +2235,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['messages', 'batch'],
     releaseDate: '2026-07-01',
     knowledgeCutoff: '2026-05-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -2200,7 +2260,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['messages', 'batch'],
     releaseDate: '2026-06-09',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -2314,7 +2374,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['messages', 'batch'],
     releaseDate: '2026-06-09',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true,
       streaming: true,
@@ -2728,8 +2788,36 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
 
 
   // ============================================================================
-  // Google Models (Verified from ai.google.dev - July 2026)
+  // Google Models (Verified from ai.google.dev - August 2026)
   // ============================================================================
+
+  'gemini-3.7-flash': {
+    name: 'gemini-3.7-flash',
+    provider: Vendor.Google,
+    description: 'Latest production Gemini Flash model for agentic workflows and multimodal reasoning',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['gemini-flash-latest'],
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-08-13',
+    knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1_048_576, text: true, image: true, audio: true, video: true, cpm: 0.75, cpmCached: 0.075 },
+      output: { tokens: 65_536, text: true, cpm: 3.75 },
+      pricing: {
+        text: { input: 0.75, cachedInput: 0.075, output: 3.75 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
+      },
+    },
+  },
 
   'gemini-3.6-flash': {
     name: 'gemini-3.6-flash',
@@ -2738,12 +2826,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
-    preferred: true,
-    aliases: ['gemini-flash-latest'],
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-07-21',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -2769,7 +2855,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -2797,7 +2883,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-07-21',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -2818,12 +2904,14 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     provider: Vendor.Google,
     description: 'Stable cost-efficient Gemini 3.1 model for high-volume multimodal workloads',
     isActive: true,
-    lifecycle: 'active',
+    lifecycle: 'deprecated',
+    retirementDate: '2027-05-07',
+    replacementModel: 'gemini-3.5-flash-lite',
     availability: 'public',
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-05-25',
     knowledgeCutoff: '2025-12-01',
-    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -3217,21 +3305,48 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   },
 
   // ============================================================================
-  // xAI Grok Models (Verified from docs.x.ai - April 2026)
+  // xAI Grok Models (Verified from docs.x.ai - August 2026)
   // ============================================================================
 
-  'grok-4.5': {
-    name: 'grok-4.5',
+  'grok-4.6': {
+    name: 'grok-4.6',
     provider: Vendor.Grok,
-    description: 'Current flagship xAI reasoning model for agents, coding, and multimodal tasks',
+    description: 'Latest xAI frontier model for coding, agentic tasks, and knowledge work',
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
     endpoints: ['responses', 'chat_completions', 'messages', 'completions'],
+    releaseDate: '2026-08-12',
+    knowledgeCutoff: '2026-02-01',
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.6', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: false, promptCaching: true,
+      parameters: { temperature: true, topP: true, frequencyPenalty: true, presencePenalty: true },
+      input: { tokens: 500_000, text: true, image: true, cpm: 2, cpmCached: 0.5 },
+      output: { tokens: null, text: true, cpm: 6 },
+      pricing: {
+        text: {
+          input: 2, cachedInput: 0.5, output: 6,
+          longContext: { thresholdTokens: 200_000, input: 4, cachedInput: 1, output: 12 },
+        },
+      },
+    },
+  },
+
+  'grok-4.5': {
+    name: 'grok-4.5',
+    provider: Vendor.Grok,
+    description: 'Previous-generation xAI reasoning model for agents, coding, and multimodal tasks',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['responses', 'chat_completions', 'messages', 'completions'],
     releaseDate: '2026-06-01',
     knowledgeCutoff: '2026-02-01',
-    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.5', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.5', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -3256,10 +3371,10 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    endpoints: ['responses', 'chat_completions'],
+    endpoints: ['responses', 'chat_completions', 'messages'],
     releaseDate: '2026-05-15',
     knowledgeCutoff: '2026-02-01',
-    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.3', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.3', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -3286,7 +3401,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['responses'],
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-02-01',
-    sources: { documentation: 'https://docs.x.ai/developers/models/grok-build-0.1', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-build-0.1', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -3314,7 +3429,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     aliases: ['grok-voice-latest'],
     endpoints: ['realtime'],
     releaseDate: '2026-07-29',
-    sources: { documentation: 'https://docs.x.ai/developers/models/voice-agent-api', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://docs.x.ai/developers/models/voice-agent-api', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
     voices: XAI_VOICES,
     features: {
       reasoning: true, streaming: true, structuredOutput: false, functionCalling: true,
@@ -3330,9 +3445,9 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   'grok-voice-think-fast-1.0': {
     name: 'grok-voice-think-fast-1.0',
     provider: Vendor.Grok,
-    description: 'Previous xAI reasoning voice model; pin only when model stability is required',
+    description: 'Deprecated first-generation xAI reasoning voice model',
     isActive: true,
-    lifecycle: 'legacy',
+    lifecycle: 'deprecated',
     availability: 'public',
     endpoints: ['realtime'],
     replacementModel: 'grok-voice-think-fast-2.0',
@@ -3581,12 +3696,12 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    endpoints: ['responses', 'chat_completions'],
+    endpoints: ['responses', 'chat_completions', 'messages'],
     releaseDate: '2026-04-24',
     sources: {
       documentation: 'https://api-docs.deepseek.com/quick_start/pricing/',
       pricing: 'https://api-docs.deepseek.com/quick_start/pricing/',
-      lastVerified: '2026-08-11',
+      lastVerified: '2026-08-30',
     },
     features: {
       reasoning: true,
@@ -3610,16 +3725,17 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       input: {
         tokens: 1_000_000,
         text: true,
-        cpm: 0.14,
-        cpmCached: 0.0028,
+        cpm: 0.44,
+        cpmCached: 0.014,
       },
       output: {
         tokens: 384_000,
         text: true,
-        cpm: 0.28,
+        cpm: 1.32,
       },
       pricing: {
-        text: { input: 0.14, cachedInput: 0.0028, output: 0.28 },
+        text: { input: 0.44, cachedInput: 0.014, output: 1.32 },
+        processingMultipliers: { off_peak: 0.5 },
       },
     },
   },
@@ -3627,17 +3743,17 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   'deepseek-v4-pro': {
     name: 'deepseek-v4-pro',
     provider: Vendor.DeepSeek,
-    description: 'Highest-capability DeepSeek V4 reasoning model; first-party access uses Chat Completions',
+    description: 'Highest-capability DeepSeek V4 reasoning model with Responses, Chat Completions, and Messages support',
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    endpoints: ['chat_completions', 'messages', 'completions'],
+    endpoints: ['responses', 'chat_completions', 'messages', 'completions'],
     releaseDate: '2026-04-24',
     sources: {
       documentation: 'https://api-docs.deepseek.com/quick_start/pricing/',
       pricing: 'https://api-docs.deepseek.com/quick_start/pricing/',
-      lastVerified: '2026-08-11',
+      lastVerified: '2026-08-30',
     },
     features: {
       reasoning: true,
@@ -3661,16 +3777,69 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
       input: {
         tokens: 1_000_000,
         text: true,
-        cpm: 0.435,
-        cpmCached: 0.003625,
+        cpm: 1.32,
+        cpmCached: 0.044,
       },
       output: {
         tokens: 384_000,
         text: true,
-        cpm: 0.87,
+        cpm: 3.96,
       },
       pricing: {
-        text: { input: 0.435, cachedInput: 0.003625, output: 0.87 },
+        text: { input: 1.32, cachedInput: 0.044, output: 3.96 },
+        processingMultipliers: { off_peak: 0.5 },
+      },
+    },
+  },
+
+  'deepseek-v4-flash-vision-exp': {
+    name: 'deepseek-v4-flash-vision-exp',
+    provider: Vendor.DeepSeek,
+    description: 'Experimental DeepSeek V4 Flash variant with image understanding',
+    isActive: true,
+    lifecycle: 'preview',
+    availability: 'public',
+    endpoints: ['responses', 'chat_completions', 'messages'],
+    releaseDate: '2026-08-21',
+    sources: {
+      documentation: 'https://api-docs.deepseek.com/guides/vision/',
+      pricing: 'https://api-docs.deepseek.com/quick_start/pricing/',
+      lastVerified: '2026-08-30',
+    },
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      parameters: {
+        temperature: true,
+        topP: true,
+        frequencyPenalty: true,
+        presencePenalty: true,
+      },
+      input: {
+        tokens: 1_000_000,
+        text: true,
+        image: true,
+        cpm: 0.44,
+        cpmCached: 0.014,
+      },
+      output: {
+        tokens: 384_000,
+        text: true,
+        cpm: 1.32,
+      },
+      pricing: {
+        text: { input: 0.44, cachedInput: 0.014, output: 1.32 },
+        processingMultipliers: { off_peak: 0.5 },
       },
     },
   },
@@ -3687,7 +3856,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['chat_completions'],
     sources: {
       documentation: 'https://api-docs.deepseek.com/updates/',
-      lastVerified: '2026-08-11',
+      lastVerified: '2026-08-30',
     },
     features: {
       reasoning: false, streaming: true, structuredOutput: true, functionCalling: true,
@@ -3710,7 +3879,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     endpoints: ['chat_completions'],
     sources: {
       documentation: 'https://api-docs.deepseek.com/updates/',
-      lastVerified: '2026-08-11',
+      lastVerified: '2026-08-30',
     },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,

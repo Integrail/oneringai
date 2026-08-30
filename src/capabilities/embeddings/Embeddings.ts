@@ -179,7 +179,7 @@ export class Embeddings {
       case Vendor.Mistral:
         return EMBEDDING_MODELS[Vendor.Mistral].MISTRAL_EMBED;
       case Vendor.Ollama:
-        return EMBEDDING_MODELS[Vendor.Ollama].QWEN3_EMBEDDING;
+        return EMBEDDING_MODELS[Vendor.Ollama].EMBEDDINGGEMMA;
       default:
         // For generic/custom vendors, caller must specify a model
         throw new Error(`No default embedding model for vendor: ${vendor}. Specify a model explicitly.`);

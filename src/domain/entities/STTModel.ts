@@ -104,6 +104,10 @@ export const STT_MODELS = {
     WHISPER_1: 'whisper-1',
   },
   [Vendor.Google]: {
+    /** Dedicated file-transcription model with diarization and word timestamps. */
+    GEMINI_3_5_TRANSCRIBE: 'gemini-3.5-transcribe',
+    /** Dedicated bidirectional streaming transcription model. */
+    GEMINI_3_5_TRANSCRIBE_LIVE: 'gemini-3.5-transcribe-live',
     /** Current Gemini model used for general audio transcription. */
     GEMINI_3_6_FLASH: 'gemini-3.6-flash',
   },
@@ -114,6 +118,8 @@ export const STT_MODELS = {
   [Vendor.Groq]: {
     /** Ultra-fast Whisper on Groq LPUs */
     WHISPER_LARGE_V3: 'whisper-large-v3',
+    /** Current cost-optimized multilingual Whisper variant. */
+    WHISPER_LARGE_V3_TURBO: 'whisper-large-v3-turbo',
     /** Faster English-only variant */
     DISTIL_WHISPER: 'distil-whisper-large-v3-en',
   },
@@ -139,7 +145,7 @@ const WHISPER_BASE_CAPABILITIES: Omit<STTModelCapabilities, 'features' | 'limits
 
 /**
  * Complete STT model registry
- * Last full audit: January 2026
+ * Last full audit: August 2026
  */
 export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
   // ======================== OpenAI ========================
@@ -158,7 +164,7 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-transcribe',
       pricing: 'https://developers.openai.com/api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -182,7 +188,7 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe',
       pricing: 'https://developers.openai.com/api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -202,7 +208,7 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-live-transcribe',
       pricing: 'https://developers.openai.com/api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -243,7 +249,7 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-realtime-whisper',
       pricing: 'https://developers.openai.com/api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -270,7 +276,7 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/speech-to-text',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -296,7 +302,7 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/speech-to-text',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -332,7 +338,7 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/speech-to-text',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -351,6 +357,64 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
 
   // ======================== Google ========================
 
+  'gemini-3.5-transcribe': {
+    name: 'gemini-3.5-transcribe',
+    displayName: 'Gemini 3.5 Transcribe',
+    provider: Vendor.Google,
+    description: 'Dedicated file transcription with automatic language detection, diarization, word timestamps, and custom vocabulary',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['interactions'],
+    releaseDate: '2026-08-26',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/transcribe',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      inputFormats: ['wav', 'mp3', 'aiff', 'aac', 'ogg', 'flac'],
+      outputFormats: ['text'],
+      timestamps: { supported: true, granularities: ['word', 'segment'] },
+      features: { translation: false, diarization: true, streaming: false, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 20, maxDurationSeconds: 34_200 },
+      vendorOptions: {
+        customVocabulary: { type: 'array', description: 'Up to 1,000 phrases to bias recognition toward' },
+        diarizationMode: { type: 'string', description: 'Set to speaker to identify up to eight speakers' },
+        transcriptionConfig: { type: 'object', description: 'Additional Gemini Interactions transcription_config fields' },
+      },
+    },
+    pricing: { perMinute: 0.005, perMInputTokens: 2, currency: 'USD' },
+  },
+
+  'gemini-3.5-transcribe-live': {
+    name: 'gemini-3.5-transcribe-live',
+    displayName: 'Gemini 3.5 Transcribe Live',
+    provider: Vendor.Google,
+    description: 'Low-latency bidirectional WebSocket audio transcription',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['realtime'],
+    releaseDate: '2026-08-26',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/transcribe',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      inputFormats: ['pcm', 'wav'],
+      outputFormats: ['text'],
+      timestamps: { supported: true, granularities: ['word', 'segment'] },
+      features: { translation: false, diarization: true, streaming: true, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 0 },
+    },
+    pricing: { perMinute: 0.009, streamingPerMinute: 0.009, perMInputTokens: 3.5, currency: 'USD' },
+  },
+
   'gemini-3.6-flash': {
     name: 'gemini-3.6-flash',
     displayName: 'Gemini 3.6 Flash Audio Transcription',
@@ -359,13 +423,12 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
-    preferred: true,
     endpoints: ['interactions'],
     releaseDate: '2026-07-21',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/audio',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -400,7 +463,7 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     sources: {
       documentation: 'https://docs.x.ai/developers/model-capabilities/audio/speech-to-text',
       pricing: 'https://docs.x.ai/developers/models/speech-to-text',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -430,13 +493,13 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     isActive: true,
     releaseDate: '2024-04-01',
     sources: {
-      documentation: 'https://console.groq.com/docs/speech-text',
-      pricing: 'https://groq.com/pricing/',
-      lastVerified: '2026-01-24',
+      documentation: 'https://console.groq.com/docs/speech-to-text',
+      pricing: 'https://console.groq.com/docs/speech-to-text',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
-      timestamps: { supported: true, granularities: ['segment'] },
+      timestamps: { supported: true, granularities: ['word', 'segment'] },
       outputFormats: ['json', 'text', 'verbose_json'],
       features: {
         translation: true,
@@ -445,9 +508,34 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
         punctuation: true,
         profanityFilter: false,
       },
-      limits: { maxFileSizeMB: 25 },
+      limits: { maxFileSizeMB: 100 },
     },
-    pricing: { perMinute: 0.0005, currency: 'USD' }, // 12x cheaper!
+    pricing: { perMinute: 0.00185, currency: 'USD' },
+  },
+
+  'whisper-large-v3-turbo': {
+    name: 'whisper-large-v3-turbo',
+    displayName: 'Whisper Large v3 Turbo (Groq)',
+    provider: Vendor.Groq,
+    description: 'Cost-optimized multilingual Whisper transcription on Groq LPUs',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    releaseDate: '2024-09-18',
+    sources: {
+      documentation: 'https://console.groq.com/docs/speech-to-text',
+      pricing: 'https://console.groq.com/docs/speech-to-text',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text', 'verbose_json'],
+      timestamps: { supported: true, granularities: ['word', 'segment'] },
+      features: { translation: true, diarization: false, streaming: false, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 100 },
+    },
+    pricing: { perMinute: 0.0006666667, currency: 'USD' },
   },
 
   'distil-whisper-large-v3-en': {
@@ -455,12 +543,15 @@ export const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription> = {
     displayName: 'Distil Whisper (Groq)',
     provider: Vendor.Groq,
     description: 'Faster English-only Whisper variant on Groq',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2025-08-23',
+    replacementModel: 'whisper-large-v3-turbo',
     releaseDate: '2024-04-01',
     sources: {
-      documentation: 'https://console.groq.com/docs/speech-text',
-      pricing: 'https://groq.com/pricing/',
-      lastVerified: '2026-01-24',
+      documentation: 'https://console.groq.com/docs/speech-to-text',
+      pricing: 'https://console.groq.com/docs/speech-to-text',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       inputFormats: AUDIO_FORMATS.STT_INPUT,

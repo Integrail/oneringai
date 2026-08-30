@@ -31,6 +31,7 @@ export interface DeepSeekHostProfile {
 
 const FLASH = 'deepseek-v4-flash';
 const PRO = 'deepseek-v4-pro';
+const FLASH_VISION_EXP = 'deepseek-v4-flash-vision-exp';
 
 /**
  * Provider presets intentionally describe only bearer-token, OpenAI-compatible
@@ -44,7 +45,7 @@ export const DEEPSEEK_HOST_REGISTRY: Readonly<Record<DeepSeekHost, DeepSeekHostP
     baseURL: 'https://api.deepseek.com/v1',
     defaultTransport: 'responses',
     promptCaching: { mode: 'implicit', reportsCacheUsage: true },
-    modelIds: { [FLASH]: FLASH, [PRO]: PRO },
+    modelIds: { [FLASH]: FLASH, [PRO]: PRO, [FLASH_VISION_EXP]: FLASH_VISION_EXP },
     documentation: 'https://api-docs.deepseek.com/',
   },
   openrouter: {
@@ -183,7 +184,9 @@ export function resolveDeepSeekModel(
   model: string,
   host: ResolvedDeepSeekHost,
 ): ResolvedDeepSeekModel {
-  const canonicalModel = model === FLASH || model === PRO ? model : undefined;
+  const canonicalModel = model === FLASH || model === PRO || model === FLASH_VISION_EXP
+    ? model
+    : undefined;
   if (
     canonicalModel &&
     !host.profile.modelIds[canonicalModel] &&
@@ -201,20 +204,9 @@ export function resolveDeepSeekModel(
   if (host.transport !== 'auto') {
     transport = host.transport;
   } else if (host.profile.id === 'official') {
-    // DeepSeek's first-party Responses API currently supports Flash only.
-    transport = canonicalModel === FLASH ? 'responses' : 'chat_completions';
+    transport = 'responses';
   } else {
     transport = host.profile.defaultTransport;
-  }
-
-  if (
-    host.profile.id === 'official' &&
-    canonicalModel === PRO &&
-    transport === 'responses'
-  ) {
-    throw new InvalidConfigError(
-      "DeepSeek's first-party Responses API currently supports deepseek-v4-flash only; use transport 'chat_completions' for deepseek-v4-pro.",
-    );
   }
 
   const limits = canonicalModel ? host.profile.modelLimits?.[canonicalModel] : undefined;

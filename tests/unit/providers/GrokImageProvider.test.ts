@@ -273,7 +273,7 @@ describe('GrokImageProvider', () => {
     it('should return list of available models', async () => {
       const models = await provider.listModels();
 
-      expect(models).toEqual(['grok-imagine-image-quality', 'grok-imagine-image']);
+      expect(models).toEqual(['grok-imagine-image-2.0', 'grok-imagine-image-quality', 'grok-imagine-image']);
     });
   });
 

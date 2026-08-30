@@ -120,7 +120,7 @@ export interface VendorOptionSchema {
  * Every model registry (Image, TTS, STT, Video) extends this
  */
 export interface IBaseModelDescription {
-  /** Model identifier (e.g., "dall-e-3", "tts-1") */
+  /** Model identifier (e.g., "gpt-image-2", "tts-1") */
   name: string;
 
   /** Display name for UI (e.g., "DALL-E 3", "TTS-1") */

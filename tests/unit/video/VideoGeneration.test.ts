@@ -40,8 +40,8 @@ describe('VideoGeneration', () => {
 
   it.each([
     [Vendor.OpenAI, 'sora-2'],
-    [Vendor.Google, 'veo-3.1-lite-generate-preview'],
-    [Vendor.Grok, 'grok-imagine-video'],
+    [Vendor.Google, 'gemini-omni-1.1-flash'],
+    [Vendor.Grok, 'grok-imagine-video-1.5'],
   ])('uses the correct default generation model for %s', async (vendor, model) => {
     Connector.create({ name: `video-${vendor}`, vendor, auth: { type: 'api_key', apiKey: 'test' } });
     const videos = VideoGeneration.create({ connector: `video-${vendor}` });

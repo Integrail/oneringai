@@ -64,7 +64,7 @@ export class GoogleSTTProvider extends BaseMediaProvider implements ISpeechToTex
         ...(diarizationMode ? { diarization_mode: diarizationMode } : {}),
       };
       const interaction = await (this.client.interactions as any).create({
-        model: options.model || 'gemini-3.6-flash',
+        model: options.model || 'gemini-3.5-transcribe',
         input: [
           { type: 'text', text: instructions },
           {

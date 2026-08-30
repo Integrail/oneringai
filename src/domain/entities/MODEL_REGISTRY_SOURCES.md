@@ -1,27 +1,29 @@
 # Model Registry Sources
 
-Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`ImageModel.ts`), Video (`VideoModel.ts`), TTS (`TTSModel.ts`), STT (`STTModel.ts`).
+Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`ImageModel.ts`), Video (`VideoModel.ts`), TTS (`TTSModel.ts`), STT (`STTModel.ts`), and embeddings (`EmbeddingModel.ts`). Last audited 2026-08-30.
 
 ---
 
 ## OpenAI
 
 ### LLM Models (`Model.ts`)
-- **Models page**: https://platform.openai.com/docs/models
-- **Pricing page**: https://openai.com/api/pricing/
-- **API reference**: https://platform.openai.com/docs/api-reference
+- **Models page**: https://developers.openai.com/api/docs/models
+- **Pricing page**: https://developers.openai.com/api/docs/pricing
+- **Deprecations**: https://developers.openai.com/api/docs/deprecations
+- **API reference**: https://developers.openai.com/api/reference
 - **Key fields**: context window, max output tokens, pricing (input/cached/output), knowledge cutoff, supported features (vision, audio, reasoning, structured output, function calling)
 - **Notes**: Cached input pricing is 10x cheaper than standard input. Reasoning models (o-series, GPT-5.x) don't support temperature/topP. Chat-latest variants have smaller context (128K) and no reasoning.
 
 ### Image Models (`ImageModel.ts`)
 - **Image guide**: https://platform.openai.com/docs/guides/images
-- **Models**: `gpt-image-1`, `dall-e-3`, `dall-e-2`
+- **Models**: `gpt-image-2`; deprecated GPT Image 1 family; retired DALL-E records
 - **Key fields**: sizes, max images per request, quality levels, output formats, editing/variation support
 
 ### Video Models (`VideoModel.ts`)
-- **Video guide**: https://platform.openai.com/docs/guides/video-generation
-- **API reference**: https://platform.openai.com/docs/api-reference/videos
+- **Video guide**: https://developers.openai.com/api/docs/guides/video-generation
+- **API reference**: https://developers.openai.com/api/reference/resources/videos
 - **Models**: `sora-2`, `sora-2-pro`
+- **Lifecycle**: both models and the Videos API were deprecated 2026-03-24 and remain callable until 2026-09-24
 - **Key fields**: durations, resolutions, fps, audio support, per-second pricing
 
 ### TTS Models (`TTSModel.ts`)
@@ -31,7 +33,7 @@ Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`
 
 ### STT Models (`STTModel.ts`)
 - **STT guide**: https://platform.openai.com/docs/guides/speech-to-text
-- **Models**: `gpt-4o-transcribe`, `gpt-4o-transcribe-diarize`, `whisper-1`
+- **Models**: `gpt-transcribe`, `gpt-4o-mini-transcribe`, `gpt-live-transcribe`, `gpt-realtime-whisper`, `gpt-4o-transcribe`, `gpt-4o-transcribe-diarize`, `whisper-1`
 - **Key fields**: input formats, output formats, max file size, per-minute pricing
 
 ---
@@ -39,8 +41,9 @@ Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`
 ## Anthropic
 
 ### LLM Models (`Model.ts`)
-- **Models overview**: https://platform.claude.com/docs/en/about-claude/models/overview
-- **Pricing page**: https://www.anthropic.com/pricing
+- **Models overview**: https://platform.claude.com/docs/en/models/overview
+- **Pricing page**: https://platform.claude.com/docs/en/about-claude/pricing
+- **Release notes**: https://platform.claude.com/docs/en/release-notes/overview
 - **Key fields**: context window (200K standard, 1M beta for some), max output, pricing (input/cached/output), extended thinking support
 - **Notes**: All Claude 4+ models support extended thinking. Cached pricing is 10x cheaper. Prompt caching via cache_control blocks.
 
@@ -50,9 +53,12 @@ Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`
 
 ### Main Pages
 - **Models overview (START HERE)**: https://ai.google.dev/gemini-api/docs/models
-- **Pricing page**: https://ai.google.dev/pricing
+- **Pricing page**: https://ai.google.dev/gemini-api/docs/pricing
+- **Release notes**: https://ai.google.dev/gemini-api/docs/changelog
+- **Deprecations**: https://ai.google.dev/gemini-api/docs/deprecations
 
 ### LLM Model Detail Pages
+- **Gemini 3.7 Flash**: https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash
 - **Gemini 3.1 Pro Preview**: https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview
 - **Gemini 3 Flash**: https://ai.google.dev/gemini-api/docs/models/gemini-3-flash
 - **Gemini 3 Pro Preview** (DEPRECATED): https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-preview
@@ -66,22 +72,26 @@ Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`
 - **Nano Banana (Gemini 2.5 Flash Image)**: https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-image
 - **Nano Banana Pro (Gemini 3 Pro Image)**: https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image-preview
 - **Nano Banana 2 (Gemini 3.1 Flash Image)**: https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image-preview
-- **Models**: Imagen 4 (`imagen-4.0-generate-001`, `imagen-4.0-ultra-generate-001`, `imagen-4.0-fast-generate-001`), Nano Banana series (`gemini-2.5-flash-image`, `gemini-3-pro-image-preview`, `gemini-3.1-flash-image-preview`)
+- **Models**: current native-image models (`gemini-3.1-flash-image`, `gemini-3.1-flash-lite-image`, `gemini-3-pro-image`); retired Imagen 4 records; deprecated `gemini-2.5-flash-image`
 - **Key fields**: aspect ratios, resolution tiers (0.5K/1K/2K/4K), max prompt tokens, per-image pricing (varies by resolution for Nano Banana), editing support
 - **Notes**: Imagen 4 supports English-only prompts, max 480 token prompt. Nano Banana models are Gemini-based with larger context windows (65K-131K). Nano Banana 2 supports up to 4K resolution. Nano Banana Pro has reasoning/thinking capabilities.
 
 ### Video Models (`VideoModel.ts`)
 - **Video guide**: https://ai.google.dev/gemini-api/docs/video
-- **Models**: `veo-2.0-generate-001`, `veo-3.1-fast-generate-preview`, `veo-3.1-generate-preview`
+- **Models**: `gemini-omni-1.1-flash`, deprecated `gemini-omni-flash-preview`, and current Veo 3.1 variants; retired Veo 2 record
 - **Key fields**: durations (4/6/8s), resolutions (720p/1080p/4K), aspect ratios, audio support, per-second pricing
 - **Notes**: Veo 2 only supports 720p, no audio, no reference images. Veo 3.1 supports native audio, reference images (up to 3), video extension. 1080p/4K require 8s duration. Pricing varies by resolution tier (720p/1080p vs 4K).
 
 ### TTS Models (`TTSModel.ts`)
 - **Speech generation guide**: https://ai.google.dev/gemini-api/docs/speech-generation
 - **Flash TTS detail**: https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-preview-tts
-- **Models**: `gemini-2.5-flash-preview-tts`, `gemini-2.5-pro-preview-tts`
+- **Models**: `gemini-3.1-flash-tts-preview`, `gemini-2.5-flash-preview-tts`, `gemini-2.5-pro-preview-tts`
 - **Key fields**: 30 prebuilt voices, 70+ languages, 32K token context window, PCM output (24kHz 16-bit mono), max 2 speakers per session
 - **Pricing**: Token-based (not character-based like OpenAI). Flash: $0.50/$10 per 1M tokens in/out. Pro: $1/$20 per 1M tokens.
+
+### Speech-to-Text Models (`STTModel.ts`)
+- **Audio transcription**: https://ai.google.dev/gemini-api/docs/transcribe
+- **Models**: `gemini-3.5-transcribe`, `gemini-3.5-transcribe-live`, plus general-purpose `gemini-3.6-flash`
 
 ### Audio Models (not yet in registry)
 - **Native Audio Preview**: https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-native-audio-preview
@@ -97,30 +107,55 @@ Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`
 
 ### LLM Models (`Model.ts`)
 - **Models page**: https://docs.x.ai/developers/models
+- **Pricing**: https://docs.x.ai/developers/pricing
+- **Release notes**: https://docs.x.ai/developers/release-notes
 - **Key fields**: context window (up to 2M), max output, pricing (input/cached/output), vision support, reasoning
-- **Notes**: Fast variants available for most models. Grok Code specialized for coding. All models support prompt caching and batch API.
+- **Notes**: Fast variants are available for selected models and Grok Code is specialized for coding. Prompt caching and batch availability are model-specific; Grok 4.6 does not expose batch processing.
 
 ### Image Models (`ImageModel.ts`)
 - **Image generation guide**: https://docs.x.ai/docs/guides/image-generation
-- **Models**: `grok-imagine-image` (with editing), `grok-2-image-1212` (text-only, no editing)
-- **Key fields**: aspect ratios (14+ options including 1:2, 2:1, 19.5:9, etc.), resolutions (1K/2K), max 10 images per request, flat per-image pricing
+- **Models**: `grok-imagine-image-2.0`, `grok-imagine-image-quality`, `grok-imagine-image`; retired `grok-2-image-1212`
+- **Key fields**: aspect ratios, resolutions (1K/2K), quality tiers, max images per request, and tiered per-image pricing
 - **Notes**: `grok-imagine-image` supports multi-turn editing and style transfer. Generated URLs are temporary.
 
 ### Video Models (`VideoModel.ts`)
 - **Video generation guide**: https://docs.x.ai/docs/guides/video-generations
-- **Model**: `grok-imagine-video`
-- **Key fields**: durations (1-15s), resolutions (480p/720p), aspect ratios, audio support, per-second pricing
+- **Models**: `grok-imagine-video-1.5`, `grok-imagine-video`
+- **Key fields**: durations (1-15s), resolutions through native 1080p on Video 1.5, aspect ratios, audio support, and per-second pricing
+
+### Speech Models (`TTSModel.ts`, `STTModel.ts`)
+- **Text to speech**: https://docs.x.ai/developers/model-capabilities/audio/text-to-speech
+- **Speech to text**: https://docs.x.ai/developers/model-capabilities/audio/speech-to-text
+- **Models**: model-less `xai-tts` and `xai-stt` endpoint records; voice-agent models remain in the LLM registry
 
 ---
 
 ## Groq
 
 ### STT Models (`STTModel.ts`)
-- **Speech-to-text docs**: https://console.groq.com/docs/speech-text
-- **Pricing**: https://groq.com/pricing/
-- **Models**: `whisper-large-v3`, `distil-whisper-large-v3-en`
-- **Key fields**: per-minute pricing, max file size, segment-level timestamps only
-- **Notes**: 12x cheaper than OpenAI Whisper. distil variant is English-only.
+- **Speech-to-text docs and pricing**: https://console.groq.com/docs/speech-to-text
+- **Models**: `whisper-large-v3`, `whisper-large-v3-turbo`; retired `distil-whisper-large-v3-en`
+- **Key fields**: per-hour pricing converted to per-minute, 100 MB developer file limit, word and segment timestamps
+
+---
+
+## DeepSeek
+
+- **Models and pricing**: https://api-docs.deepseek.com/quick_start/pricing/
+- **Release updates**: https://api-docs.deepseek.com/updates/
+- **Vision guide**: https://api-docs.deepseek.com/guides/vision/
+- **Responses API**: https://api-docs.deepseek.com/guides/responses_api/
+- **Models**: `deepseek-v4-flash`, `deepseek-v4-pro`, and experimental `deepseek-v4-flash-vision-exp`
+- **Pricing note**: registry base token rates are peak rates; `processingMultipliers.off_peak` represents the documented 50% off-peak reduction
+
+---
+
+## Mistral and Ollama embeddings
+
+- **Mistral models**: https://docs.mistral.ai/models
+- **Codestral Embed**: https://docs.mistral.ai/models/codestral-embed-25-05
+- **Ollama embeddings**: https://docs.ollama.com/capabilities/embeddings
+- **Ollama model metadata**: https://ollama.com/library/embeddinggemma and https://ollama.com/library/all-minilm
 
 ---
 

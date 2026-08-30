@@ -1,7 +1,7 @@
 /**
  * Grok (xAI) Image Generation Provider
  * Uses OpenAI-compatible API at api.x.ai
- * Supports: grok-imagine-image
+ * Supports: grok-imagine-image-2.0 and earlier Grok Imagine models
  */
 
 import OpenAI from 'openai';
@@ -66,7 +66,7 @@ export class GrokImageProvider extends BaseMediaProvider implements IImageProvid
 
           const vendorOptions = options.vendorOptions ?? {};
           const params: any = {
-            model: options.model || 'grok-imagine-image',
+            model: options.model || 'grok-imagine-image-2.0',
             prompt: options.prompt,
             n: options.n || 1,
             response_format: options.response_format || 'url',
@@ -125,7 +125,7 @@ export class GrokImageProvider extends BaseMediaProvider implements IImageProvid
           const mask = options.mask ? this.prepareImageInput(options.mask) : undefined;
 
           const params: any = {
-            model: options.model || 'grok-imagine-image',
+            model: options.model || 'grok-imagine-image-2.0',
             image,
             prompt: options.prompt,
             mask,
@@ -168,7 +168,7 @@ export class GrokImageProvider extends BaseMediaProvider implements IImageProvid
    * List available image models
    */
   async listModels(): Promise<string[]> {
-    return ['grok-imagine-image-quality', 'grok-imagine-image'];
+    return ['grok-imagine-image-2.0', 'grok-imagine-image-quality', 'grok-imagine-image'];
   }
 
   /**

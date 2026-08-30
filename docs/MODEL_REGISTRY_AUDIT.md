@@ -1,12 +1,34 @@
-# Model Registry and Provider API Audit — 2026-08-11
+# Model Registry and Provider API Audit — 2026-08-30
 
-**Release:** 1.0.0
+**Release:** 1.1.2 registry refresh
 
-This audit covers the first-party OpenAI, Anthropic, Google, xAI, and DeepSeek model and
-provider surfaces in OneRingAI. It includes text, realtime voice, TTS/STT,
-image, video, and embeddings. Official vendor documentation was treated as the
-source of truth; floating aliases and preview lifecycle notices were checked
-against release notes as well as model pages.
+This audit covers every vendor represented in OneRingAI's model registries:
+OpenAI, Anthropic, Google, xAI, DeepSeek, Groq, Mistral, and Ollama. It includes
+text, realtime voice, TTS/STT, image, video, and embeddings. Official vendor
+documentation was treated as the source of truth; floating aliases and preview
+lifecycle notices were checked against release notes as well as model pages.
+
+## 2026-08-30 refresh
+
+The complete first-party pass found and corrected these changes since the
+previous audit:
+
+- OpenAI: current promotional GPT-5.6 Sol pricing; retired GPT-5/5.1/5.2/5.3
+  aliases; upcoming GPT-4.1 Nano, audio, realtime, and GPT Image shutdowns;
+  Sora 2 and Sora 2 Pro remain callable but are deprecated with the Videos API
+  until 2026-09-24.
+- Anthropic: Claude 5 remains the current documented family; no new registry
+  model was required, and the retired Opus 4.1 migration remains Opus 5.
+- Google: added Gemini 3.7 Flash, Gemini Omni 1.1 Flash, Gemini 3.5 Transcribe,
+  and Gemini 3.5 Transcribe Live; retired Imagen 4; marked Gemini Omni Preview,
+  Gemini 3.1 Flash-Lite, and Gemini 2.5 Flash Image with current lifecycle data.
+- xAI: added Grok 4.6 and Grok Imagine Image 2.0, and updated Grok Imagine
+  Video 1.5 for text-to-video support.
+- DeepSeek: added V4 Flash Vision Experimental, current peak/off-peak pricing,
+  and Responses routing for all current first-party V4 models.
+- Groq, Mistral, and Ollama: added Whisper Large v3 Turbo, Codestral Embed,
+  EmbeddingGemma, and All MiniLM; retired Distil Whisper and corrected current
+  Whisper pricing and file/timestamp limits.
 
 ## Gaps found before implementation
 
@@ -72,10 +94,9 @@ compatibility change.
 
 ## Current registry snapshot
 
-The text/realtime registry contains 92 records: OpenAI 48, Anthropic 15,
-Google 14, xAI 11, and DeepSeek 4. Dedicated registries separately cover current image,
-video, TTS, STT, and embedding models, so those are not inflated into the text
-count.
+The text/realtime registry contains 95 records: OpenAI 48, Anthropic 15,
+Google 15, xAI 12, and DeepSeek 5. Dedicated registries contain 20 image, 10
+video, 7 TTS, 14 STT, and 15 embedding records.
 
 Notable preferred/current families are:
 
@@ -83,11 +104,11 @@ Notable preferred/current families are:
   GPT Realtime 2.1, and GPT Transcribe/Live Transcribe. Sora 2/2 Pro remain
   callable but have published deprecation and retirement metadata.
 - Anthropic: Claude Opus 5, Mythos 5, Fable 5, Opus 4.8, and Sonnet 5.
-- Google: Gemini 3.6 Flash, Gemini 3.5/3.5 Flash-Lite, Gemini 3.1 native
-  image/TTS, Veo/Omni, and Gemini Embedding 2.
-- xAI: Grok 4.5, Grok 4.3, Grok Build 0.1, Grok Imagine Image Quality,
+- Google: Gemini 3.7 Flash, Gemini 3.5/3.6 families, Gemini 3.1 native
+  image/TTS, Gemini Omni 1.1, Veo, Gemini 3.5 Transcribe, and Gemini Embedding 2.
+- xAI: Grok 4.6, Grok 4.5/4.3, Grok Build 0.1, Grok Imagine Image 2.0,
   Grok Imagine Video 1.5, xAI TTS/STT, and Grok Voice Think Fast 2.0.
-- DeepSeek: V4 Flash and V4 Pro, plus explicit retired records for
+- DeepSeek: V4 Flash, V4 Pro, and V4 Flash Vision Experimental, plus retired records for
   `deepseek-chat` and `deepseek-reasoner` with migration targets.
 
 ## API migration notes
@@ -118,18 +139,16 @@ not missing model support.
 
 ## Validation completed
 
-- 6,408 unit tests across 288 files, including DeepSeek Chat, Responses,
-  streaming, host resolution, factory routing, reasoning replay, and registry
-  contracts.
-- 21 authenticated live checks: seven OpenAI Realtime protocols plus current
-  GPT-5.6, Claude 5, Google Interactions/continuity/named-tool paths, native
-  image/video/embedding media, Grok 4.5, Google/xAI STT, xAI TTS, and a 32 kHz
-  PCM xAI Voice Agent credential/WebSocket flow.
-- DeepSeek authenticated integration calls remain credential-gated; the
-  default validation path uses deterministic SDK wire-contract tests and does
-  not print or require secrets.
-- Strict TypeScript, ESLint, ESM/CJS/declaration build, and public API reference
-  generation.
+- 6,555 unit tests across 301 files, including registry contracts, provider
+  routing, media defaults, Agent Runtime model overrides, and generated tool
+  fingerprint verification.
+- Strict TypeScript, ESLint, example compilation, ESM/CJS/declaration build,
+  package-export verification, and public/internal API reference generation.
+- AMOS and Convert builds passed. Hosea's build could not start because its
+  standalone dependencies are not installed in this checkout
+  (`@vitejs/plugin-react` is declared but absent).
+- Authenticated vendor integration calls remain credential- and
+  network-gated and were not counted as completed by this refresh.
 
 ## Official sources
 

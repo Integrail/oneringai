@@ -230,15 +230,15 @@ describe('CodexSdkDriver', () => {
     });
 
     await expect(open('gpt-4.1')).rejects.toThrow(/does not support reasoning/);
-    await expect(open('gpt-5.6-sol')).rejects.toThrow(/no verified reasoning-effort mapping/);
+    await expect(open('gpt-5.5-pro')).rejects.toThrow(/no verified reasoning-effort mapping/);
     await runtime.destroy();
 
-    const configured = runtimeWithFakeSdk({ 'gpt-5.6-sol': ['high'] });
+    const configured = runtimeWithFakeSdk({ 'gpt-5.5-pro': ['high'] });
     const capabilities = await configured.agent({
       id: 'codex-configured-reasoning',
       driver: 'openai.codex.sdk',
       connector: 'codex-test',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-5.5-pro',
       reasoning: { effort: 'high' },
     }).inspect({
       context: {},
@@ -295,15 +295,15 @@ describe('CodexSdkDriver', () => {
       policy: policy(),
     });
     const result = await (await session.run('override', {
-      model: 'gpt-5.2-codex',
+      model: 'gpt-5.6-sol',
       reasoning: { effort: 'low' },
     })).result;
 
     expect(capturedThreadOptions).toMatchObject({
-      model: 'gpt-5.2-codex',
+      model: 'gpt-5.6-sol',
       modelReasoningEffort: 'low',
     });
-    expect(result.configuration).toEqual({ model: 'gpt-5.2-codex', reasoning: { effort: 'low' } });
+    expect(result.configuration).toEqual({ model: 'gpt-5.6-sol', reasoning: { effort: 'low' } });
     await runtime.destroy();
   });
 

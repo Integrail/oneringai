@@ -114,8 +114,14 @@ export const EMBEDDING_MODELS = {
   [Vendor.Mistral]: {
     /** mistral-embed: Mistral's embedding model */
     MISTRAL_EMBED: 'mistral-embed',
+    /** Codestral Embed: code retrieval model with configurable dimensions. */
+    CODESTRAL_EMBED: 'codestral-embed',
   },
   [Vendor.Ollama]: {
+    /** Ollama's recommended compact multilingual embedding model. */
+    EMBEDDINGGEMMA: 'embeddinggemma',
+    /** Compact Sentence Transformers embedding model. */
+    ALL_MINILM: 'all-minilm',
     /** qwen3-embedding: 8B parameter, best quality local model */
     QWEN3_EMBEDDING: 'qwen3-embedding',
     /** qwen3-embedding:4b: 4B parameter, middle ground */
@@ -135,7 +141,7 @@ export const EMBEDDING_MODELS = {
 
 /**
  * Complete embedding model registry
- * Last full audit: March 2026
+ * Last full audit: August 2026
  */
 export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription> = {
   // ======================== OpenAI ========================
@@ -150,7 +156,7 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/embeddings',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8191,
@@ -183,7 +189,7 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/embeddings',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8191,
@@ -211,13 +217,13 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     displayName: 'Text Embedding Ada 002',
     provider: Vendor.OpenAI,
     description: 'Legacy embedding model, replaced by text-embedding-3 series',
-    isActive: false,
+    isActive: true,
+    lifecycle: 'legacy',
     releaseDate: '2022-12-15',
-    deprecationDate: '2025-01-04',
     sources: {
-      documentation: 'https://platform.openai.com/docs/guides/embeddings',
-      pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-17',
+      documentation: 'https://developers.openai.com/api/docs/models/text-embedding-ada-002',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8191,
@@ -255,7 +261,7 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-embedding-2',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -291,7 +297,7 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/embeddings',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 2048,
@@ -317,7 +323,7 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/embeddings',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 2048,
@@ -369,7 +375,7 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     sources: {
       documentation: 'https://docs.mistral.ai/capabilities/embeddings/',
       pricing: 'https://mistral.ai/products/la-plateforme#pricing',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -391,7 +397,85 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     },
   },
 
+  'codestral-embed': {
+    name: 'codestral-embed',
+    displayName: 'Codestral Embed',
+    provider: Vendor.Mistral,
+    description: 'Code-specialized retrieval embeddings with configurable output dimensions and data types',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['embeddings', 'batch'],
+    releaseDate: '2025-05-28',
+    sources: {
+      documentation: 'https://docs.mistral.ai/models/codestral-embed-25-05',
+      pricing: 'https://docs.mistral.ai/models/codestral-embed-25-05',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      maxTokens: 8192,
+      defaultDimensions: 3072,
+      maxDimensions: 3072,
+      inputModalities: ['text'],
+      features: { matryoshka: true, instructionAware: false, batchInput: true, multilingual: true },
+      limits: { maxBatchSize: 128 },
+      vendorOptions: {
+        output_dimension: { type: 'number', description: 'Requested output vector dimensions', min: 1, max: 3072 },
+        output_dtype: { type: 'enum', description: 'Output vector data type', enum: ['float', 'int8', 'uint8', 'binary', 'ubinary'], default: 'float' },
+      },
+    },
+    pricing: { perMTokens: 0.15, currency: 'USD' },
+  },
+
   // ======================== Ollama (Local) ========================
+
+  'embeddinggemma': {
+    name: 'embeddinggemma',
+    displayName: 'EmbeddingGemma 300M',
+    provider: Vendor.Ollama,
+    description: 'Ollama-recommended compact multilingual embedding model from Google',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    releaseDate: '2025-09-04',
+    sources: {
+      documentation: 'https://docs.ollama.com/capabilities/embeddings',
+      apiReference: 'https://ollama.com/library/embeddinggemma',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      maxTokens: 2048,
+      defaultDimensions: 768,
+      maxDimensions: 768,
+      inputModalities: ['text'],
+      features: { matryoshka: true, instructionAware: true, batchInput: true, multilingual: true },
+      limits: { maxBatchSize: 512 },
+    },
+  },
+
+  'all-minilm': {
+    name: 'all-minilm',
+    displayName: 'All MiniLM',
+    provider: Vendor.Ollama,
+    description: 'Small sentence embedding model for fast local semantic search',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    sources: {
+      documentation: 'https://docs.ollama.com/capabilities/embeddings',
+      apiReference: 'https://ollama.com/library/all-minilm',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      maxTokens: 512,
+      defaultDimensions: 384,
+      maxDimensions: 384,
+      inputModalities: ['text'],
+      features: { matryoshka: false, instructionAware: false, batchInput: true, multilingual: false },
+      limits: { maxBatchSize: 512 },
+    },
+  },
 
   'qwen3-embedding': {
     name: 'qwen3-embedding',
@@ -403,7 +487,7 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     sources: {
       documentation: 'https://huggingface.co/Qwen/Qwen3-Embedding-8B',
       pricing: 'https://ollama.com/library/qwen3-embedding',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -431,7 +515,7 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     sources: {
       documentation: 'https://huggingface.co/Qwen/Qwen3-Embedding-4B',
       pricing: 'https://ollama.com/library/qwen3-embedding',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -459,7 +543,7 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     sources: {
       documentation: 'https://huggingface.co/Qwen/Qwen3-Embedding-0.6B',
       pricing: 'https://ollama.com/library/qwen3-embedding',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -487,7 +571,7 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     sources: {
       documentation: 'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5',
       pricing: 'https://ollama.com/library/nomic-embed-text',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -515,7 +599,7 @@ export const EMBEDDING_MODEL_REGISTRY: Record<string, IEmbeddingModelDescription
     sources: {
       documentation: 'https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1',
       pricing: 'https://ollama.com/library/mxbai-embed-large',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 512,

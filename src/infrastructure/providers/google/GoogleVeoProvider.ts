@@ -76,7 +76,7 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
           });
 
           const model = options.model || 'veo-3.1-generate-preview';
-          if (model === 'gemini-omni-flash-preview') {
+          if (model === 'gemini-omni-flash-preview' || model === 'gemini-omni-1.1-flash') {
             return await this.generateOmniVideo(options);
           }
           const googleOptions = (options.vendorOptions || {}) as GoogleVeoOptions;
@@ -377,7 +377,7 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
     return this.executeWithCircuitBreaker(async () => {
       try {
         const interaction = await (this.client.interactions as any).create({
-          model: 'gemini-omni-flash-preview',
+          model: options.model || 'gemini-omni-1.1-flash',
           previous_interaction_id: options.videoId,
           input: options.prompt,
           response_format: { type: 'video' },
@@ -387,7 +387,7 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
         this.handleError(error);
         throw error;
       }
-    }, 'video.edit', { model: 'gemini-omni-flash-preview' });
+    }, 'video.edit', { model: options.model || 'gemini-omni-1.1-flash' });
   }
 
   /**
@@ -399,6 +399,7 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
       'veo-3.1-fast-generate-preview',
       'veo-3.1-generate-preview',
       'veo-3.1-lite-generate-preview',
+      'gemini-omni-1.1-flash',
       'gemini-omni-flash-preview',
     ];
   }
@@ -412,7 +413,7 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
         ]
       : options.prompt;
     const interaction = await (this.client.interactions as any).create({
-      model: 'gemini-omni-flash-preview',
+      model: options.model || 'gemini-omni-1.1-flash',
       input,
       response_format: {
         ...((vendor.responseFormat as Record<string, unknown> | undefined) ?? {}),

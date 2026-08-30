@@ -110,7 +110,7 @@ describe('ImageModel Registry', () => {
       const models = getImageModelsWithFeature('generation');
       expect(models.length).toBeGreaterThan(0);
       expect(models.some((m) => m.name === 'gpt-image-1.5')).toBe(true);
-      expect(models.some((m) => m.name === 'imagen-4.0-generate-001')).toBe(true);
+      expect(models.some((m) => m.name === 'gemini-3.1-flash-image')).toBe(true);
     });
 
     it('should find models with editing support', () => {

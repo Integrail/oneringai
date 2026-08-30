@@ -2669,7 +2669,7 @@ export function getTTSModelsWithFeature(
 📍 [`src/domain/entities/TTSModel.ts:136`](src/domain/entities/TTSModel.ts)
 
 Complete TTS model registry
-Last full audit: January 2026
+Last full audit: August 2026
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -2686,7 +2686,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/text-to-speech',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...OPENAI_TTS_BASE,
@@ -2718,7 +2718,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/text-to-speech',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...OPENAI_TTS_BASE,
@@ -2743,7 +2743,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/text-to-speech',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...OPENAI_TTS_BASE,
@@ -2772,7 +2772,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-tts-preview',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -2800,7 +2800,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/speech-generation',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -2832,7 +2832,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/speech-generation',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       voices: GEMINI_VOICES,
@@ -2868,7 +2868,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://docs.x.ai/developers/model-capabilities/audio/text-to-speech',
       pricing: 'https://docs.x.ai/developers/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       voices: XAI_VOICES,
@@ -3382,7 +3382,7 @@ type STTOutputFormat = 'json' | 'text' | 'srt' | 'vtt' | 'verbose_json'
 
 ### calculateSTTCost `function`
 
-📍 [`src/domain/entities/STTModel.ts:509`](src/domain/entities/STTModel.ts)
+📍 [`src/domain/entities/STTModel.ts:600`](src/domain/entities/STTModel.ts)
 
 Calculate estimated cost for STT
 
@@ -3398,7 +3398,7 @@ export function calculateSTTCost(
 
 ### getSTTModelsWithFeature `function`
 
-📍 [`src/domain/entities/STTModel.ts:498`](src/domain/entities/STTModel.ts)
+📍 [`src/domain/entities/STTModel.ts:589`](src/domain/entities/STTModel.ts)
 
 Get STT models that support a specific feature
 
@@ -3412,10 +3412,10 @@ export function getSTTModelsWithFeature(
 
 ### STT_MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/STTModel.ts:144`](src/domain/entities/STTModel.ts)
+📍 [`src/domain/entities/STTModel.ts:150`](src/domain/entities/STTModel.ts)
 
 Complete STT model registry
-Last full audit: January 2026
+Last full audit: August 2026
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -3436,7 +3436,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-transcribe',
       pricing: 'https://developers.openai.com/api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -3459,7 +3459,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe',
       pricing: 'https://developers.openai.com/api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -3478,7 +3478,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-live-transcribe',
       pricing: 'https://developers.openai.com/api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -3518,7 +3518,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-realtime-whisper',
       pricing: 'https://developers.openai.com/api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -3544,7 +3544,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/speech-to-text',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -3569,7 +3569,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/speech-to-text',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -3604,7 +3604,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/speech-to-text',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -3620,6 +3620,62 @@ Last full audit: January 2026
     },
     pricing: { perMinute: 0.006, currency: 'USD' },
   }` | - |
+| `'gemini-3.5-transcribe'` | `{
+    name: 'gemini-3.5-transcribe',
+    displayName: 'Gemini 3.5 Transcribe',
+    provider: Vendor.Google,
+    description: 'Dedicated file transcription with automatic language detection, diarization, word timestamps, and custom vocabulary',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['interactions'],
+    releaseDate: '2026-08-26',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/transcribe',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      inputFormats: ['wav', 'mp3', 'aiff', 'aac', 'ogg', 'flac'],
+      outputFormats: ['text'],
+      timestamps: { supported: true, granularities: ['word', 'segment'] },
+      features: { translation: false, diarization: true, streaming: false, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 20, maxDurationSeconds: 34_200 },
+      vendorOptions: {
+        customVocabulary: { type: 'array', description: 'Up to 1,000 phrases to bias recognition toward' },
+        diarizationMode: { type: 'string', description: 'Set to speaker to identify up to eight speakers' },
+        transcriptionConfig: { type: 'object', description: 'Additional Gemini Interactions transcription_config fields' },
+      },
+    },
+    pricing: { perMinute: 0.005, perMInputTokens: 2, currency: 'USD' },
+  }` | - |
+| `'gemini-3.5-transcribe-live'` | `{
+    name: 'gemini-3.5-transcribe-live',
+    displayName: 'Gemini 3.5 Transcribe Live',
+    provider: Vendor.Google,
+    description: 'Low-latency bidirectional WebSocket audio transcription',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['realtime'],
+    releaseDate: '2026-08-26',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/transcribe',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      inputFormats: ['pcm', 'wav'],
+      outputFormats: ['text'],
+      timestamps: { supported: true, granularities: ['word', 'segment'] },
+      features: { translation: false, diarization: true, streaming: true, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 0 },
+    },
+    pricing: { perMinute: 0.009, streamingPerMinute: 0.009, perMInputTokens: 3.5, currency: 'USD' },
+  }` | - |
 | `'gemini-3.6-flash'` | `{
     name: 'gemini-3.6-flash',
     displayName: 'Gemini 3.6 Flash Audio Transcription',
@@ -3628,13 +3684,12 @@ Last full audit: January 2026
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
-    preferred: true,
     endpoints: ['interactions'],
     releaseDate: '2026-07-21',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/audio',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -3666,7 +3721,7 @@ Last full audit: January 2026
     sources: {
       documentation: 'https://docs.x.ai/developers/model-capabilities/audio/speech-to-text',
       pricing: 'https://docs.x.ai/developers/models/speech-to-text',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
@@ -3693,13 +3748,13 @@ Last full audit: January 2026
     isActive: true,
     releaseDate: '2024-04-01',
     sources: {
-      documentation: 'https://console.groq.com/docs/speech-text',
-      pricing: 'https://groq.com/pricing/',
-      lastVerified: '2026-01-24',
+      documentation: 'https://console.groq.com/docs/speech-to-text',
+      pricing: 'https://console.groq.com/docs/speech-to-text',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       ...WHISPER_BASE_CAPABILITIES,
-      timestamps: { supported: true, granularities: ['segment'] },
+      timestamps: { supported: true, granularities: ['word', 'segment'] },
       outputFormats: ['json', 'text', 'verbose_json'],
       features: {
         translation: true,
@@ -3708,21 +3763,48 @@ Last full audit: January 2026
         punctuation: true,
         profanityFilter: false,
       },
-      limits: { maxFileSizeMB: 25 },
+      limits: { maxFileSizeMB: 100 },
     },
-    pricing: { perMinute: 0.0005, currency: 'USD' }, // 12x cheaper!
+    pricing: { perMinute: 0.00185, currency: 'USD' },
+  }` | - |
+| `'whisper-large-v3-turbo'` | `{
+    name: 'whisper-large-v3-turbo',
+    displayName: 'Whisper Large v3 Turbo (Groq)',
+    provider: Vendor.Groq,
+    description: 'Cost-optimized multilingual Whisper transcription on Groq LPUs',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    releaseDate: '2024-09-18',
+    sources: {
+      documentation: 'https://console.groq.com/docs/speech-to-text',
+      pricing: 'https://console.groq.com/docs/speech-to-text',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ['json', 'text', 'verbose_json'],
+      timestamps: { supported: true, granularities: ['word', 'segment'] },
+      features: { translation: true, diarization: false, streaming: false, punctuation: true, profanityFilter: false },
+      limits: { maxFileSizeMB: 100 },
+    },
+    pricing: { perMinute: 0.0006666667, currency: 'USD' },
   }` | - |
 | `'distil-whisper-large-v3-en'` | `{
     name: 'distil-whisper-large-v3-en',
     displayName: 'Distil Whisper (Groq)',
     provider: Vendor.Groq,
     description: 'Faster English-only Whisper variant on Groq',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    retirementDate: '2025-08-23',
+    replacementModel: 'whisper-large-v3-turbo',
     releaseDate: '2024-04-01',
     sources: {
-      documentation: 'https://console.groq.com/docs/speech-text',
-      pricing: 'https://groq.com/pricing/',
-      lastVerified: '2026-01-24',
+      documentation: 'https://console.groq.com/docs/speech-to-text',
+      pricing: 'https://console.groq.com/docs/speech-to-text',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       inputFormats: AUDIO_FORMATS.STT_INPUT,
@@ -4246,7 +4328,7 @@ type SimpleImageEditOptions = Omit&lt;ImageEditOptions, 'model'&gt; & { model?: 
 
 ### calculateImageCost `function`
 
-📍 [`src/domain/entities/ImageModel.ts:1390`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:1433`](src/domain/entities/ImageModel.ts)
 
 Calculate estimated cost for image generation
 
@@ -4313,7 +4395,7 @@ export function createMessageWithImages(
 
 ### getImageModelsWithFeature `function`
 
-📍 [`src/domain/entities/ImageModel.ts:1379`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:1422`](src/domain/entities/ImageModel.ts)
 
 Get image models that support a specific feature
 
@@ -4351,10 +4433,10 @@ export async function readClipboardImage(): Promise&lt;ClipboardImageResult&gt;
 
 ### IMAGE_MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/ImageModel.ts:168`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:170`](src/domain/entities/ImageModel.ts)
 
 Complete image model registry
-Last full audit: March 2026
+Last full audit: August 2026
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -4376,7 +4458,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-2',
       pricing: 'https://developers.openai.com/api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
@@ -4414,14 +4496,14 @@ Last full audit: March 2026
     description: 'State-of-the-art image generation with better instruction following and prompt adherence',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-09',
+    deprecationDate: '2026-06-02',
     retirementDate: '2026-12-01',
     replacementModel: 'gpt-image-2',
     releaseDate: '2025-12-16',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1.5',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-14',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
@@ -4494,14 +4576,14 @@ Last full audit: March 2026
     description: 'Image model used in ChatGPT. Floating alias pointing to current ChatGPT image snapshot',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-09',
+    deprecationDate: '2026-06-02',
     retirementDate: '2026-12-01',
     replacementModel: 'gpt-image-2',
     releaseDate: '2025-12-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/chatgpt-image-latest',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-14',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
@@ -4574,14 +4656,14 @@ Last full audit: March 2026
     description: 'Previous generation OpenAI image model. More expensive than GPT Image 1.5',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-09',
-    retirementDate: '2026-12-01',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-10-23',
     replacementModel: 'gpt-image-2',
     releaseDate: '2025-04-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-14',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
@@ -4654,14 +4736,14 @@ Last full audit: March 2026
     description: 'Cost-efficient version of GPT Image 1. Cheapest OpenAI image model',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-09',
+    deprecationDate: '2026-06-02',
     retirementDate: '2026-12-01',
     replacementModel: 'gpt-image-2',
     releaseDate: '2025-06-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1-mini',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-14',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
@@ -4736,11 +4818,12 @@ Last full audit: March 2026
     lifecycle: 'retired',
     replacementModel: 'gpt-image-2',
     releaseDate: '2023-11-06',
-    deprecationDate: '2026-05-12',
+    deprecationDate: '2025-11-14',
+    retirementDate: '2026-05-12',
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/images',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-25',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1792', '1792x1024'],
@@ -4790,11 +4873,12 @@ Last full audit: March 2026
     lifecycle: 'retired',
     replacementModel: 'gpt-image-2',
     releaseDate: '2022-11-03',
-    deprecationDate: '2026-05-12',
+    deprecationDate: '2025-11-14',
+    retirementDate: '2026-05-12',
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/images',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-25',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['256x256', '512x512', '1024x1024'],
@@ -4822,8 +4906,8 @@ Last full audit: March 2026
     displayName: 'Imagen 4.0 Generate',
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 - standard quality image generation',
-    isActive: true,
-    lifecycle: 'deprecated',
+    isActive: false,
+    lifecycle: 'retired',
     deprecationDate: '2026-07-16',
     retirementDate: '2026-08-17',
     replacementModel: 'gemini-3.1-flash-image',
@@ -4831,7 +4915,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -4937,8 +5021,8 @@ Last full audit: March 2026
     displayName: 'Imagen 4.0 Ultra',
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 Ultra - highest quality image generation',
-    isActive: true,
-    lifecycle: 'deprecated',
+    isActive: false,
+    lifecycle: 'retired',
     deprecationDate: '2026-07-16',
     retirementDate: '2026-08-17',
     replacementModel: 'gemini-3-pro-image',
@@ -4946,7 +5030,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -5052,8 +5136,8 @@ Last full audit: March 2026
     displayName: 'Imagen 4.0 Fast',
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 Fast - optimized for speed',
-    isActive: true,
-    lifecycle: 'deprecated',
+    isActive: false,
+    lifecycle: 'retired',
     deprecationDate: '2026-07-16',
     retirementDate: '2026-08-17',
     replacementModel: 'gemini-3.1-flash-lite-image',
@@ -5061,7 +5145,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -5176,7 +5260,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['512x512', '1024x1024', '2048x2048', '4096x4096', 'auto'],
@@ -5211,7 +5295,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-image',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', 'auto'],
@@ -5242,7 +5326,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '2048x2048', '4096x4096', 'auto'],
@@ -5268,7 +5352,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image-preview',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['512x512', '1024x1024', '1536x1536', 'auto'],
@@ -5316,7 +5400,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image-preview',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', 'auto'],
@@ -5357,11 +5441,14 @@ Last full audit: March 2026
     provider: Vendor.Google,
     description: 'Native image generation and editing designed for fast, creative workflows',
     isActive: true,
+    lifecycle: 'deprecated',
+    retirementDate: '2026-10-02',
+    replacementModel: 'gemini-3.1-flash-image',
     releaseDate: '2025-10-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-image',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', 'auto'],
@@ -5384,6 +5471,42 @@ Last full audit: March 2026
       currency: 'USD',
     },
   }` | - |
+| `'grok-imagine-image-2.0'` | `{
+    name: 'grok-imagine-image-2.0',
+    displayName: 'Grok Imagine Image 2.0',
+    provider: Vendor.Grok,
+    description: 'Current xAI image generation and editing model with 1K/2K low and medium quality tiers',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['image_generation', 'image_edit', 'batch'],
+    sources: {
+      documentation: 'https://docs.x.ai/developers/models/grok-imagine-image-2.0',
+      pricing: 'https://docs.x.ai/developers/pricing',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      sizes: ['1024x1024', '2048x2048', 'auto'],
+      aspectRatios: ['1:1', '3:2', '2:3', '3:4', '4:3', '9:16', '16:9'],
+      maxImagesPerRequest: 10,
+      outputFormats: ['jpeg', 'png'],
+      features: { generation: true, editing: true, variations: false, styleControl: true, qualityControl: true, transparency: false, promptRevision: false },
+      limits: { maxPromptLength: 32_000, maxRequestsPerMinute: 360 },
+      vendorOptions: {
+        resolution: { type: 'enum', description: 'Requested output image resolution', enum: ['1K', '2K'], default: '1K' },
+        quality: { type: 'enum', description: 'Requested output quality', enum: ['low', 'medium'], default: 'low' },
+        storage_options: { type: 'object', description: 'Optional xAI Files persistence and public URL settings' },
+      },
+    },
+    pricing: {
+      inputPerImage: 0.01,
+      perImageStandard: 0.04,
+      perImageHD: 0.08,
+      perImageByResolution: { '1K-low': 0.04, '2K-low': 0.06, '1K-medium': 0.06, '2K-medium': 0.08 },
+      currency: 'USD',
+    },
+  }` | - |
 | `'grok-imagine-image-quality'` | `{
     name: 'grok-imagine-image-quality',
     displayName: 'Grok Imagine Image Quality',
@@ -5392,7 +5515,6 @@ Last full audit: March 2026
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
-    preferred: true,
     aliases: ['grok-imagine-image-quality-latest', 'grok-imagine-image-pro'],
     snapshots: ['grok-imagine-image-quality-20260403'],
     endpoints: ['image_generation', 'image_edit'],
@@ -5400,7 +5522,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
       pricing: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '2048x2048', 'auto'],
@@ -5432,7 +5554,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://docs.x.ai/docs/guides/image-generation',
       pricing: 'https://docs.x.ai/docs/models',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -5486,7 +5608,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://docs.x.ai/docs/guides/image-generation',
       pricing: 'https://docs.x.ai/docs/models',
-      lastVerified: '2026-02-01',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -5652,7 +5774,7 @@ async extend(options: SimpleVideoExtendOptions): Promise&lt;VideoResponse&gt;
 #### `remix()`
 
 Remix a completed video with a new prompt — same length,
-prompt-steered re-generation. Provider-dependent (OpenAI Sora today).
+prompt-steered re-generation. Provider-dependent.
 
 ```typescript
 async remix(options: VideoRemixOptions): Promise&lt;VideoResponse&gt;
@@ -5666,7 +5788,7 @@ async remix(options: VideoRemixOptions): Promise&lt;VideoResponse&gt;
 #### `edit()`
 
 Edit a completed video using a prompt-described change.
-Provider-dependent (OpenAI Sora today).
+Provider-dependent.
 
 ```typescript
 async edit(options: VideoEditOptions): Promise&lt;VideoResponse&gt;
@@ -5680,7 +5802,7 @@ async edit(options: VideoEditOptions): Promise&lt;VideoResponse&gt;
 #### `createCharacter()`
 
 Create a reusable character from a reference video.
-Provider-dependent (OpenAI Sora today). Returns a `CharacterRef` whose
+Provider-dependent. Returns a `CharacterRef` whose
 `id` can be passed back via `vendorOptions.characterId` on a later
 `generate` call.
 
@@ -5768,7 +5890,7 @@ getConnector(): Connector
 
 ### CharacterRef `interface`
 
-📍 [`src/domain/interfaces/IVideoProvider.ts:82`](src/domain/interfaces/IVideoProvider.ts)
+📍 [`src/domain/interfaces/IVideoProvider.ts:84`](src/domain/interfaces/IVideoProvider.ts)
 
 A reusable character reference (Sora character API).
 
@@ -5786,7 +5908,7 @@ A reusable character reference (Sora character API).
 
 ### CreateCharacterOptions `interface`
 
-📍 [`src/domain/interfaces/IVideoProvider.ts:72`](src/domain/interfaces/IVideoProvider.ts)
+📍 [`src/domain/interfaces/IVideoProvider.ts:74`](src/domain/interfaces/IVideoProvider.ts)
 
 Options for creating a reusable character from a reference video
 (Sora character API).
@@ -5823,7 +5945,7 @@ Video model description
 
 ### IVideoProvider `interface`
 
-📍 [`src/domain/interfaces/IVideoProvider.ts:149`](src/domain/interfaces/IVideoProvider.ts)
+📍 [`src/domain/interfaces/IVideoProvider.ts:151`](src/domain/interfaces/IVideoProvider.ts)
 
 Video provider interface
 
@@ -6001,6 +6123,7 @@ Edit = apply a prompt-described change to a completed video.
 
 | Property | Type | Description |
 |----------|------|-------------|
+| `model?` | `model?: string;` | Model to use when the provider exposes multiple editing models. |
 | `videoId` | `videoId: string;` | Identifier of the completed video to edit |
 | `prompt` | `prompt: string;` | Prompt describing the edit |
 
@@ -6072,7 +6195,7 @@ Options for creating a VideoGeneration instance
 
 ### VideoJob `interface`
 
-📍 [`src/domain/interfaces/IVideoProvider.ts:97`](src/domain/interfaces/IVideoProvider.ts)
+📍 [`src/domain/interfaces/IVideoProvider.ts:99`](src/domain/interfaces/IVideoProvider.ts)
 
 Video generation job
 
@@ -6170,7 +6293,7 @@ The video reference is the completed-video ID returned by `generateVideo`.
 
 ### VideoResponse `interface`
 
-📍 [`src/domain/interfaces/IVideoProvider.ts:115`](src/domain/interfaces/IVideoProvider.ts)
+📍 [`src/domain/interfaces/IVideoProvider.ts:117`](src/domain/interfaces/IVideoProvider.ts)
 
 Video generation response
 
@@ -6219,7 +6342,7 @@ type SimpleVideoExtendOptions = Omit&lt;VideoExtendOptions, 'model'&gt; & { mode
 
 ### VideoStatus `type`
 
-📍 [`src/domain/interfaces/IVideoProvider.ts:92`](src/domain/interfaces/IVideoProvider.ts)
+📍 [`src/domain/interfaces/IVideoProvider.ts:94`](src/domain/interfaces/IVideoProvider.ts)
 
 Video generation status (for async operations)
 
@@ -6231,7 +6354,7 @@ type VideoStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
 ### calculateVideoCost `function`
 
-📍 [`src/domain/entities/VideoModel.ts:472`](src/domain/entities/VideoModel.ts)
+📍 [`src/domain/entities/VideoModel.ts:502`](src/domain/entities/VideoModel.ts)
 
 Calculate video generation cost
 
@@ -6273,7 +6396,7 @@ export function createVideoTools(
 
 ### getVideoModelsWithAudio `function`
 
-📍 [`src/domain/entities/VideoModel.ts:465`](src/domain/entities/VideoModel.ts)
+📍 [`src/domain/entities/VideoModel.ts:495`](src/domain/entities/VideoModel.ts)
 
 Get models that support audio
 
@@ -6285,7 +6408,7 @@ export function getVideoModelsWithAudio(): IVideoModelDescription[]
 
 ### getVideoModelsWithFeature `function`
 
-📍 [`src/domain/entities/VideoModel.ts:456`](src/domain/entities/VideoModel.ts)
+📍 [`src/domain/entities/VideoModel.ts:486`](src/domain/entities/VideoModel.ts)
 
 Get models with a specific feature
 
@@ -6297,7 +6420,7 @@ export function getVideoModelsWithFeature(feature: keyof VideoModelCapabilities[
 
 ### VIDEO_MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/VideoModel.ts:123`](src/domain/entities/VideoModel.ts)
+📍 [`src/domain/entities/VideoModel.ts:125`](src/domain/entities/VideoModel.ts)
 
 Video Model Registry
 
@@ -6310,10 +6433,11 @@ Video Model Registry
     name: 'sora-2',
     displayName: 'Sora 2',
     provider: Vendor.OpenAI,
-    description: 'Flagship video generation with synced audio. Extensions up to 120s total',
+    description: 'Deprecated video generation model with synced audio; migrate before the Videos API shutdown',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-24',
+    availability: 'public',
+    deprecationDate: '2026-03-24',
     retirementDate: '2026-09-24',
     endpoints: ['video_generation', 'video_edit', 'batch'],
     releaseDate: '2025-10-06',
@@ -6324,18 +6448,14 @@ Video Model Registry
       aspectRatios: ['9:16', '16:9'],
       maxFps: 30,
       audio: true,
+      textToVideo: true,
       imageToVideo: true,
-      videoExtension: true, // Up to 6 extensions, max 120s total
+      videoExtension: true,
       frameControl: false,
-      features: {
-        upscaling: false,
-        styleControl: false,
-        negativePrompt: false,
-        seed: true,
-      },
+      features: { upscaling: false, styleControl: false, negativePrompt: false, seed: true },
     },
     pricing: {
-      perSecond: 0.10, // $0.05/sec batch API
+      perSecond: 0.10,
       perSecondByResolution: { '720p': 0.10, '720x1280': 0.10, '1280x720': 0.10 },
       batchPerSecondByResolution: { '720p': 0.05, '720x1280': 0.05, '1280x720': 0.05 },
       currency: 'USD',
@@ -6345,10 +6465,11 @@ Video Model Registry
     name: 'sora-2-pro',
     displayName: 'Sora 2 Pro',
     provider: Vendor.OpenAI,
-    description: 'Most advanced synced-audio video generation. Up to 1080p, extensions up to 120s',
+    description: 'Deprecated high-resolution video generation model; migrate before the Videos API shutdown',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-24',
+    availability: 'public',
+    deprecationDate: '2026-03-24',
     retirementDate: '2026-09-24',
     endpoints: ['video_generation', 'video_edit', 'batch'],
     releaseDate: '2025-10-06',
@@ -6359,18 +6480,14 @@ Video Model Registry
       aspectRatios: ['9:16', '16:9'],
       maxFps: 30,
       audio: true,
+      textToVideo: true,
       imageToVideo: true,
-      videoExtension: true, // Up to 6 extensions, max 120s total
+      videoExtension: true,
       frameControl: true,
-      features: {
-        upscaling: true,
-        styleControl: true,
-        negativePrompt: false,
-        seed: true,
-      },
+      features: { upscaling: true, styleControl: true, negativePrompt: false, seed: true },
     },
     pricing: {
-      perSecond: 0.30, // 720p base; $0.50/sec at 1024x, $0.70/sec at 1080p
+      perSecond: 0.30,
       perSecondByResolution: {
         '720p': 0.30, '720x1280': 0.30, '1280x720': 0.30,
         '1024p': 0.50, '1024x1792': 0.50, '1792x1024': 0.50,
@@ -6481,7 +6598,7 @@ Video Model Registry
     preferred: true,
     endpoints: ['video_generation'],
     releaseDate: '2026-06-30',
-    sources: { ...GOOGLE_SOURCES, lastVerified: '2026-08-08' },
+    sources: { ...GOOGLE_SOURCES, lastVerified: '2026-08-30' },
     capabilities: {
       durations: [4, 6, 8],
       resolutions: ['720p', '1080p'],
@@ -6505,15 +6622,17 @@ Video Model Registry
     provider: Vendor.Google,
     description: 'Conversational 720p video generation and editing through the Interactions API',
     isActive: true,
-    lifecycle: 'preview',
+    lifecycle: 'deprecated',
     availability: 'public',
-    preferred: true,
+    deprecationDate: '2026-08-27',
+    retirementDate: '2026-09-30',
+    replacementModel: 'gemini-omni-1.1-flash',
     endpoints: ['interactions', 'video_generation', 'video_edit'],
     releaseDate: '2026-06-30',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/omni',
       apiReference: 'https://ai.google.dev/api/interactions-api',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       durations: [3, 4, 5, 6, 7, 8, 9, 10],
@@ -6525,6 +6644,37 @@ Video Model Registry
       videoExtension: false,
       frameControl: false,
       features: { upscaling: false, styleControl: true, negativePrompt: false, seed: false },
+    },
+    pricing: { perSecond: 0.10, perSecondByResolution: { '720p': 0.10 }, currency: 'USD' },
+  }` | - |
+| `'gemini-omni-1.1-flash'` | `{
+    name: 'gemini-omni-1.1-flash',
+    displayName: 'Gemini Omni 1.1 Flash',
+    provider: Vendor.Google,
+    description: 'Generally available conversational video generation and editing through the Interactions API',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['interactions', 'video_generation', 'video_edit'],
+    releaseDate: '2026-08-27',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash',
+      apiReference: 'https://ai.google.dev/api/interactions-api',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      durations: [3, 4, 5, 6, 7, 8, 9, 10],
+      resolutions: ['360p', '720p', '1080p', '4k'],
+      aspectRatios: ['16:9', '9:16'],
+      maxFps: 24,
+      audio: true,
+      textToVideo: true,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: false,
+      features: { upscaling: true, styleControl: true, negativePrompt: false, seed: false },
     },
     pricing: { perSecond: 0.10, perSecondByResolution: { '720p': 0.10 }, currency: 'USD' },
   }` | - |
@@ -6572,7 +6722,7 @@ Video Model Registry
     sources: {
       documentation: 'https://docs.x.ai/developers/models/grok-imagine-video-1.5',
       pricing: 'https://docs.x.ai/developers/models/grok-imagine-video-1.5',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       durations: [1, 5, 8, 10, 15],
@@ -6580,7 +6730,7 @@ Video Model Registry
       aspectRatios: ['16:9', '4:3', '1:1', '9:16', '3:4', '3:2', '2:3'],
       maxFps: 24,
       audio: true,
-      textToVideo: false,
+      textToVideo: true,
       imageToVideo: true,
       videoExtension: false,
       frameControl: false,
@@ -6896,7 +7046,7 @@ constructor(message: string, cause?: Error)
 
 ### CodexSdkDriver `class`
 
-📍 [`src/agent-runtime/drivers/CodexSdkDriver.ts:83`](src/agent-runtime/drivers/CodexSdkDriver.ts)
+📍 [`src/agent-runtime/drivers/CodexSdkDriver.ts:85`](src/agent-runtime/drivers/CodexSdkDriver.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -7015,7 +7165,7 @@ async destroy(): Promise&lt;void&gt;
 
 ### OneRingAIDriver `class`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:81`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:83`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -7493,7 +7643,7 @@ cancelActiveRun(reason?: string): Promise&lt;void&gt;;
 
 ### CodexSdkDriverOptions `interface`
 
-📍 [`src/agent-runtime/drivers/CodexSdkDriver.ts:68`](src/agent-runtime/drivers/CodexSdkDriver.ts)
+📍 [`src/agent-runtime/drivers/CodexSdkDriver.ts:70`](src/agent-runtime/drivers/CodexSdkDriver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7744,7 +7894,7 @@ cancelActiveRun(reason?: string): Promise&lt;void&gt;;
 
 ### LocalAgentFactoryContext `interface`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:47`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:49`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7779,7 +7929,7 @@ cancelActiveRun(reason?: string): Promise&lt;void&gt;;
 
 ### OneRingAgentBinding `interface`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:54`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:56`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7795,7 +7945,7 @@ cancelActiveRun(reason?: string): Promise&lt;void&gt;;
 
 ### OneRingAIDriverOptions `interface`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:68`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:70`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7815,7 +7965,7 @@ PermissionPolicyManager already enforce the runtime policy. |
 
 ### OneRingModelReasoningControls `interface`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:59`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:61`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8203,7 +8353,7 @@ type JsonValue = | null
 
 ### OneRingAgentSource `type`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:42`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:44`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 ```typescript
 type OneRingAgentSource = | { type: 'stored-definition'; agentId: string }
@@ -27877,7 +28027,7 @@ Every model registry (Image, TTS, STT, Video) extends this
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `name` | `name: string;` | Model identifier (e.g., "dall-e-3", "tts-1") |
+| `name` | `name: string;` | Model identifier (e.g., "gpt-image-2", "tts-1") |
 | `displayName` | `displayName: string;` | Display name for UI (e.g., "DALL-E 3", "TTS-1") |
 | `provider` | `provider: VendorType;` | Vendor/provider |
 | `description?` | `description?: string;` | Model description |
@@ -28063,7 +28213,7 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
 ### LongContextTokenPricing `interface`
 
-📍 [`src/domain/entities/Model.ts:190`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:191`](src/domain/entities/Model.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28103,7 +28253,7 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
 ### ResolvedDeepSeekModel `interface`
 
-📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:173`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:174`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28143,7 +28293,7 @@ emitted only when the primitive actually called a connector.
 
 ### TokenPricing `interface`
 
-📍 [`src/domain/entities/Model.ts:199`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:200`](src/domain/entities/Model.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28248,13 +28398,14 @@ type ProcessingMode = | 'interactive'
   | 'flex'
   | 'fast'
   | 'priority'
+  | 'off_peak'
 ```
 
 ---
 
 ### calculateCost `function`
 
-📍 [`src/domain/entities/Model.ts:3772`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3941`](src/domain/entities/Model.ts)
 
 Calculate the cost for a given model and token usage
 
@@ -28289,7 +28440,7 @@ export function calculateCost(
 
 ### calculateEmbeddingCost `function`
 
-📍 [`src/domain/entities/EmbeddingModel.ts:575`](src/domain/entities/EmbeddingModel.ts)
+📍 [`src/domain/entities/EmbeddingModel.ts:659`](src/domain/entities/EmbeddingModel.ts)
 
 Calculate embedding cost for a given model and token count
 
@@ -28305,7 +28456,7 @@ export function calculateEmbeddingCost(
 
 ### getActiveModels `function`
 
-📍 [`src/domain/entities/Model.ts:3753`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3922`](src/domain/entities/Model.ts)
 
 Get all currently active models
 
@@ -28317,7 +28468,7 @@ export function getActiveModels(): ILLMDescription[]
 
 ### getDeprecatedModels `function`
 
-📍 [`src/domain/entities/Model.ts:3758`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3927`](src/domain/entities/Model.ts)
 
 Get callable models carrying an explicit vendor deprecation notice.
 
@@ -28329,7 +28480,7 @@ export function getDeprecatedModels(): ILLMDescription[]
 
 ### getEmbeddingModelsWithFeature `function`
 
-📍 [`src/domain/entities/EmbeddingModel.ts:557`](src/domain/entities/EmbeddingModel.ts)
+📍 [`src/domain/entities/EmbeddingModel.ts:641`](src/domain/entities/EmbeddingModel.ts)
 
 Get embedding models that support a specific feature
 
@@ -28343,7 +28494,7 @@ export function getEmbeddingModelsWithFeature(
 
 ### getModelInfo `function`
 
-📍 [`src/domain/entities/Model.ts:3730`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3899`](src/domain/entities/Model.ts)
 
 Get model information by name
 
@@ -28355,7 +28506,7 @@ export function getModelInfo(modelName: string): ILLMDescription | undefined
 
 ### getModelsByVendor `function`
 
-📍 [`src/domain/entities/Model.ts:3745`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3914`](src/domain/entities/Model.ts)
 
 Get all models for a specific vendor
 
@@ -28367,7 +28518,7 @@ export function getModelsByVendor(vendor: VendorType): ILLMDescription[]
 
 ### resolveDeepSeekModel `function`
 
-📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:182`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:183`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
 
 ```typescript
 export function resolveDeepSeekModel(
@@ -28395,7 +28546,7 @@ export function resolveModelCapabilities(
 
 ### resolveModelName `function`
 
-📍 [`src/domain/entities/Model.ts:3736`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3905`](src/domain/entities/Model.ts)
 
 Resolve a direct model ID or floating alias to the registry's canonical ID.
 
@@ -28407,10 +28558,10 @@ export function resolveModelName(modelName: string): string | undefined
 
 ### EMBEDDING_MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/EmbeddingModel.ts:140`](src/domain/entities/EmbeddingModel.ts)
+📍 [`src/domain/entities/EmbeddingModel.ts:146`](src/domain/entities/EmbeddingModel.ts)
 
 Complete embedding model registry
-Last full audit: March 2026
+Last full audit: August 2026
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28427,7 +28578,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/embeddings',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8191,
@@ -28459,7 +28610,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/embeddings',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8191,
@@ -28486,13 +28637,13 @@ Last full audit: March 2026
     displayName: 'Text Embedding Ada 002',
     provider: Vendor.OpenAI,
     description: 'Legacy embedding model, replaced by text-embedding-3 series',
-    isActive: false,
+    isActive: true,
+    lifecycle: 'legacy',
     releaseDate: '2022-12-15',
-    deprecationDate: '2025-01-04',
     sources: {
-      documentation: 'https://platform.openai.com/docs/guides/embeddings',
-      pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-17',
+      documentation: 'https://developers.openai.com/api/docs/models/text-embedding-ada-002',
+      pricing: 'https://developers.openai.com/api/docs/pricing',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8191,
@@ -28527,7 +28678,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-embedding-2',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -28562,7 +28713,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/embeddings',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 2048,
@@ -28587,7 +28738,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/embeddings',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 2048,
@@ -28636,7 +28787,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://docs.mistral.ai/capabilities/embeddings/',
       pricing: 'https://mistral.ai/products/la-plateforme#pricing',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -28657,6 +28808,81 @@ Last full audit: March 2026
       currency: 'USD',
     },
   }` | - |
+| `'codestral-embed'` | `{
+    name: 'codestral-embed',
+    displayName: 'Codestral Embed',
+    provider: Vendor.Mistral,
+    description: 'Code-specialized retrieval embeddings with configurable output dimensions and data types',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['embeddings', 'batch'],
+    releaseDate: '2025-05-28',
+    sources: {
+      documentation: 'https://docs.mistral.ai/models/codestral-embed-25-05',
+      pricing: 'https://docs.mistral.ai/models/codestral-embed-25-05',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      maxTokens: 8192,
+      defaultDimensions: 3072,
+      maxDimensions: 3072,
+      inputModalities: ['text'],
+      features: { matryoshka: true, instructionAware: false, batchInput: true, multilingual: true },
+      limits: { maxBatchSize: 128 },
+      vendorOptions: {
+        output_dimension: { type: 'number', description: 'Requested output vector dimensions', min: 1, max: 3072 },
+        output_dtype: { type: 'enum', description: 'Output vector data type', enum: ['float', 'int8', 'uint8', 'binary', 'ubinary'], default: 'float' },
+      },
+    },
+    pricing: { perMTokens: 0.15, currency: 'USD' },
+  }` | - |
+| `'embeddinggemma'` | `{
+    name: 'embeddinggemma',
+    displayName: 'EmbeddingGemma 300M',
+    provider: Vendor.Ollama,
+    description: 'Ollama-recommended compact multilingual embedding model from Google',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    releaseDate: '2025-09-04',
+    sources: {
+      documentation: 'https://docs.ollama.com/capabilities/embeddings',
+      apiReference: 'https://ollama.com/library/embeddinggemma',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      maxTokens: 2048,
+      defaultDimensions: 768,
+      maxDimensions: 768,
+      inputModalities: ['text'],
+      features: { matryoshka: true, instructionAware: true, batchInput: true, multilingual: true },
+      limits: { maxBatchSize: 512 },
+    },
+  }` | - |
+| `'all-minilm'` | `{
+    name: 'all-minilm',
+    displayName: 'All MiniLM',
+    provider: Vendor.Ollama,
+    description: 'Small sentence embedding model for fast local semantic search',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    sources: {
+      documentation: 'https://docs.ollama.com/capabilities/embeddings',
+      apiReference: 'https://ollama.com/library/all-minilm',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      maxTokens: 512,
+      defaultDimensions: 384,
+      maxDimensions: 384,
+      inputModalities: ['text'],
+      features: { matryoshka: false, instructionAware: false, batchInput: true, multilingual: false },
+      limits: { maxBatchSize: 512 },
+    },
+  }` | - |
 | `'qwen3-embedding'` | `{
     name: 'qwen3-embedding',
     displayName: 'Qwen3 Embedding 8B',
@@ -28667,7 +28893,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://huggingface.co/Qwen/Qwen3-Embedding-8B',
       pricing: 'https://ollama.com/library/qwen3-embedding',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -28694,7 +28920,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://huggingface.co/Qwen/Qwen3-Embedding-4B',
       pricing: 'https://ollama.com/library/qwen3-embedding',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -28721,7 +28947,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://huggingface.co/Qwen/Qwen3-Embedding-0.6B',
       pricing: 'https://ollama.com/library/qwen3-embedding',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -28748,7 +28974,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5',
       pricing: 'https://ollama.com/library/nomic-embed-text',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 8192,
@@ -28775,7 +29001,7 @@ Last full audit: March 2026
     sources: {
       documentation: 'https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1',
       pricing: 'https://ollama.com/library/mxbai-embed-large',
-      lastVerified: '2026-03-17',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       maxTokens: 512,
@@ -28799,10 +29025,10 @@ Last full audit: March 2026
 
 ### MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/Model.ts:352`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:356`](src/domain/entities/Model.ts)
 
 Complete model registry with all model metadata
-Registry schema v2. Last full first-party documentation audit: 2026-08-08.
+Registry schema v2. Last full first-party documentation audit: 2026-08-30.
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28822,18 +29048,18 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['responses', 'chat_completions', 'batch'],
     releaseDate: '2026-07-09',
     knowledgeCutoff: '2026-02-16',
-    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-sol', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-sol', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
       audio: false, video: false, batchAPI: true, promptCaching: true,
       parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
-      input: { tokens: 1050000, text: true, image: true, cpm: 5, cpmCached: 0.5 },
-      output: { tokens: 128000, text: true, cpm: 30 },
+      input: { tokens: 1050000, text: true, image: true, cpm: 4, cpmCached: 0.4 },
+      output: { tokens: 128000, text: true, cpm: 20 },
       pricing: {
         text: {
-          input: 5, cachedInput: 0.5, cacheWrite: 6.25, output: 30,
-          longContext: { thresholdTokens: 272000, input: 10, cachedInput: 1, cacheWrite: 12.5, output: 45 },
+          input: 4, cachedInput: 0.4, cacheWrite: 5, output: 20,
+          longContext: { thresholdTokens: 272000, input: 8, cachedInput: 0.8, cacheWrite: 10, output: 30 },
         },
         processingMultipliers: { batch: 0.5, fast: 2 },
       },
@@ -28851,7 +29077,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['responses', 'chat_completions', 'batch'],
     releaseDate: '2026-07-09',
     knowledgeCutoff: '2026-02-16',
-    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-terra', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-terra', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -28879,7 +29105,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['responses', 'chat_completions', 'batch'],
     releaseDate: '2026-07-09',
     knowledgeCutoff: '2026-02-16',
-    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-luna', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.6-luna', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -28906,7 +29132,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['responses', 'batch'],
     releaseDate: '2026-04-25',
     knowledgeCutoff: '2025-12-01',
-    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.5-pro', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-5.5-pro', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -29168,8 +29394,12 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
 | `'gpt-5.3-chat-latest'` | `{
     name: 'gpt-5.3-chat-latest',
     provider: Vendor.OpenAI,
-    description: 'Latest GPT-5.3 chat model for general-purpose use',
-    isActive: true,
+    description: 'Retired GPT-5.3 chat alias retained for migration metadata',
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-05-08',
+    retirementDate: '2026-08-10',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2026-02-01',
     knowledgeCutoff: '2025-08-31',
     features: {
@@ -29285,7 +29515,11 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     name: 'gpt-5.2-codex',
     provider: Vendor.OpenAI,
     description: 'GPT-5.2 codex for coding and agentic tasks. Reasoning.effort: low, medium, high, xhigh',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-12-01',
     knowledgeCutoff: '2025-08-31',
     features: {
@@ -29325,7 +29559,11 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     name: 'gpt-5.2-chat-latest',
     provider: Vendor.OpenAI,
     description: 'GPT-5.2 chat model for general-purpose use',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-05-08',
+    retirementDate: '2026-08-10',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-12-01',
     knowledgeCutoff: '2025-08-31',
     features: {
@@ -29399,7 +29637,11 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     name: 'gpt-5.1-codex',
     provider: Vendor.OpenAI,
     description: 'GPT-5.1 codex for coding and agentic tasks with reasoning',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-10-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -29439,7 +29681,11 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     name: 'gpt-5.1-codex-max',
     provider: Vendor.OpenAI,
     description: 'GPT-5.1 codex max for maximum reasoning depth on coding tasks',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-10-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -29479,7 +29725,11 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     name: 'gpt-5.1-codex-mini',
     provider: Vendor.OpenAI,
     description: 'GPT-5.1 codex mini for cost-efficient coding tasks',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-terra',
     releaseDate: '2025-10-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -29519,7 +29769,11 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     name: 'gpt-5.1-chat-latest',
     provider: Vendor.OpenAI,
     description: 'GPT-5.1 chat model for general-purpose use',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-10-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -29673,7 +29927,11 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     name: 'gpt-5-codex',
     provider: Vendor.OpenAI,
     description: 'GPT-5 codex for coding and agentic tasks with reasoning',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-08-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -29713,7 +29971,11 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     name: 'gpt-5-chat-latest',
     provider: Vendor.OpenAI,
     description: 'GPT-5 chat model for general-purpose use',
-    isActive: true,
+    isActive: false,
+    lifecycle: 'retired',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-07-23',
+    replacementModel: 'gpt-5.6-sol',
     releaseDate: '2025-08-01',
     knowledgeCutoff: '2024-09-30',
     features: {
@@ -29816,6 +30078,10 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     provider: Vendor.OpenAI,
     description: 'Fastest and cheapest model with 1M context. 80.1% MMLU, ideal for classification/autocompletion',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-10-23',
+    replacementModel: 'gpt-5.6-luna',
     releaseDate: '2025-04-14',
     knowledgeCutoff: '2024-06-01',
     features: {
@@ -29953,6 +30219,10 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     provider: Vendor.OpenAI,
     description: 'Audio model with text+audio input/output. 128K context',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-20',
+    retirementDate: '2027-01-20',
+    replacementModel: 'gpt-audio-1.5',
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     features: {
@@ -29987,6 +30257,10 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     provider: Vendor.OpenAI,
     description: 'Cost-efficient audio model. 128K context',
     isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-20',
+    retirementDate: '2027-01-20',
+    replacementModel: 'gpt-audio-1.5',
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     features: {
@@ -30174,7 +30448,11 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     name: 'gpt-realtime',
     provider: Vendor.OpenAI,
     description: 'Realtime model for voice/audio streaming. Text+audio+image input, text+audio output',
-    isActive: false,
+    isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-20',
+    retirementDate: '2027-01-20',
+    replacementModel: 'gpt-realtime-2.1',
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     voices: OPENAI_REALTIME_VOICES,
@@ -30215,7 +30493,11 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     name: 'gpt-realtime-mini',
     provider: Vendor.OpenAI,
     description: 'Cost-efficient realtime model for voice/audio streaming',
-    isActive: false,
+    isActive: true,
+    lifecycle: 'deprecated',
+    deprecationDate: '2026-07-20',
+    retirementDate: '2027-01-20',
+    replacementModel: 'gpt-realtime-2.1-mini',
     releaseDate: '2025-06-01',
     knowledgeCutoff: '2023-10-01',
     voices: OPENAI_REALTIME_VOICES,
@@ -30563,7 +30845,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['messages', 'batch'],
     releaseDate: '2026-07-01',
     knowledgeCutoff: '2026-05-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -30587,7 +30869,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['messages', 'batch'],
     releaseDate: '2026-06-09',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -30695,7 +30977,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['messages', 'batch'],
     releaseDate: '2026-06-09',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true,
       streaming: true,
@@ -31092,6 +31374,33 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
       },
     },
   }` | - |
+| `'gemini-3.7-flash'` | `{
+    name: 'gemini-3.7-flash',
+    provider: Vendor.Google,
+    description: 'Latest production Gemini Flash model for agentic workflows and multimodal reasoning',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    aliases: ['gemini-flash-latest'],
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-08-13',
+    knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1_048_576, text: true, image: true, audio: true, video: true, cpm: 0.75, cpmCached: 0.075 },
+      output: { tokens: 65_536, text: true, cpm: 3.75 },
+      pricing: {
+        text: { input: 0.75, cachedInput: 0.075, output: 3.75 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
+      },
+    },
+  }` | - |
 | `'gemini-3.6-flash'` | `{
     name: 'gemini-3.6-flash',
     provider: Vendor.Google,
@@ -31099,12 +31408,10 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
-    preferred: true,
-    aliases: ['gemini-flash-latest'],
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-07-21',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -31129,7 +31436,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -31156,7 +31463,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-07-21',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -31176,12 +31483,14 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     provider: Vendor.Google,
     description: 'Stable cost-efficient Gemini 3.1 model for high-volume multimodal workloads',
     isActive: true,
-    lifecycle: 'active',
+    lifecycle: 'deprecated',
+    retirementDate: '2027-05-07',
+    replacementModel: 'gemini-3.5-flash-lite',
     availability: 'public',
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-05-25',
     knowledgeCutoff: '2025-12-01',
-    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -31560,18 +31869,44 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
       },
     },
   }` | - |
-| `'grok-4.5'` | `{
-    name: 'grok-4.5',
+| `'grok-4.6'` | `{
+    name: 'grok-4.6',
     provider: Vendor.Grok,
-    description: 'Current flagship xAI reasoning model for agents, coding, and multimodal tasks',
+    description: 'Latest xAI frontier model for coding, agentic tasks, and knowledge work',
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
     endpoints: ['responses', 'chat_completions', 'messages', 'completions'],
+    releaseDate: '2026-08-12',
+    knowledgeCutoff: '2026-02-01',
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.6', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
+    features: {
+      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: false, promptCaching: true,
+      parameters: { temperature: true, topP: true, frequencyPenalty: true, presencePenalty: true },
+      input: { tokens: 500_000, text: true, image: true, cpm: 2, cpmCached: 0.5 },
+      output: { tokens: null, text: true, cpm: 6 },
+      pricing: {
+        text: {
+          input: 2, cachedInput: 0.5, output: 6,
+          longContext: { thresholdTokens: 200_000, input: 4, cachedInput: 1, output: 12 },
+        },
+      },
+    },
+  }` | - |
+| `'grok-4.5'` | `{
+    name: 'grok-4.5',
+    provider: Vendor.Grok,
+    description: 'Previous-generation xAI reasoning model for agents, coding, and multimodal tasks',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    endpoints: ['responses', 'chat_completions', 'messages', 'completions'],
     releaseDate: '2026-06-01',
     knowledgeCutoff: '2026-02-01',
-    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.5', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.5', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -31595,10 +31930,10 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    endpoints: ['responses', 'chat_completions'],
+    endpoints: ['responses', 'chat_completions', 'messages'],
     releaseDate: '2026-05-15',
     knowledgeCutoff: '2026-02-01',
-    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.3', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.3', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -31624,7 +31959,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['responses'],
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-02-01',
-    sources: { documentation: 'https://docs.x.ai/developers/models/grok-build-0.1', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://docs.x.ai/developers/models/grok-build-0.1', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -31651,7 +31986,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     aliases: ['grok-voice-latest'],
     endpoints: ['realtime'],
     releaseDate: '2026-07-29',
-    sources: { documentation: 'https://docs.x.ai/developers/models/voice-agent-api', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-08' },
+    sources: { documentation: 'https://docs.x.ai/developers/models/voice-agent-api', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
     voices: XAI_VOICES,
     features: {
       reasoning: true, streaming: true, structuredOutput: false, functionCalling: true,
@@ -31666,9 +32001,9 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
 | `'grok-voice-think-fast-1.0'` | `{
     name: 'grok-voice-think-fast-1.0',
     provider: Vendor.Grok,
-    description: 'Previous xAI reasoning voice model; pin only when model stability is required',
+    description: 'Deprecated first-generation xAI reasoning voice model',
     isActive: true,
-    lifecycle: 'legacy',
+    lifecycle: 'deprecated',
     availability: 'public',
     endpoints: ['realtime'],
     replacementModel: 'grok-voice-think-fast-2.0',
@@ -31904,12 +32239,12 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    endpoints: ['responses', 'chat_completions'],
+    endpoints: ['responses', 'chat_completions', 'messages'],
     releaseDate: '2026-04-24',
     sources: {
       documentation: 'https://api-docs.deepseek.com/quick_start/pricing/',
       pricing: 'https://api-docs.deepseek.com/quick_start/pricing/',
-      lastVerified: '2026-08-11',
+      lastVerified: '2026-08-30',
     },
     features: {
       reasoning: true,
@@ -31933,33 +32268,34 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
       input: {
         tokens: 1_000_000,
         text: true,
-        cpm: 0.14,
-        cpmCached: 0.0028,
+        cpm: 0.44,
+        cpmCached: 0.014,
       },
       output: {
         tokens: 384_000,
         text: true,
-        cpm: 0.28,
+        cpm: 1.32,
       },
       pricing: {
-        text: { input: 0.14, cachedInput: 0.0028, output: 0.28 },
+        text: { input: 0.44, cachedInput: 0.014, output: 1.32 },
+        processingMultipliers: { off_peak: 0.5 },
       },
     },
   }` | - |
 | `'deepseek-v4-pro'` | `{
     name: 'deepseek-v4-pro',
     provider: Vendor.DeepSeek,
-    description: 'Highest-capability DeepSeek V4 reasoning model; first-party access uses Chat Completions',
+    description: 'Highest-capability DeepSeek V4 reasoning model with Responses, Chat Completions, and Messages support',
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    endpoints: ['chat_completions', 'messages', 'completions'],
+    endpoints: ['responses', 'chat_completions', 'messages', 'completions'],
     releaseDate: '2026-04-24',
     sources: {
       documentation: 'https://api-docs.deepseek.com/quick_start/pricing/',
       pricing: 'https://api-docs.deepseek.com/quick_start/pricing/',
-      lastVerified: '2026-08-11',
+      lastVerified: '2026-08-30',
     },
     features: {
       reasoning: true,
@@ -31983,16 +32319,68 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
       input: {
         tokens: 1_000_000,
         text: true,
-        cpm: 0.435,
-        cpmCached: 0.003625,
+        cpm: 1.32,
+        cpmCached: 0.044,
       },
       output: {
         tokens: 384_000,
         text: true,
-        cpm: 0.87,
+        cpm: 3.96,
       },
       pricing: {
-        text: { input: 0.435, cachedInput: 0.003625, output: 0.87 },
+        text: { input: 1.32, cachedInput: 0.044, output: 3.96 },
+        processingMultipliers: { off_peak: 0.5 },
+      },
+    },
+  }` | - |
+| `'deepseek-v4-flash-vision-exp'` | `{
+    name: 'deepseek-v4-flash-vision-exp',
+    provider: Vendor.DeepSeek,
+    description: 'Experimental DeepSeek V4 Flash variant with image understanding',
+    isActive: true,
+    lifecycle: 'preview',
+    availability: 'public',
+    endpoints: ['responses', 'chat_completions', 'messages'],
+    releaseDate: '2026-08-21',
+    sources: {
+      documentation: 'https://api-docs.deepseek.com/guides/vision/',
+      pricing: 'https://api-docs.deepseek.com/quick_start/pricing/',
+      lastVerified: '2026-08-30',
+    },
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: true,
+      parameters: {
+        temperature: true,
+        topP: true,
+        frequencyPenalty: true,
+        presencePenalty: true,
+      },
+      input: {
+        tokens: 1_000_000,
+        text: true,
+        image: true,
+        cpm: 0.44,
+        cpmCached: 0.014,
+      },
+      output: {
+        tokens: 384_000,
+        text: true,
+        cpm: 1.32,
+      },
+      pricing: {
+        text: { input: 0.44, cachedInput: 0.014, output: 1.32 },
+        processingMultipliers: { off_peak: 0.5 },
       },
     },
   }` | - |
@@ -32008,7 +32396,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['chat_completions'],
     sources: {
       documentation: 'https://api-docs.deepseek.com/updates/',
-      lastVerified: '2026-08-11',
+      lastVerified: '2026-08-30',
     },
     features: {
       reasoning: false, streaming: true, structuredOutput: true, functionCalling: true,
@@ -32030,7 +32418,7 @@ Registry schema v2. Last full first-party documentation audit: 2026-08-08.
     endpoints: ['chat_completions'],
     sources: {
       documentation: 'https://api-docs.deepseek.com/updates/',
-      lastVerified: '2026-08-11',
+      lastVerified: '2026-08-30',
     },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
@@ -55372,7 +55760,7 @@ Research execution result
 
 ### ResolvedDeepSeekHost `interface`
 
-📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:146`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:147`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -55389,7 +55777,7 @@ Research execution result
 
 ### ResolveDeepSeekHostOptions `interface`
 
-📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:140`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:141`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -61654,7 +62042,7 @@ export function resolveConnector(connectorOrName: string | Connector): Connector
 
 ### resolveDeepSeekHost `function`
 
-📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:152`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:153`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
 
 ```typescript
 export function resolveDeepSeekHost(options: ResolveDeepSeekHostOptions = {}): ResolvedDeepSeekHost
@@ -62228,7 +62616,7 @@ name + aliases + anchor entity displayNames + first/last-seen timestamps.
 
 ### DEEPSEEK_HOST_REGISTRY `const`
 
-📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:40`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
+📍 [`src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts:41`](src/infrastructure/providers/deepseek/DeepSeekHostRegistry.ts)
 
 Provider presets intentionally describe only bearer-token, OpenAI-compatible
 endpoints. Bedrock and Vertex require their own signed/authenticated
@@ -62245,7 +62633,7 @@ transports and are not represented as misleading URL aliases here.
     baseURL: 'https://api.deepseek.com/v1',
     defaultTransport: 'responses',
     promptCaching: { mode: 'implicit', reportsCacheUsage: true },
-    modelIds: { [FLASH]: FLASH, [PRO]: PRO },
+    modelIds: { [FLASH]: FLASH, [PRO]: PRO, [FLASH_VISION_EXP]: FLASH_VISION_EXP },
     documentation: 'https://api-docs.deepseek.com/',
   }` | - |
 | `openrouter` | `{

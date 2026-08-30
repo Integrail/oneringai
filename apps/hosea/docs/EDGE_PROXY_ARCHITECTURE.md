@@ -792,14 +792,14 @@ interface TokenPrice {
 const PRICING: TokenPrice[] = [
   // Chat - per 1K LLM tokens (input + output)
   { action: 'chat', vendor: 'openai', model: 'gpt-4.1', tokensPerUnit: 2 },
-  { action: 'chat', vendor: 'openai', model: 'gpt-5.2', tokensPerUnit: 5 },
+  { action: 'chat', vendor: 'openai', model: 'gpt-5.6-terra', tokensPerUnit: 5 },
   { action: 'chat', vendor: 'anthropic', model: 'claude-4.5-sonnet', tokensPerUnit: 2 },
   { action: 'chat', vendor: 'anthropic', model: 'claude-4.5-opus', tokensPerUnit: 10 },
   { action: 'chat', vendor: 'google', model: 'gemini-2.5-pro', tokensPerUnit: 2 },
   { action: 'chat', vendor: 'grok', model: 'grok-3', tokensPerUnit: 3 },
 
   // Images - per image
-  { action: 'image', vendor: 'openai', model: 'dall-e-3', tokensPerUnit: 30 },
+  { action: 'image', vendor: 'openai', model: 'gpt-image-2', tokensPerUnit: 30 },
   { action: 'image', vendor: 'openai', model: 'gpt-image-1', tokensPerUnit: 50 },
 
   // Video - per second

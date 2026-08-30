@@ -75,21 +75,21 @@ describe('DeepSeekTextProvider', () => {
 
   afterEach(() => Connector.clear());
 
-  it('uses first-party Responses for Flash and Chat Completions for Pro', async () => {
+  it('uses first-party Responses for Flash and Pro', async () => {
     const provider = new DeepSeekTextProvider({ apiKey: 'test-key' });
 
     const flash = await provider.generate({ model: 'deepseek-v4-flash', input: 'Hi' });
     const pro = await provider.generate({ model: 'deepseek-v4-pro', input: 'Hi' });
 
     expect(flash.output_text).toBe('Flash answer');
-    expect(pro.output_text).toBe('Pro answer');
+    expect(pro.output_text).toBe('Flash answer');
     expect(mockResponsesCreate).toHaveBeenCalledWith(expect.objectContaining({
       model: 'deepseek-v4-flash',
       input: 'Hi',
     }));
-    expect(mockChatCreate).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockResponsesCreate).toHaveBeenCalledWith(expect.objectContaining({
       model: 'deepseek-v4-pro',
-      messages: [{ role: 'user', content: 'Hi' }],
+      input: 'Hi',
     }));
   });
 
@@ -148,8 +148,8 @@ describe('DeepSeekTextProvider', () => {
       nativeTools: ['web_search'],
     });
     expect(provider.getAdvancedCapabilities('deepseek-v4-pro')).toMatchObject({
-      structuredOutput: { jsonSchema: 'prompt', nativeWithTools: false },
-      nativeTools: [],
+      structuredOutput: { jsonSchema: 'native', nativeWithTools: true },
+      nativeTools: ['web_search'],
     });
     const nvidia = new DeepSeekTextProvider({ apiKey: 'key', host: 'nvidia-nim' });
     expect(nvidia.getAdvancedCapabilities('deepseek-v4-pro').promptCaching.mode)

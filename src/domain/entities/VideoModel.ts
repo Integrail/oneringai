@@ -88,6 +88,7 @@ export const VIDEO_MODELS = {
     VEO_3_1: 'veo-3.1-generate-preview',
     VEO_3_1_LITE: 'veo-3.1-lite-generate-preview',
     GEMINI_OMNI_FLASH: 'gemini-omni-flash-preview',
+    GEMINI_OMNI_1_1_FLASH: 'gemini-omni-1.1-flash',
   },
   [Vendor.Grok]: {
     // xAI Grok Imagine video generation
@@ -100,21 +101,22 @@ export const VIDEO_MODELS = {
  * Common sources for model information
  */
 const OPENAI_SOURCES: ISourceLinks = {
-  documentation: 'https://platform.openai.com/docs/guides/video-generation',
-  apiReference: 'https://platform.openai.com/docs/api-reference/videos',
-  lastVerified: '2026-01-25',
+  documentation: 'https://developers.openai.com/api/docs/guides/video-generation',
+  apiReference: 'https://developers.openai.com/api/reference/resources/videos',
+  pricing: 'https://developers.openai.com/api/docs/pricing',
+  lastVerified: '2026-08-30',
 };
 
 const GOOGLE_SOURCES: ISourceLinks = {
   documentation: 'https://ai.google.dev/gemini-api/docs/video',
   apiReference: 'https://ai.google.dev/gemini-api/docs/models/veo',
-  lastVerified: '2026-03-04',
+  lastVerified: '2026-08-30',
 };
 
 const GROK_SOURCES: ISourceLinks = {
   documentation: 'https://docs.x.ai/docs/guides/video-generations',
   apiReference: 'https://docs.x.ai/api',
-  lastVerified: '2026-01-31',
+  lastVerified: '2026-08-30',
 };
 
 /**
@@ -122,17 +124,18 @@ const GROK_SOURCES: ISourceLinks = {
  */
 export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
   // ============================================================================
-  // OpenAI Sora Models
+  // OpenAI Sora Models (callable until the Videos API shutdown on 2026-09-24)
   // ============================================================================
 
   'sora-2': {
     name: 'sora-2',
     displayName: 'Sora 2',
     provider: Vendor.OpenAI,
-    description: 'Flagship video generation with synced audio. Extensions up to 120s total',
+    description: 'Deprecated video generation model with synced audio; migrate before the Videos API shutdown',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-24',
+    availability: 'public',
+    deprecationDate: '2026-03-24',
     retirementDate: '2026-09-24',
     endpoints: ['video_generation', 'video_edit', 'batch'],
     releaseDate: '2025-10-06',
@@ -143,18 +146,14 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
       aspectRatios: ['9:16', '16:9'],
       maxFps: 30,
       audio: true,
+      textToVideo: true,
       imageToVideo: true,
-      videoExtension: true, // Up to 6 extensions, max 120s total
+      videoExtension: true,
       frameControl: false,
-      features: {
-        upscaling: false,
-        styleControl: false,
-        negativePrompt: false,
-        seed: true,
-      },
+      features: { upscaling: false, styleControl: false, negativePrompt: false, seed: true },
     },
     pricing: {
-      perSecond: 0.10, // $0.05/sec batch API
+      perSecond: 0.10,
       perSecondByResolution: { '720p': 0.10, '720x1280': 0.10, '1280x720': 0.10 },
       batchPerSecondByResolution: { '720p': 0.05, '720x1280': 0.05, '1280x720': 0.05 },
       currency: 'USD',
@@ -165,10 +164,11 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     name: 'sora-2-pro',
     displayName: 'Sora 2 Pro',
     provider: Vendor.OpenAI,
-    description: 'Most advanced synced-audio video generation. Up to 1080p, extensions up to 120s',
+    description: 'Deprecated high-resolution video generation model; migrate before the Videos API shutdown',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-24',
+    availability: 'public',
+    deprecationDate: '2026-03-24',
     retirementDate: '2026-09-24',
     endpoints: ['video_generation', 'video_edit', 'batch'],
     releaseDate: '2025-10-06',
@@ -179,18 +179,14 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
       aspectRatios: ['9:16', '16:9'],
       maxFps: 30,
       audio: true,
+      textToVideo: true,
       imageToVideo: true,
-      videoExtension: true, // Up to 6 extensions, max 120s total
+      videoExtension: true,
       frameControl: true,
-      features: {
-        upscaling: true,
-        styleControl: true,
-        negativePrompt: false,
-        seed: true,
-      },
+      features: { upscaling: true, styleControl: true, negativePrompt: false, seed: true },
     },
     pricing: {
-      perSecond: 0.30, // 720p base; $0.50/sec at 1024x, $0.70/sec at 1080p
+      perSecond: 0.30,
       perSecondByResolution: {
         '720p': 0.30, '720x1280': 0.30, '1280x720': 0.30,
         '1024p': 0.50, '1024x1792': 0.50, '1792x1024': 0.50,
@@ -309,7 +305,7 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     preferred: true,
     endpoints: ['video_generation'],
     releaseDate: '2026-06-30',
-    sources: { ...GOOGLE_SOURCES, lastVerified: '2026-08-08' },
+    sources: { ...GOOGLE_SOURCES, lastVerified: '2026-08-30' },
     capabilities: {
       durations: [4, 6, 8],
       resolutions: ['720p', '1080p'],
@@ -334,15 +330,17 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     provider: Vendor.Google,
     description: 'Conversational 720p video generation and editing through the Interactions API',
     isActive: true,
-    lifecycle: 'preview',
+    lifecycle: 'deprecated',
     availability: 'public',
-    preferred: true,
+    deprecationDate: '2026-08-27',
+    retirementDate: '2026-09-30',
+    replacementModel: 'gemini-omni-1.1-flash',
     endpoints: ['interactions', 'video_generation', 'video_edit'],
     releaseDate: '2026-06-30',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/omni',
       apiReference: 'https://ai.google.dev/api/interactions-api',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       durations: [3, 4, 5, 6, 7, 8, 9, 10],
@@ -354,6 +352,38 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
       videoExtension: false,
       frameControl: false,
       features: { upscaling: false, styleControl: true, negativePrompt: false, seed: false },
+    },
+    pricing: { perSecond: 0.10, perSecondByResolution: { '720p': 0.10 }, currency: 'USD' },
+  },
+
+  'gemini-omni-1.1-flash': {
+    name: 'gemini-omni-1.1-flash',
+    displayName: 'Gemini Omni 1.1 Flash',
+    provider: Vendor.Google,
+    description: 'Generally available conversational video generation and editing through the Interactions API',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['interactions', 'video_generation', 'video_edit'],
+    releaseDate: '2026-08-27',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash',
+      apiReference: 'https://ai.google.dev/api/interactions-api',
+      pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      durations: [3, 4, 5, 6, 7, 8, 9, 10],
+      resolutions: ['360p', '720p', '1080p', '4k'],
+      aspectRatios: ['16:9', '9:16'],
+      maxFps: 24,
+      audio: true,
+      textToVideo: true,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: false,
+      features: { upscaling: true, styleControl: true, negativePrompt: false, seed: false },
     },
     pricing: { perSecond: 0.10, perSecondByResolution: { '720p': 0.10 }, currency: 'USD' },
   },
@@ -407,7 +437,7 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     sources: {
       documentation: 'https://docs.x.ai/developers/models/grok-imagine-video-1.5',
       pricing: 'https://docs.x.ai/developers/models/grok-imagine-video-1.5',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       durations: [1, 5, 8, 10, 15],
@@ -415,7 +445,7 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
       aspectRatios: ['16:9', '4:3', '1:1', '9:16', '3:4', '3:2', '2:3'],
       maxFps: 24,
       audio: true,
-      textToVideo: false,
+      textToVideo: true,
       imageToVideo: true,
       videoExtension: false,
       frameControl: false,

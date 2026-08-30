@@ -76,20 +76,20 @@ describeIf(ANTHROPIC_API_KEY)('current Anthropic API', () => {
 });
 
 describeIf(GOOGLE_API_KEY)('current Google API', () => {
-  it('calls Gemini 3.6 Flash through the Interactions API default', async () => {
+  it('calls Gemini 3.7 Flash through the Interactions API default', async () => {
     Connector.create({
       name: 'google-current-live',
       vendor: Vendor.Google,
       auth: { type: 'api_key', apiKey: GOOGLE_API_KEY! },
     });
-    await expectShortReply('google-current-live', 'gemini-3.6-flash');
+    await expectShortReply('google-current-live', 'gemini-3.7-flash');
   }, 60_000);
 
   it('streams Gemini Interactions through a terminal completed status', async () => {
     const provider = new GoogleTextProvider({ apiKey: GOOGLE_API_KEY! });
     const events = [];
     for await (const event of provider.streamGenerate({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.7-flash',
       input: 'Reply with exactly: streamed',
       max_output_tokens: 128,
     })) events.push(event);
@@ -108,7 +108,7 @@ describeIf(GOOGLE_API_KEY)('current Google API', () => {
       vendor: Vendor.Google,
       auth: { type: 'api_key', apiKey: GOOGLE_API_KEY! },
     });
-    const agent = Agent.create({ connector, model: 'gemini-3.6-flash' });
+    const agent = Agent.create({ connector, model: 'gemini-3.7-flash' });
     try {
       const first = await agent.runDirect('Remember this exact code word: aurora. Reply with OK.');
       const second = await agent.runDirect('What exact code word did I give you?', {
@@ -139,7 +139,7 @@ describeIf(GOOGLE_API_KEY)('current Google API', () => {
   it('forces a named function through Interactions allowed_tools', async () => {
     const provider = new GoogleTextProvider({ apiKey: GOOGLE_API_KEY! });
     const response = await provider.generate({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.7-flash',
       input: 'Call lookup_code with code current. Do not answer in prose.',
       tools: [{
         type: 'function',
@@ -163,7 +163,7 @@ describeIf(GOOGLE_API_KEY)('current Google API', () => {
   it('forces a named function through legacy generateContent allowedFunctionNames', async () => {
     const provider = new GoogleTextProvider({ apiKey: GOOGLE_API_KEY! });
     const response = await provider.generate({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.7-flash',
       input: 'Call lookup_code with code current. Do not answer in prose.',
       tools: [
         {
@@ -220,7 +220,7 @@ describeIf(GOOGLE_API_KEY)('current Google API', () => {
     });
     const videos = VideoGeneration.create({ connector });
     const response = await videos.generate({
-      model: 'gemini-omni-flash-preview',
+      model: 'gemini-omni-1.1-flash',
       prompt: 'A subtle slow camera push-in; keep the food and table realistic.',
       image: 'https://storage.googleapis.com/generativeai-downloads/images/scones.jpg',
       duration: 3,
@@ -252,8 +252,8 @@ describeIf(GOOGLE_API_KEY && XAI_API_KEY)('current Google native transcription',
     const audio = await tts.synthesize('Google timestamps are current.', {
       vendorOptions: { output_format: { codec: 'pcm', sample_rate: 8000 } },
     });
-    const stt = SpeechToText.create({ connector: 'google-stt-live', model: 'gemini-3.6-flash' });
-    const transcript = await stt.transcribeWithTimestamps(audio.audio, 'segment', {
+    const stt = SpeechToText.create({ connector: 'google-stt-live', model: 'gemini-3.5-transcribe' });
+    const transcript = await stt.transcribeWithTimestamps(audio.audio, 'word', {
       encoding: 'pcm',
       sampleRate: 8000,
     });
@@ -263,13 +263,13 @@ describeIf(GOOGLE_API_KEY && XAI_API_KEY)('current Google native transcription',
 });
 
 describeIf(XAI_API_KEY)('current xAI APIs', () => {
-  it('calls Grok 4.5 through the OpenAI-compatible text API', async () => {
+  it('calls Grok 4.6 through the OpenAI-compatible text API', async () => {
     Connector.create({
       name: 'xai-current-live',
       vendor: Vendor.Grok,
       auth: { type: 'api_key', apiKey: XAI_API_KEY! },
     });
-    await expectShortReply('xai-current-live', 'grok-4.5');
+    await expectShortReply('xai-current-live', 'grok-4.6');
   }, 60_000);
 
   it('round-trips speech through the dedicated xAI TTS and STT APIs', async () => {

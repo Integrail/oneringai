@@ -100,7 +100,7 @@ describe('Embeddings', () => {
       const emb = Embeddings.create({ connector: 'ollama-emb' });
       emb.embed('test');
       expect(mockProvider.embed).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'qwen3-embedding' })
+        expect.objectContaining({ model: 'embeddinggemma' })
       );
     });
 

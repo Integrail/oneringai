@@ -148,6 +148,8 @@ export const IMAGE_MODELS = {
     GEMINI_2_5_FLASH_IMAGE: 'gemini-2.5-flash-image',
   },
   [Vendor.Grok]: {
+    /** Current Grok Imagine model with quality and resolution tiers. */
+    GROK_IMAGINE_IMAGE_2: 'grok-imagine-image-2.0',
     /** Higher-fidelity Grok Imagine model with 1K and 2K output. */
     GROK_IMAGINE_IMAGE_QUALITY: 'grok-imagine-image-quality',
     /** Grok Imagine Image: xAI image generation with editing support */
@@ -163,7 +165,7 @@ export const IMAGE_MODELS = {
 
 /**
  * Complete image model registry
- * Last full audit: March 2026
+ * Last full audit: August 2026
  */
 export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
   // ======================== OpenAI ========================
@@ -183,7 +185,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-2',
       pricing: 'https://developers.openai.com/api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
@@ -222,14 +224,14 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     description: 'State-of-the-art image generation with better instruction following and prompt adherence',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-09',
+    deprecationDate: '2026-06-02',
     retirementDate: '2026-12-01',
     replacementModel: 'gpt-image-2',
     releaseDate: '2025-12-16',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1.5',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-14',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
@@ -303,14 +305,14 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     description: 'Image model used in ChatGPT. Floating alias pointing to current ChatGPT image snapshot',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-09',
+    deprecationDate: '2026-06-02',
     retirementDate: '2026-12-01',
     replacementModel: 'gpt-image-2',
     releaseDate: '2025-12-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/chatgpt-image-latest',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-14',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
@@ -384,14 +386,14 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     description: 'Previous generation OpenAI image model. More expensive than GPT Image 1.5',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-09',
-    retirementDate: '2026-12-01',
+    deprecationDate: '2026-04-22',
+    retirementDate: '2026-10-23',
     replacementModel: 'gpt-image-2',
     releaseDate: '2025-04-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-14',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
@@ -465,14 +467,14 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     description: 'Cost-efficient version of GPT Image 1. Cheapest OpenAI image model',
     isActive: true,
     lifecycle: 'deprecated',
-    deprecationDate: '2026-07-09',
+    deprecationDate: '2026-06-02',
     retirementDate: '2026-12-01',
     replacementModel: 'gpt-image-2',
     releaseDate: '2025-06-01',
     sources: {
       documentation: 'https://developers.openai.com/api/docs/models/gpt-image-1-mini',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-03-14',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1536', '1536x1024', 'auto'],
@@ -548,11 +550,12 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     lifecycle: 'retired',
     replacementModel: 'gpt-image-2',
     releaseDate: '2023-11-06',
-    deprecationDate: '2026-05-12',
+    deprecationDate: '2025-11-14',
+    retirementDate: '2026-05-12',
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/images',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-25',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '1024x1792', '1792x1024'],
@@ -603,11 +606,12 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     lifecycle: 'retired',
     replacementModel: 'gpt-image-2',
     releaseDate: '2022-11-03',
-    deprecationDate: '2026-05-12',
+    deprecationDate: '2025-11-14',
+    retirementDate: '2026-05-12',
     sources: {
       documentation: 'https://platform.openai.com/docs/guides/images',
       pricing: 'https://openai.com/pricing',
-      lastVerified: '2026-01-25',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['256x256', '512x512', '1024x1024'],
@@ -638,8 +642,8 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     displayName: 'Imagen 4.0 Generate',
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 - standard quality image generation',
-    isActive: true,
-    lifecycle: 'deprecated',
+    isActive: false,
+    lifecycle: 'retired',
     deprecationDate: '2026-07-16',
     retirementDate: '2026-08-17',
     replacementModel: 'gemini-3.1-flash-image',
@@ -647,7 +651,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -754,8 +758,8 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     displayName: 'Imagen 4.0 Ultra',
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 Ultra - highest quality image generation',
-    isActive: true,
-    lifecycle: 'deprecated',
+    isActive: false,
+    lifecycle: 'retired',
     deprecationDate: '2026-07-16',
     retirementDate: '2026-08-17',
     replacementModel: 'gemini-3-pro-image',
@@ -763,7 +767,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -870,8 +874,8 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     displayName: 'Imagen 4.0 Fast',
     provider: Vendor.Google,
     description: 'Google Imagen 4.0 Fast - optimized for speed',
-    isActive: true,
-    lifecycle: 'deprecated',
+    isActive: false,
+    lifecycle: 'retired',
     deprecationDate: '2026-07-16',
     retirementDate: '2026-08-17',
     replacementModel: 'gemini-3.1-flash-lite-image',
@@ -879,7 +883,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/imagen',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -997,7 +1001,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['512x512', '1024x1024', '2048x2048', '4096x4096', 'auto'],
@@ -1033,7 +1037,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-image',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', 'auto'],
@@ -1065,7 +1069,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image',
       pricing: 'https://ai.google.dev/gemini-api/docs/pricing',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '2048x2048', '4096x4096', 'auto'],
@@ -1092,7 +1096,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image-preview',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['512x512', '1024x1024', '1536x1536', 'auto'],
@@ -1141,7 +1145,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image-preview',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', 'auto'],
@@ -1183,11 +1187,14 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     provider: Vendor.Google,
     description: 'Native image generation and editing designed for fast, creative workflows',
     isActive: true,
+    lifecycle: 'deprecated',
+    retirementDate: '2026-10-02',
+    replacementModel: 'gemini-3.1-flash-image',
     releaseDate: '2025-10-01',
     sources: {
       documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-image',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', 'auto'],
@@ -1213,6 +1220,43 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
 
   // ======================== xAI Grok ========================
 
+  'grok-imagine-image-2.0': {
+    name: 'grok-imagine-image-2.0',
+    displayName: 'Grok Imagine Image 2.0',
+    provider: Vendor.Grok,
+    description: 'Current xAI image generation and editing model with 1K/2K low and medium quality tiers',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['image_generation', 'image_edit', 'batch'],
+    sources: {
+      documentation: 'https://docs.x.ai/developers/models/grok-imagine-image-2.0',
+      pricing: 'https://docs.x.ai/developers/pricing',
+      lastVerified: '2026-08-30',
+    },
+    capabilities: {
+      sizes: ['1024x1024', '2048x2048', 'auto'],
+      aspectRatios: ['1:1', '3:2', '2:3', '3:4', '4:3', '9:16', '16:9'],
+      maxImagesPerRequest: 10,
+      outputFormats: ['jpeg', 'png'],
+      features: { generation: true, editing: true, variations: false, styleControl: true, qualityControl: true, transparency: false, promptRevision: false },
+      limits: { maxPromptLength: 32_000, maxRequestsPerMinute: 360 },
+      vendorOptions: {
+        resolution: { type: 'enum', description: 'Requested output image resolution', enum: ['1K', '2K'], default: '1K' },
+        quality: { type: 'enum', description: 'Requested output quality', enum: ['low', 'medium'], default: 'low' },
+        storage_options: { type: 'object', description: 'Optional xAI Files persistence and public URL settings' },
+      },
+    },
+    pricing: {
+      inputPerImage: 0.01,
+      perImageStandard: 0.04,
+      perImageHD: 0.08,
+      perImageByResolution: { '1K-low': 0.04, '2K-low': 0.06, '1K-medium': 0.06, '2K-medium': 0.08 },
+      currency: 'USD',
+    },
+  },
+
   'grok-imagine-image-quality': {
     name: 'grok-imagine-image-quality',
     displayName: 'Grok Imagine Image Quality',
@@ -1221,7 +1265,6 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
-    preferred: true,
     aliases: ['grok-imagine-image-quality-latest', 'grok-imagine-image-pro'],
     snapshots: ['grok-imagine-image-quality-20260403'],
     endpoints: ['image_generation', 'image_edit'],
@@ -1229,7 +1272,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
       pricing: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
-      lastVerified: '2026-08-08',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024', '2048x2048', 'auto'],
@@ -1262,7 +1305,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://docs.x.ai/docs/guides/image-generation',
       pricing: 'https://docs.x.ai/docs/models',
-      lastVerified: '2026-03-04',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024'],
@@ -1317,7 +1360,7 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     sources: {
       documentation: 'https://docs.x.ai/docs/guides/image-generation',
       pricing: 'https://docs.x.ai/docs/models',
-      lastVerified: '2026-02-01',
+      lastVerified: '2026-08-30',
     },
     capabilities: {
       sizes: ['1024x1024'],

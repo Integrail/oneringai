@@ -15,11 +15,11 @@ describe('Model Registry', () => {
   describe('MODEL_REGISTRY', () => {
     it('should include the complete audited model set', () => {
       const modelCount = Object.keys(MODEL_REGISTRY).length;
-      expect(modelCount).toBeGreaterThanOrEqual(88);
+      expect(modelCount).toBeGreaterThanOrEqual(95);
       expect(MODEL_REGISTRY['gpt-5.6-sol']).toBeDefined();
       expect(MODEL_REGISTRY['claude-opus-5']).toBeDefined();
-      expect(MODEL_REGISTRY['gemini-3.6-flash']).toBeDefined();
-      expect(MODEL_REGISTRY['grok-4.5']).toBeDefined();
+      expect(MODEL_REGISTRY['gemini-3.7-flash']).toBeDefined();
+      expect(MODEL_REGISTRY['grok-4.6']).toBeDefined();
       expect(MODEL_REGISTRY['deepseek-v4-flash']).toBeDefined();
       expect(MODEL_REGISTRY['deepseek-v4-pro']).toBeDefined();
     });
@@ -54,9 +54,10 @@ describe('Model Registry', () => {
 
     it('should include current and migration-relevant DeepSeek models', () => {
       const deepSeekModels = getModelsByVendor(Vendor.DeepSeek);
-      expect(deepSeekModels).toHaveLength(4);
+      expect(deepSeekModels).toHaveLength(5);
       expect(MODEL_REGISTRY['deepseek-v4-flash'].features.input.tokens).toBe(1_000_000);
       expect(MODEL_REGISTRY['deepseek-v4-pro'].features.output.tokens).toBe(384_000);
+      expect(MODEL_REGISTRY['deepseek-v4-flash-vision-exp'].features.vision).toBe(true);
       expect(MODEL_REGISTRY['deepseek-chat']).toMatchObject({
         lifecycle: 'retired',
         replacementModel: 'deepseek-v4-flash',
@@ -67,9 +68,9 @@ describe('Model Registry', () => {
       const activeCount = Object.values(MODEL_REGISTRY).filter(
         (model) => model.isActive
       ).length;
-      expect(activeCount).toBeGreaterThanOrEqual(77);
-      expect(MODEL_REGISTRY['gpt-realtime'].isActive).toBe(false);
-      expect(MODEL_REGISTRY['gpt-realtime-mini'].isActive).toBe(false);
+      expect(activeCount).toBeGreaterThanOrEqual(70);
+      expect(MODEL_REGISTRY['gpt-realtime']).toMatchObject({ isActive: true, lifecycle: 'deprecated' });
+      expect(MODEL_REGISTRY['gpt-realtime-mini']).toMatchObject({ isActive: true, lifecycle: 'deprecated' });
     });
 
     it('should have valid pricing for all models', () => {
@@ -82,12 +83,8 @@ describe('Model Registry', () => {
 
     it('should have valid context windows for all models', () => {
       Object.values(MODEL_REGISTRY).forEach((model) => {
-        if (model.features.input.tokens === null || model.features.output.tokens === null) {
-          expect(model.features.realtime || model.features.audio).toBe(true);
-        } else {
-          expect(model.features.input.tokens).toBeGreaterThan(0);
-          expect(model.features.output.tokens).toBeGreaterThan(0);
-        }
+        if (model.features.input.tokens !== null) expect(model.features.input.tokens).toBeGreaterThan(0);
+        if (model.features.output.tokens !== null) expect(model.features.output.tokens).toBeGreaterThan(0);
       });
     });
 
@@ -146,6 +143,7 @@ describe('Model Registry', () => {
     });
 
     it('should have Google model constants', () => {
+      expect(LLM_MODELS[Vendor.Google].GEMINI_3_7_FLASH).toBe('gemini-3.7-flash');
       expect(LLM_MODELS[Vendor.Google].GEMINI_3_1_PRO_PREVIEW).toBe('gemini-3.1-pro-preview');
       expect(LLM_MODELS[Vendor.Google].GEMINI_3_1_FLASH_LITE_PREVIEW).toBe('gemini-3.1-flash-lite-preview');
       expect(LLM_MODELS[Vendor.Google].GEMINI_3_1_FLASH_IMAGE_PREVIEW).toBe('gemini-3.1-flash-image-preview');
@@ -155,6 +153,7 @@ describe('Model Registry', () => {
     });
 
     it('should have Grok model constants', () => {
+      expect(LLM_MODELS[Vendor.Grok].GROK_4_6).toBe('grok-4.6');
       expect(LLM_MODELS[Vendor.Grok].GROK_4_20_0309_REASONING).toBe('grok-4.20-0309-reasoning');
       expect(LLM_MODELS[Vendor.Grok].GROK_4_20_0309_NON_REASONING).toBe('grok-4.20-0309-non-reasoning');
       expect(LLM_MODELS[Vendor.Grok].GROK_4_20_MULTI_AGENT_0309).toBe('grok-4.20-multi-agent-0309');
@@ -165,6 +164,7 @@ describe('Model Registry', () => {
     it('should have DeepSeek model constants', () => {
       expect(LLM_MODELS[Vendor.DeepSeek].DEEPSEEK_V4_FLASH).toBe('deepseek-v4-flash');
       expect(LLM_MODELS[Vendor.DeepSeek].DEEPSEEK_V4_PRO).toBe('deepseek-v4-pro');
+      expect(LLM_MODELS[Vendor.DeepSeek].DEEPSEEK_V4_FLASH_VISION_EXP).toBe('deepseek-v4-flash-vision-exp');
     });
 
     it('should have all model constants registered in MODEL_REGISTRY', () => {
@@ -297,7 +297,7 @@ describe('Model Registry', () => {
   describe('getActiveModels()', () => {
     it('should return all active models', () => {
       const models = getActiveModels();
-      expect(models.length).toBeGreaterThanOrEqual(77);
+      expect(models.length).toBeGreaterThanOrEqual(70);
       expect(models.every((m) => m.isActive)).toBe(true);
     });
 

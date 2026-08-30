@@ -471,7 +471,7 @@ alias only when following the vendor's moving target is intentional.
 
 ### 4. Adopt Google Interactions
 
-`gemini-3.5-*` and `gemini-3.6-*` use the Google Interactions API by default.
+`gemini-3.5-*`, `gemini-3.6-*`, and `gemini-3.7-*` use the Google Interactions API by default.
 Normal `Agent.run()`, `runDirect()`, and streaming callers receive the same
 OneRingAI response types; only callers depending on native Google wire details
 need immediate changes.
@@ -479,7 +479,7 @@ need immediate changes.
 ```typescript
 const agent = Agent.create({
   connector: 'google',
-  model: 'gemini-3.6-flash',
+  model: 'gemini-3.7-flash',
 });
 
 // Default: stored Interactions API (`steps` responses and `step.delta` streams).
@@ -539,21 +539,21 @@ Recommended starting points in 1.0.0 are:
 | Balanced OpenAI production agents | `gpt-5.6-terra` |
 | Economical OpenAI high-throughput work | `gpt-5.6-luna` |
 | Anthropic frontier work | `claude-opus-5`; use `claude-sonnet-5` for a balanced general path |
-| Google multimodal/agent work | `gemini-3.6-flash` through Interactions |
-| xAI text/agent work | `grok-4.5` |
+| Google multimodal/agent work | `gemini-3.7-flash` through Interactions |
+| xAI text/agent work | `grok-4.6` |
 | OpenAI image generation/editing | `gpt-image-2` |
 | Google native image | `gemini-3.1-flash-image` |
-| xAI image quality | `grok-imagine-image-quality` |
+| xAI image quality | `grok-imagine-image-2.0` |
 | Google multimodal embeddings | `gemini-embedding-2` |
 | Google low-cost video | `veo-3.1-lite-generate-preview` |
 | xAI higher-fidelity image-to-video | `grok-imagine-video-1.5` |
 | OpenAI realtime voice | `gpt-realtime-2.1` |
 | xAI realtime voice | `grok-voice-latest` |
-| File transcription | `gpt-transcribe`, `gemini-3.6-flash`, or `xai-stt` |
+| File transcription | `gpt-transcribe`, `gemini-3.5-transcribe`, or `xai-stt` |
 
-Sora 2 and Sora 2 Pro remain callable but carry published deprecation and
-retirement metadata. Do not hide them merely because `isActive` is true; surface
-their lifecycle status and dates to operators.
+Sora 2 and Sora 2 Pro were deprecated with the Videos API on 2026-03-24 but
+remain callable until 2026-09-24. OpenAI published no replacement. Surface the
+warning and shutdown date while `isActive` remains true.
 
 ### 7. Verify the upgrade
 
@@ -1607,9 +1607,9 @@ Vendor.Custom        // Custom OpenAI-compatible endpoints
 
 `Vendor.DeepSeek` uses a dedicated provider with current model metadata,
 reasoning/tool history handling, and both Chat Completions and Responses
-transports. The official connector automatically uses Responses for
-`deepseek-v4-flash` and Chat Completions for `deepseek-v4-pro` because the
-first-party Responses endpoint currently supports Flash only.
+transports. The official connector automatically uses Responses for all
+current first-party V4 models, including
+`deepseek-v4-flash`, `deepseek-v4-pro`, and `deepseek-v4-flash-vision-exp`.
 
 ```typescript
 import {
@@ -12527,13 +12527,12 @@ console.log(withSegments.segments);
 // ]
 ```
 
-Google's native `gemini-3.6-flash` transcription uses the Interactions API and
-supports normalized segment timestamps. The API currently returns timestamped
-text markers rather than reliable per-word annotations in live responses, so
-the registry deliberately advertises `segment` only. Google output is plain
-text; `json`, `verbose_json`, `srt`, and `vtt` are rejected instead of being
-silently ignored. Native language hints, custom vocabulary, and diarization can
-be supplied with `language` and `vendorOptions`:
+Google's dedicated `gemini-3.5-transcribe` model uses the Interactions API and
+supports automatic language detection, word/segment timestamps, custom
+vocabulary, and speaker diarization. `gemini-3.5-transcribe-live` is the
+bidirectional WebSocket model; the high-level file provider uses the non-live
+model. Google output is plain text, so `json`, `verbose_json`, `srt`, and `vtt`
+are rejected instead of being silently ignored:
 
 ```typescript
 const googleResult = await googleStt.transcribe(audio, {
@@ -12673,9 +12672,10 @@ const granularities = stt.getTimestampGranularities();  // model-specific
 | `gpt-4o-transcribe` | OpenAI | Superior accuracy | $0.006 |
 | `gpt-4o-transcribe-diarize` | OpenAI | Speaker identification | $0.012 |
 | `whisper-1` | OpenAI | Legacy-compatible general-purpose transcription | $0.006 |
-| `whisper-large-v3` | Groq | Ultra-fast (12x cheaper!) | $0.0005 |
-| `distil-whisper-large-v3-en` | Groq | English-only, fastest | $0.00033 |
-| `gemini-3.6-flash` | Google | Interactions transcription, normalized segment timestamps, vocabulary/diarization controls | audio-token priced |
+| `whisper-large-v3` | Groq | High-accuracy multilingual Whisper, word/segment timestamps | $0.00185 |
+| `whisper-large-v3-turbo` | Groq | Current cost-optimized multilingual Whisper | $0.00067 |
+| `gemini-3.5-transcribe` | Google | File transcription, word timestamps, vocabulary, diarization | ~$0.005 |
+| `gemini-3.5-transcribe-live` | Google | Bidirectional WebSocket transcription | ~$0.009 |
 | `xai-stt` | xAI | REST + WebSocket, diarization, multichannel, Smart Turn | $0.00167 REST / $0.00333 stream |
 
 ### Voice Assistant Pipeline
@@ -13118,7 +13118,7 @@ configured.
 | `gpt-realtime-2` | Realtime reasoning and tool workflows | 128K / 32K | Active |
 | `gpt-realtime-translate` | Dedicated continuous interpreter | 16K / 2K | Active; translation endpoint only |
 | `gpt-realtime-1.5` | Previous-generation realtime voice model | 32K / 4K | Active |
-| `gpt-realtime`, `gpt-realtime-mini` | Legacy compatibility | 32K / 4K | Inactive/deprecated in registry |
+| `gpt-realtime`, `gpt-realtime-mini` | Legacy compatibility | 32K / 4K | Deprecated but callable until 2027-01-20 |
 
 Realtime voices are `alloy`, `ash`, `ballad`, `coral`, `echo`, `marin`, `sage`,
 `shimmer`, `verse`, and `cedar`; custom `{ id: 'voice_…' }` references are also
@@ -13710,7 +13710,7 @@ and [SIP](https://developers.openai.com/api/docs/guides/realtime-sip).
 
 ## Image Generation
 
-The unified image API supports current OpenAI GPT Image, Google Gemini native-image/Imagen, and xAI Grok Imagine generation and editing. The high-level helper now defaults to `gpt-image-2`, `gemini-3.1-flash-image`, or `grok-imagine-image-quality` according to the connector vendor.
+The unified image API supports current OpenAI GPT Image, Google Gemini native-image, and xAI Grok Imagine generation and editing. The high-level helper defaults to `gpt-image-2`, `gemini-3.1-flash-image`, or `grok-imagine-image-2.0` according to the connector vendor.
 
 ### Basic Usage
 
@@ -13821,10 +13821,11 @@ Connector.create({
 const grokImages = ImageGeneration.create({ connector: 'xai' });
 const result = await grokImages.generate({
   prompt: 'Editorial product photograph on a cobalt background',
-  model: 'grok-imagine-image-quality',
+  model: 'grok-imagine-image-2.0',
   aspectRatio: '4:3',
   vendorOptions: {
     resolution: '2K',
+    quality: 'medium',
     storage_options: { public: true },
   },
 });
@@ -13834,7 +13835,7 @@ const result = await grokImages.generate({
 ### Current Image Models
 
 The table highlights current non-retired choices. The image registry contains
-19 records in total, including callable migration entries and retired records;
+20 records in total, including callable migration entries and retired records;
 use `getActiveImageModels()` and `getDeprecatedImageModels()` rather than
 hard-coding this table in a model picker.
 
@@ -13844,7 +13845,8 @@ hard-coding this table in a model picker.
 | Google | `gemini-3.1-flash-image` | Active, preferred | General generation/editing up to 4K | $0.045-$0.151 by resolution |
 | Google | `gemini-3.1-flash-lite-image` | Active, preferred | Low-latency 1K work | $0.0336/image |
 | Google | `gemini-3-pro-image` | Active | Professional design and 4K | $0.134-$0.24/image |
-| xAI | `grok-imagine-image-quality` | Active, preferred | Higher-fidelity generation/multi-image editing | $0.05 at 1K, $0.07 at 2K; $0.01/input image |
+| xAI | `grok-imagine-image-2.0` | Active, preferred | Current generation/editing with quality tiers | $0.04-$0.08; $0.01/input image |
+| xAI | `grok-imagine-image-quality` | Active | Previous higher-fidelity generation/editing | $0.05 at 1K, $0.07 at 2K; $0.01/input image |
 | xAI | `grok-imagine-image` | Active | Fast generation/editing | $0.02/image |
 
 Use `getActiveImageModels()` for callable entries and `getDeprecatedImageModels()` for still-callable models with a migration notice. Retired records remain queryable but are excluded from the active helper.
@@ -13884,8 +13886,8 @@ const googleCost = calculateImageCost('gemini-3.1-flash-image', 2, {
 });
 console.log(googleCost); // 0.2025 (two images plus known text-input usage)
 
-const xaiCost = calculateImageCost('grok-imagine-image-quality', 2, {
-  resolution: '2K',
+const xaiCost = calculateImageCost('grok-imagine-image-2.0', 2, {
+  resolution: '2K-medium',
   inputImages: 1,
 });
 console.log(xaiCost); // 0.15
@@ -13948,7 +13950,7 @@ const tiny = await embeddings.embed('Hello world', { dimensions: 128 });
 console.log(tiny.embeddings[0].length);  // 128
 ```
 
-Models with MRL support include `text-embedding-3-small`, `text-embedding-3-large`, `gemini-embedding-2`, `gemini-embedding-001`, all `qwen3-embedding` variants, and `nomic-embed-text`.
+Models with MRL support include `text-embedding-3-small`, `text-embedding-3-large`, `gemini-embedding-2`, `gemini-embedding-001`, `codestral-embed`, `embeddinggemma`, all `qwen3-embedding` variants, and `nomic-embed-text`.
 
 ### Default Dimensions
 
@@ -14054,9 +14056,9 @@ Connector.create({
 
 const local = Embeddings.create({ connector: 'ollama-local' });
 
-// qwen3-embedding (default) — 8B params, #1 on MTEB multilingual, 4096 dims
+// embeddinggemma (default) — compact multilingual model, 768 dims
 const result = await local.embed('semantic search query');
-console.log(result.embeddings[0].length);  // 4096
+console.log(result.embeddings[0].length);  // 768
 
 // Use smaller model for constrained environments
 const light = await local.embed('query', {
@@ -14079,17 +14081,20 @@ const nomic = await local.embed('query', {
 
 ### Available Models
 
-The table lists the ten active embedding models. The 12-record registry also
-retains inactive `text-embedding-ada-002` and retired `text-embedding-004` for
-lookup and migration metadata.
+The table lists the 14 callable embedding models. The 15-record registry also
+retains retired `text-embedding-004` for lookup and migration metadata.
 
 | Vendor | Model | Default Dims | Max Dims | MRL | Max Tokens | Price/1M Tokens |
 |--------|-------|-------------|----------|-----|------------|-----------------|
 | OpenAI | `text-embedding-3-small` | 1536 | 1536 | Yes | 8,191 | $0.02 |
 | OpenAI | `text-embedding-3-large` | 3072 | 3072 | Yes | 8,191 | $0.13 |
+| OpenAI | `text-embedding-ada-002` | 1536 | 1536 | No | 8,191 | $0.10 (legacy) |
 | Google | `gemini-embedding-2` | 3072 | 3072 | Yes | 8,192 | $0.20 text; modality-specific media rates |
 | Google | `gemini-embedding-001` | 3072 | 3072 | Yes | 2,048 | $0.15 text |
 | Mistral | `mistral-embed` | 1024 | 1024 | No | 8,192 | $0.10 |
+| Mistral | `codestral-embed` | 3072 | 3072 | Yes | 8,192 | $0.15 |
+| Ollama | `embeddinggemma` | 768 | 768 | Yes | 2,048 | Free (local) |
+| Ollama | `all-minilm` | 384 | 384 | No | 512 | Free (local) |
 | Ollama | `qwen3-embedding` | 4096 | 4096 | Yes | 8,192 | Free (local) |
 | Ollama | `qwen3-embedding:4b` | 4096 | 4096 | Yes | 8,192 | Free (local) |
 | Ollama | `qwen3-embedding:0.6b` | 1024 | 1024 | Yes | 8,192 | Free (local) |
@@ -14119,7 +14124,7 @@ console.log(info.capabilities.limits.maxBatchSize);    // 2048
 // List models by vendor
 const ollamaModels = getEmbeddingModelsByVendor(Vendor.Ollama);
 console.log(ollamaModels.map(m => m.name));
-// ['qwen3-embedding', 'qwen3-embedding:4b', 'qwen3-embedding:0.6b', 'nomic-embed-text', 'mxbai-embed-large']
+// ['embeddinggemma', 'all-minilm', 'qwen3-embedding', 'qwen3-embedding:4b', ...]
 
 // Find MRL-capable models
 const mrlModels = getEmbeddingModelsWithFeature('matryoshka');
@@ -14391,7 +14396,7 @@ const veo31 = await googleVideo.generate({
 // Gemini Omni uses the Interactions API for conversational video editing.
 const omni = await googleVideo.generate({
   prompt: 'Animate this storyboard with a gentle dolly movement',
-  model: 'gemini-omni-flash-preview',
+  model: 'gemini-omni-1.1-flash',
   image: './storyboard.png',
   duration: 6,
 });
@@ -14543,7 +14548,7 @@ const hd = await videoGen.generate({
 
 ### Available Models
 
-The video registry contains nine records: the eight callable entries below and
+The video registry contains ten records: the nine callable entries below and
 the retired `veo-2.0-generate-001` migration record.
 
 #### OpenAI Sora Models
@@ -14560,14 +14565,15 @@ the retired `veo-2.0-generate-001` migration record.
 | `veo-3.1-lite-generate-preview` | Preferred low-cost preview, native audio | 4-8s | 720p-1080p | $0.05-$0.08 |
 | `veo-3.1-fast-generate-preview` | Fast inference, audio | 4-8s | 720p-4K | $0.10-$0.30 |
 | `veo-3.1-generate-preview` | Full features, 4K | 4-8s | 720p-4K | $0.40 |
-| `gemini-omni-flash-preview` | Conversational generation/editing via Interactions | 3-10s | 720p | $0.10 |
+| `gemini-omni-1.1-flash` | Active, preferred conversational generation/editing | 3-10s | 360p-4K | ~$0.10 at 720p |
+| `gemini-omni-flash-preview` | Deprecated; shuts down 2026-09-30 | 3-10s | 720p | $0.10 |
 
 #### xAI Grok Imagine Models
 
 | Model | Features | Durations | Resolutions | Price/Second |
 |-------|----------|-----------|-------------|--------------|
 | `grok-imagine-video` | Text/image-to-video with audio | 1-15s | 480p-720p | $0.05-$0.07 |
-| `grok-imagine-video-1.5` | Preferred higher-fidelity image-to-video | 1-15s | 480p-1080p | $0.08-$0.25 plus $0.01 input image |
+| `grok-imagine-video-1.5` | Preferred text/image/reference-to-video | 1-15s | 480p-1080p | $0.08-$0.25 plus $0.01 input image |
 
 ### Model Introspection
 
@@ -16333,7 +16339,7 @@ await agent.run('Show me my recent emails');
 
 ## Model Registry
 
-The library includes registry schema v2 metadata for 92 text/realtime models,
+The library includes registry schema v2 metadata for 95 text/realtime models,
 plus separate TTS, STT, image, video, and embedding registries.
 
 ### Using the Model Registry
@@ -17672,7 +17678,7 @@ if (!toolManager.isDestroyed) {
 
 1. **Use appropriate models:**
    - `gpt-5.6-luna`, `gemini-3.5-flash-lite`, or `claude-sonnet-5` for low-latency/high-throughput work
-   - `gpt-5.6-terra`, `gemini-3.6-flash`, or `grok-4.5` for balanced production agents
+   - `gpt-5.6-terra`, `gemini-3.7-flash`, or `grok-4.6` for balanced production agents
    - `gpt-5.6-sol`, `gpt-5.5-pro`, or `claude-opus-5` for the most demanding reasoning and long-horizon work
 
 2. **Leverage caching:**
@@ -17735,7 +17741,7 @@ Connector.create({ name: 'google', vendor: Vendor.Google,
 // Create agents for each
 const openaiAgent = Agent.create({ connector: 'openai', model: 'gpt-5.6-terra' });
 const claudeAgent = Agent.create({ connector: 'anthropic', model: 'claude-opus-5' });
-const geminiAgent = Agent.create({ connector: 'google', model: 'gemini-3.6-flash' });
+const geminiAgent = Agent.create({ connector: 'google', model: 'gemini-3.7-flash' });
 
 // Compare responses
 const [r1, r2, r3] = await Promise.all([
@@ -17904,7 +17910,7 @@ generic fields as every other runtime driver:
 const oneRingSpec: RuntimeAgentSpec = {
   id: 'support-agent',
   driver: 'oneringai.agent',
-  model: 'gpt-5.3-codex',
+  model: 'gpt-5.6-sol',
   reasoning: { effort: 'medium' },
   driverConfig: { source: { type: 'factory', name: 'assistant' } },
 };
@@ -17918,7 +17924,7 @@ const codexSpec: RuntimeAgentSpec = {
   id: 'coding-agent',
   driver: 'openai.codex.sdk',
   connector: 'openai-main',
-  model: 'gpt-5.3-codex',
+  model: 'gpt-5.6-sol',
   reasoning: { effort: 'medium' },
   instructions: 'Make focused changes and run relevant tests.',
   driverConfig: {
@@ -17953,8 +17959,8 @@ const oneRingDriver = new OneRingAIDriver({
 });
 ```
 
-The bundled Codex and OneRingAI maps verify `low`, `medium`, `high`, and `xhigh` for
-`gpt-5.2-codex` and `gpt-5.3-codex`. Unsupported efforts, disable requests, and token
+The bundled Codex and OneRingAI maps cover the current GPT-5.6 Sol/Terra/Luna
+family and retain GPT-5.3 Codex. Unsupported efforts, disable requests, and token
 budgets fail before an API call. Known models marked as non-reasoning reject reasoning
 configuration in both drivers. For OneRingAI agents, model overrides also update the
 managed context's model and registry-derived context limit; an explicit
