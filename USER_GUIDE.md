@@ -162,7 +162,7 @@ need to migrate.
 
 Use the new surfaces when an application needs one of these flows:
 
-| Goal | 1.1.1 surface |
+| Goal | Current surface |
 |------|---------------|
 | Move one resolved native Agent to a trusted desktop runtime | `exportAgentPackage()` and `hydrateAgentPackage()` |
 | Keep selected tools on the source server | `AgentPackageToolServer` and `RemoteToolTransport` |
@@ -186,14 +186,23 @@ never serializes executable functions or connector credentials.
 ```typescript
 import {
   AgentPackageToolServer,
+  createPortableToolImplementationFingerprint,
   exportAgentPackage,
   hydrateAgentPackage,
 } from '@everworker/oneringai';
+
+const localToolFingerprints = new Map([
+  ['read_desktop_file', createPortableToolImplementationFingerprint(
+    readDesktopFile.definition,
+    'desktop:read_desktop_file:v3',
+  )],
+]);
 
 // Trusted source server
 const packageValue = exportAgentPackage(serverAgent, {
   expiresAt: new Date(Date.now() + 10 * 60_000),
   toolPlacement: (name) => name === 'read_desktop_file' ? 'local' : 'remote',
+  toolImplementationFingerprint: (name) => localToolFingerprints.get(name),
   realtime: {
     provider: 'openai',
     connectorName: 'server-openai',
@@ -218,13 +227,39 @@ const desktopAgent = await hydrateAgentPackage(packageValue, {
     features: trustedContextFeatures,
     plugins: trustedContextPlugins,
   }),
-  localToolResolver: resolveAuthorizedDesktopTool,
+  localToolResolver: (descriptor) => {
+    const tool = resolveAuthorizedDesktopTool(descriptor);
+    const implementationFingerprint = localToolFingerprints.get(
+      descriptor.definition.function.name,
+    );
+    return tool && implementationFingerprint
+      ? { tool, implementationFingerprint }
+      : undefined;
+  },
   remoteToolTransport: {
     execute: (request) => authenticatedRpc.executeRemoteTool(request),
   },
   agentConfig: trustedProviderPolicy,
 });
 ```
+
+Custom tools placed `local` must use a stable implementation ID that both
+trusted runtimes map through `createPortableToolImplementationFingerprint()`.
+The implementation ID is required and must change whenever executable behavior
+or one of its dependencies changes.
+Hydration requires `localToolResolver` to return a `ResolvedLocalTool`; returning
+a bare `ToolFunction` is rejected. Generated OneRingAI built-ins use their
+runtime-aware registry fingerprints automatically and can be wrapped with
+`createResolvedLocalTool(tool)` on the receiving host. A matching name or JSON
+schema alone is never treated as executable compatibility.
+
+Fingerprint inputs follow JSON-wire semantics, so omitted and explicitly
+`undefined` optional fields do not diverge after serialization. A tool's
+dynamic function description is prompt presentation generated independently on
+each host and is excluded from its local executable contract; its callable
+schema, blocking mode, and timeout still must match. Remote tool definitions
+retain their full canonical definition fingerprint, which package validation
+recomputes before hydration or tool-server construction.
 
 The RPC host must authenticate and authorize each request before forwarding it
 to `toolServer.execute(request)`. Hydration also rejects a package tool whose
@@ -238,6 +273,12 @@ most 1,000 distinct request IDs. Unknown fields, non-JSON values, expired or
 incompatible packages, cross-package requests, and non-allowlisted tools fail
 closed. Exact request retries are idempotent for the bounded server-session
 lifetime.
+
+Agent packages and remote-tool DTOs use exact protocol version 2. Version 1
+peers reject version 2 objects, and version 2 peers reject version 1 objects.
+Deploy the exporting server and receiving host together, or keep the old pair
+active until all in-flight version 1 sessions have ended. Do not mix protocol
+versions within one tool-server session.
 
 Call `await toolServer.close()` and `desktopAgent.destroy()` when the session
 ends. Concurrent close callers share the same shutdown operation, so every
@@ -1384,6 +1425,16 @@ Connector.create({
   baseURL: 'https://custom-proxy.example.com/v1',
 });
 
+// Runtime-only rotating credentials (Vendor.OpenAI only)
+Connector.create({
+  name: 'openai-brokered',
+  vendor: Vendor.OpenAI,
+  auth: {
+    type: 'api_key_provider',
+    getApiKey: async () => credentialBroker.getOpenAIKey(),
+  },
+});
+
 // With vendor-specific options
 Connector.create({
   name: 'anthropic',
@@ -1394,6 +1445,13 @@ Connector.create({
   },
 });
 ```
+
+`api_key_provider` is host-local and cannot be saved through
+`ConnectorConfigStore`. OpenAI text, image, audio, video, and embedding SDK
+requests resolve and validate the callback when the SDK sends a request. The
+Codex SDK runtime resolves it once when opening each Codex session. Empty or
+whitespace-only values fail before reaching the SDK. Other vendors must use
+their documented authentication forms.
 
 ### Multiple Keys Per Vendor
 

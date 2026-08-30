@@ -31,8 +31,38 @@ describe('extractProviderConfig', () => {
       });
 
       const config = extractOpenAICompatConfig(connector);
-      expect(config.auth.apiKey).toBe('sk-test-123');
+      expect(config.auth).toEqual({ type: 'api_key', apiKey: 'sk-test-123' });
       expect(config.baseURL).toBe('https://api.openai.com/v1');
+    });
+
+    it('extracts a validated rotating key provider for OpenAI', async () => {
+      let currentKey = 'first-key';
+      const connector = Connector.create({
+        name: 'rotating-openai',
+        vendor: Vendor.OpenAI,
+        auth: { type: 'api_key_provider', getApiKey: async () => currentKey },
+      });
+
+      const config = extractOpenAICompatConfig(connector);
+      expect(config.auth.type).toBe('api_key_provider');
+      if (config.auth.type !== 'api_key_provider') throw new Error('Expected rotating auth');
+      await expect(config.auth.getApiKey()).resolves.toBe('first-key');
+      currentKey = 'second-key';
+      await expect(config.auth.getApiKey()).resolves.toBe('second-key');
+      currentKey = '   ';
+      await expect(config.auth.getApiKey()).rejects.toThrow('returned an empty key');
+    });
+
+    it('rejects rotating key providers for OpenAI-compatible vendors', () => {
+      const connector = Connector.create({
+        name: 'rotating-mistral',
+        vendor: Vendor.Mistral,
+        auth: { type: 'api_key_provider', getApiKey: async () => 'key' },
+      });
+
+      expect(() => extractOpenAICompatConfig(connector, 'Mistral')).toThrow(
+        'Mistral requires API key authentication',
+      );
     });
 
     it('should extract config for none auth (Ollama)', () => {
@@ -44,7 +74,7 @@ describe('extractProviderConfig', () => {
       });
 
       const config = extractOpenAICompatConfig(connector);
-      expect(config.auth.apiKey).toBe('ollama');
+      expect(config.auth).toEqual({ type: 'api_key', apiKey: 'ollama' });
       expect(config.baseURL).toBe('http://localhost:11434/v1');
     });
 

@@ -12,11 +12,17 @@
  */
 
 import { readdir, writeFile, readFile } from 'node:fs/promises';
-import { join, dirname, basename } from 'node:path';
+import { createHash } from 'node:crypto';
+import { join, dirname, basename, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  createRegistrySourceHashChunk,
+  normalizeRegistrySourcePath,
+} from './tool-registry-hash.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
+const SRC_DIR = join(ROOT, 'src');
 const TOOLS_DIR = join(ROOT, 'src/tools');
 const OUTPUT_FILE = join(TOOLS_DIR, 'registry.generated.ts');
 
@@ -32,6 +38,7 @@ interface ToolMetadata {
   requiresConnector: boolean;
   connectorServiceTypes?: string[];
   safeByDefault: boolean;
+  implementationHash: string;
 }
 
 // Map directory names to categories
@@ -95,13 +102,46 @@ async function getToolFiles(dir: string): Promise<string[]> {
   );
 }
 
+async function getRuntimeSourceHash(): Promise<string> {
+  const sourceFiles: string[] = [];
+
+  async function visit(directory: string): Promise<void> {
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+      } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.generated.ts')) {
+        sourceFiles.push(path);
+      }
+    }
+  }
+
+  await visit(SRC_DIR);
+  sourceFiles.sort((left, right) => {
+    const leftPath = normalizeRegistrySourcePath(relative(SRC_DIR, left));
+    const rightPath = normalizeRegistrySourcePath(relative(SRC_DIR, right));
+    return leftPath < rightPath ? -1 : leftPath > rightPath ? 1 : 0;
+  });
+  const hash = createHash('sha256');
+  hash.update('oneringai-runtime-source-v2\0');
+  for (const file of sourceFiles) {
+    hash.update(createRegistrySourceHashChunk(
+      relative(SRC_DIR, file),
+      await readFile(file, 'utf8'),
+    ));
+  }
+  return hash.digest('hex');
+}
+
 /**
  * Extract tool definition from source code using regex.
  * Handles both direct definitions and factory function patterns.
  */
 async function extractToolFromSource(
   dir: string,
-  file: string
+  file: string,
+  runtimeSourceHash: string,
 ): Promise<ToolMetadata | null> {
   const filePath = join(TOOLS_DIR, dir, file);
   const content = await readFile(filePath, 'utf-8');
@@ -203,6 +243,12 @@ async function extractToolFromSource(
     requiresConnector: CONNECTOR_REQUIREMENTS[name] !== undefined,
     connectorServiceTypes: CONNECTOR_REQUIREMENTS[name],
     safeByDefault: SAFE_TOOLS.has(name),
+    implementationHash: `sha256:${createHash('sha256')
+      .update('oneringai-built-in-tool-v2\0')
+      .update(runtimeSourceHash)
+      .update('\0')
+      .update(createRegistrySourceHashChunk(relative(SRC_DIR, filePath), content))
+      .digest('hex')}`,
   };
 }
 
@@ -211,6 +257,7 @@ async function generateRegistry(): Promise<void> {
 
   const tools: ToolMetadata[] = [];
   const dirs = await getToolDirs();
+  const runtimeSourceHash = await getRuntimeSourceHash();
 
   for (const dir of dirs) {
     console.log(`Scanning ${dir}/...`);
@@ -218,7 +265,7 @@ async function generateRegistry(): Promise<void> {
 
     for (const file of files) {
       try {
-        const metadata = await extractToolFromSource(dir, file);
+        const metadata = await extractToolFromSource(dir, file, runtimeSourceHash);
         if (metadata) {
           console.log(`  ✓ ${metadata.name} (${metadata.exportName})`);
           tools.push(metadata);
@@ -260,6 +307,7 @@ async function generateRegistry(): Promise<void> {
         `    description: ${JSON.stringify(t.description)},`,
         `    tool: ${t.exportName},`,
         `    safeByDefault: ${t.safeByDefault},`,
+        `    implementationHash: '${t.implementationHash}',`,
       ];
       if (t.requiresConnector) {
         lines.push(`    requiresConnector: true,`);
@@ -300,6 +348,8 @@ export interface ToolRegistryEntry {
   tool: ToolFunction;
   /** Whether this tool is safe without explicit approval */
   safeByDefault: boolean;
+  /** SHA-256 fingerprint of the tool source and its OneRingAI runtime source. */
+  implementationHash?: string;
   /** Whether this tool requires a connector */
   requiresConnector?: boolean;
   /** Supported connector service types (if requiresConnector) */

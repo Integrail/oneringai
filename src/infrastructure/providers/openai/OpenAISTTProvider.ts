@@ -8,6 +8,7 @@ import { BaseMediaProvider } from '../base/BaseMediaProvider.js';
 import type { ISpeechToTextProvider, STTOptions, STTResponse, STTOutputFormat } from '../../../domain/interfaces/IAudioProvider.js';
 import type { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
 import type { OpenAIMediaConfig } from '../../../domain/types/ProviderConfig.js';
+import { resolveOpenAIBaseProviderKey, resolveOpenAISDKAPIKey } from './OpenAIAuth.js';
 import {
   ProviderAuthError,
   ProviderRateLimitError,
@@ -32,10 +33,10 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
   private client: OpenAI;
 
   constructor(config: OpenAIMediaConfig) {
-    super({ apiKey: config.auth.apiKey, ...config });
+    super({ apiKey: resolveOpenAIBaseProviderKey(config), ...config });
 
     this.client = new OpenAI({
-      apiKey: config.auth.apiKey,
+      apiKey: resolveOpenAISDKAPIKey(config),
       baseURL: config.baseURL,
       organization: config.organization,
       timeout: config.timeout ?? 120000, // 2 minutes for audio processing

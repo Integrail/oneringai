@@ -104,6 +104,21 @@ describe('OpenAITextProvider', () => {
         })
       );
     });
+
+    it('passes a validated rotating key callback to the OpenAI SDK', async () => {
+      const getApiKey = vi.fn()
+        .mockResolvedValueOnce('first-key')
+        .mockResolvedValueOnce('   ');
+      new OpenAITextProvider({
+        apiKey: 'runtime-key-provider',
+        apiKeyProvider: getApiKey,
+      });
+
+      const apiKey = mockOpenAI.mock.calls.at(-1)?.[0].apiKey;
+      expect(apiKey).toEqual(expect.any(Function));
+      await expect(apiKey()).resolves.toBe('first-key');
+      await expect(apiKey()).rejects.toThrow('OpenAI API key provider returned an empty key');
+    });
   });
 
   describe('name and capabilities', () => {

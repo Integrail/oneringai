@@ -32,12 +32,14 @@ an already-resolved Agent. The package contains:
 - logical connector name and model, never connector credentials;
 - the unrendered instruction template and portable runtime options;
 - context feature flags, plugin names, and serialized state;
-- enabled tool definitions with `local` or `remote` placement;
+- enabled tool definitions with `local` or `remote` placement, a
+  placement-appropriate compatibility fingerprint, and optional informational
+  permission metadata;
 - an optional provider-neutral Realtime profile;
 - package ID, protocol version, revision, expiry, and host metadata.
 
 It deliberately excludes trusted runtime identity, connector/model authority,
-permission policy, arbitrary `vendorOptions`, provider-hosted `nativeTools`,
+permission-policy authority, arbitrary `vendorOptions`, provider-hosted `nativeTools`,
 prompt-cache policy, data-handling policy, and open-ended Realtime session
 configuration. Those fields can contain authorization data or change where
 data is processed and retained. The receiving host supplies `userId`, an
@@ -84,6 +86,31 @@ Executable functions never cross the wire:
 - `remote` tools become normal `ToolFunction` proxies backed by
   `RemoteToolTransport`;
 - omitted tools are not exported.
+
+Hydration compares every local resolver's implementation fingerprint with the
+package descriptor before registering the tool. A matching name and schema are
+not enough. Custom local tools must receive an explicit fingerprint from the
+exporting application and return it through `ResolvedLocalTool` in the
+receiving host. Generated built-ins derive the fingerprint from the tool
+definition, source file, and complete non-generated OneRingAI runtime source;
+paths and line endings are canonicalized so equivalent cross-platform builds
+agree. Fingerprints follow JSON-wire semantics, and dynamic function
+descriptions are excluded from the local executable contract because each host
+regenerates them from trusted context. Changes to the callable schema or
+execution metadata still fail closed.
+
+Remote descriptors carry a fingerprint of their complete canonical definition.
+Package validation recomputes it before hydration or tool-server construction,
+detecting inconsistent wire data. This unkeyed consistency check is not a
+signature and does not make the editable package an authority boundary.
+Packaged permission metadata is likewise never authoritative:
+`toolPermissionResolver` must return the receiving host's trusted policy, or
+the tool is registered without the packaged policy.
+
+Protocol version 2 is intentionally exact and incompatible with version 1 for
+both packages and remote-tool DTOs. Applications must deploy exporting and
+receiving runtimes as a coordinated pair, or drain version 1 sessions before
+routing traffic to version 2. A tool-server session never bridges versions.
 
 `AgentPackageToolServer` owns the server-side tool execution lifecycle. It
 allows only tools marked `remote` in its package and executes them through the

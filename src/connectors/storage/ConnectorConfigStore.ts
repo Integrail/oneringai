@@ -390,6 +390,8 @@ export class ConnectorConfigStore {
     const encryptedExtra = this.encryptExtra((auth as any).extra);
 
     switch (auth.type) {
+      case 'api_key_provider':
+        throw new Error('Runtime API key providers cannot be persisted');
       case 'api_key':
         return {
           ...auth,
@@ -428,6 +430,8 @@ export class ConnectorConfigStore {
     const decryptedExtra = this.decryptExtra((auth as any).extra);
 
     switch (auth.type) {
+      case 'api_key_provider':
+        throw new Error('Runtime API key providers cannot be loaded from storage');
       case 'api_key':
         return {
           ...auth,

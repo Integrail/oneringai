@@ -3,6 +3,7 @@
  */
 
 import OpenAI, { toFile } from 'openai';
+import { createValidatedOpenAIAPIKeyProvider } from './OpenAIAuth.js';
 import { BaseTextProvider } from '../base/BaseTextProvider.js';
 import { TextGenerateOptions, ModelCapabilities } from '../../../domain/interfaces/ITextProvider.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
@@ -56,7 +57,9 @@ export class OpenAITextProvider extends BaseTextProvider {
     super(config);
 
     this.client = new OpenAI({
-      apiKey: this.getApiKey(),
+      apiKey: config.apiKeyProvider
+        ? createValidatedOpenAIAPIKeyProvider(config.apiKeyProvider)
+        : this.getApiKey(),
       baseURL: this.getBaseURL(),
       organization: config.organization,
       timeout: this.getTimeout(),

@@ -70,6 +70,7 @@ describe('ToolRegistry', () => {
         expect(tool.description).toBeDefined();
         expect(tool.tool).toBeDefined();
         expect(typeof tool.safeByDefault).toBe('boolean');
+        expect(tool.implementationHash).toMatch(/^sha256:[a-f0-9]{64}$/);
       }
     });
   });

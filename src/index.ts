@@ -49,7 +49,9 @@ export {
   AgentPackageToolServer,
   RemoteToolExecutionError,
   assertAgentPackageCompatible,
+  createResolvedLocalTool,
   createRemoteTool,
+  createPortableToolImplementationFingerprint,
   exportAgentPackage,
   hydrateAgentPackage,
 } from './portable/index.js';
@@ -61,12 +63,14 @@ export type {
   ExportAgentPackageOptions,
   HydrateAgentPackageOptions,
   LocalToolResolver,
+  PortableToolPermissionResolver,
   PortableAgentContext,
   PortableAgentRuntimeConfig,
   PortableRealtimeProfile,
   PortableToolDescriptor,
   PortableToolPlacement,
   PortableToolPlacementResolver,
+  ResolvedLocalTool,
   RemoteToolError,
   RemoteToolExecutionRequest,
   RemoteToolExecutionResponse,
@@ -774,6 +778,7 @@ export type {
   ConnectorAuth,
   OAuthConnectorAuth,
   APIKeyConnectorAuth,
+  APIKeyProviderConnectorAuth,
   JWTConnectorAuth,
 } from './domain/entities/Connector.js';
 

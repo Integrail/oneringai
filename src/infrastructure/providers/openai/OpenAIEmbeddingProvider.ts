@@ -13,6 +13,7 @@ import type {
 } from '../../../domain/interfaces/IEmbeddingProvider.js';
 import type { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
 import type { OpenAIMediaConfig } from '../../../domain/types/ProviderConfig.js';
+import { resolveOpenAIBaseProviderKey, resolveOpenAISDKAPIKey } from './OpenAIAuth.js';
 import {
   ProviderAuthError,
   ProviderRateLimitError,
@@ -37,13 +38,13 @@ export class OpenAIEmbeddingProvider extends BaseMediaProvider implements IEmbed
    * @param nameOverride - Custom name for generic/OpenAI-compatible vendors
    */
   constructor(config: OpenAIMediaConfig, nameOverride?: string) {
-    super({ apiKey: config.auth.apiKey, ...config });
+    super({ apiKey: resolveOpenAIBaseProviderKey(config), ...config });
 
     this.name = nameOverride ?? 'openai-embedding';
     this.vendor = nameOverride ? 'generic' : 'openai';
 
     this.client = new OpenAI({
-      apiKey: config.auth.apiKey,
+      apiKey: resolveOpenAISDKAPIKey(config),
       baseURL: config.baseURL,
       organization: config.organization,
       timeout: config.timeout,

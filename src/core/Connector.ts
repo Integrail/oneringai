@@ -461,6 +461,13 @@ export class Connector {
     if (this.config.auth.type === 'api_key') {
       return this.config.auth.apiKey;
     }
+    if (this.config.auth.type === 'api_key_provider') {
+      const token = await this.config.auth.getApiKey();
+      if (typeof token !== 'string' || !token.trim()) {
+        throw new Error(`Connector '${this.name}' API key provider returned an empty key`);
+      }
+      return token;
+    }
 
     // OAuth and JWT both use OAuthManager
     if (!this.oauthManager) {
@@ -507,7 +514,10 @@ export class Connector {
    */
   async hasValidToken(userId?: string, accountId?: string): Promise<boolean> {
     try {
-      if (this.config.auth.type === 'api_key') {
+      if (this.config.auth.type === 'api_key' || this.config.auth.type === 'api_key_provider') {
+        if (this.config.auth.type === 'api_key_provider') {
+          return Boolean(await this.getToken(userId, accountId));
+        }
         return true; // API keys are always "valid" (we don't validate them)
       }
       if (this.oauthManager) {

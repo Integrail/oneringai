@@ -15,6 +15,7 @@ import type {
 } from '../../../domain/interfaces/IImageProvider.js';
 import type { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
 import type { OpenAIMediaConfig } from '../../../domain/types/ProviderConfig.js';
+import { resolveOpenAIBaseProviderKey, resolveOpenAISDKAPIKey } from './OpenAIAuth.js';
 import {
   ProviderAuthError,
   ProviderRateLimitError,
@@ -38,10 +39,10 @@ export class OpenAIImageProvider extends BaseMediaProvider implements IImageProv
   private client: OpenAI;
 
   constructor(config: OpenAIMediaConfig) {
-    super({ apiKey: config.auth.apiKey, ...config });
+    super({ apiKey: resolveOpenAIBaseProviderKey(config), ...config });
 
     this.client = new OpenAI({
-      apiKey: config.auth.apiKey,
+      apiKey: resolveOpenAISDKAPIKey(config),
       baseURL: config.baseURL,
       organization: config.organization,
       timeout: config.timeout,

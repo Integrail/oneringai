@@ -5,6 +5,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Connector } from '@/core/Connector.js';
+import { Vendor } from '@/core/Vendor.js';
 import type { ConnectorConfig } from '@/domain/entities/Connector.js';
 
 describe('Connector', () => {
@@ -206,6 +207,24 @@ describe('Connector', () => {
       const apiKey = connector.getApiKey();
 
       expect(apiKey).toBe('test-api-key-123');
+    });
+
+    it('resolves a fresh runtime API key on every getToken call', async () => {
+      const getApiKey = vi
+        .fn<() => Promise<string>>()
+        .mockResolvedValueOnce('rotated-1')
+        .mockResolvedValueOnce('rotated-2');
+      Connector.create({
+        name: 'rotating-openai',
+        vendor: Vendor.OpenAI,
+        auth: { type: 'api_key_provider', getApiKey },
+      });
+
+      const connector = Connector.get('rotating-openai');
+      await expect(connector.getToken()).resolves.toBe('rotated-1');
+      await expect(connector.getToken()).resolves.toBe('rotated-2');
+      expect(getApiKey).toHaveBeenCalledTimes(2);
+      expect(() => connector.getApiKey()).toThrow('does not use API key auth');
     });
   });
 

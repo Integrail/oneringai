@@ -2085,6 +2085,18 @@ receiving context rather than exported as proxies. Hydration rejects any
 portable tool name that collides with a trusted context, identity, or
 host-provided tool.
 
+Protocol v2 also fails closed on local executable drift. Custom local tools
+need an explicit shared fingerprint and `localToolResolver` returns a
+`ResolvedLocalTool`; generated built-ins use runtime-aware registry
+fingerprints. Version 1 and version 2 peers cannot share a package/tool-server
+session, so deploy the exporting and receiving runtimes together.
+
+Fingerprints use JSON-wire canonicalization. Dynamic function descriptions are
+presentation metadata regenerated from each host's trusted context and are not
+part of the local executable contract. Remote definition fingerprints are
+recomputed during package validation to detect inconsistent descriptors; they
+are consistency checks, not package signatures.
+
 Remote tool requests and responses are exact, JSON-only protocol objects.
 Arguments and successful results are each limited to 1,000,000 UTF-8 bytes;
 unknown fields, non-JSON values, cross-package calls, and non-allowlisted tools

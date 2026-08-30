@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-08-28
+**Generated:** 2026-08-30
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -20,7 +20,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Task Agents](#task-agents) (115 items)
 - [Context Management](#context-management) (14 items)
 - [Session Management](#session-management) (64 items)
-- [Tools & Function Calling](#tools-function-calling) (196 items)
+- [Tools & Function Calling](#tools-function-calling) (200 items)
 - [Streaming](#streaming) (30 items)
 - [Model Registry](#model-registry) (29 items)
 - [OAuth & External APIs](#oauth-external-apis) (41 items)
@@ -29,7 +29,7 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Utilities](#utilities) (10 items)
 - [Interfaces](#interfaces) (78 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (744 items)
+- [Other](#other) (745 items)
 
 ## Core
 
@@ -20648,7 +20648,7 @@ Define and execute tools for agents
 
 ### AgentPackageToolServer `class`
 
-📍 [`src/portable/AgentPackage.ts:393`](src/portable/AgentPackage.ts)
+📍 [`src/portable/AgentPackage.ts:416`](src/portable/AgentPackage.ts)
 
 Session-bound server executor for tools exported as `remote`. The host must
 authenticate and authorize every request before calling `execute()`.
@@ -20964,7 +20964,7 @@ constructor(
 
 ### RemoteToolExecutionError `class`
 
-📍 [`src/portable/AgentPackage.ts:63`](src/portable/AgentPackage.ts)
+📍 [`src/portable/AgentPackage.ts:65`](src/portable/AgentPackage.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -24192,7 +24192,7 @@ Tracks a single async tool execution in flight
 
 ### PortableToolDescriptor `interface`
 
-📍 [`src/portable/types.ts:31`](src/portable/types.ts)
+📍 [`src/portable/types.ts:32`](src/portable/types.ts)
 
 Serializable tool metadata. Executable code is resolved by the receiving runtime.
 
@@ -24203,6 +24203,9 @@ Serializable tool metadata. Executable code is resolved by the receiving runtime
 |----------|------|-------------|
 | `definition` | `definition: FunctionToolDefinition;` | - |
 | `placement` | `placement: PortableToolPlacement;` | - |
+| `permission?` | `permission?: ToolPermissionConfig;` | Informational only. Hydration ignores this unless a trusted host resolves it. |
+| `implementationFingerprint` | `implementationFingerprint: string;` | Local tools identify the executable selected by the trusted host; remote
+tools carry a canonical definition fingerprint for wire consistency. |
 | `namespace?` | `namespace?: string;` | - |
 | `category?` | `category?: string;` | - |
 | `tags?` | `tags?: string[];` | - |
@@ -24213,7 +24216,7 @@ Serializable tool metadata. Executable code is resolved by the receiving runtime
 
 ### RemoteToolError `interface`
 
-📍 [`src/portable/types.ts:179`](src/portable/types.ts)
+📍 [`src/portable/types.ts:208`](src/portable/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -24230,7 +24233,7 @@ Serializable tool metadata. Executable code is resolved by the receiving runtime
 
 ### RemoteToolExecutionRequest `interface`
 
-📍 [`src/portable/types.ts:171`](src/portable/types.ts)
+📍 [`src/portable/types.ts:200`](src/portable/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -24249,7 +24252,7 @@ Serializable tool metadata. Executable code is resolved by the receiving runtime
 
 ### RemoteToolTransport `interface`
 
-📍 [`src/portable/types.ts:202`](src/portable/types.ts)
+📍 [`src/portable/types.ts:231`](src/portable/types.ts)
 
 Host-supplied authenticated transport. OneRingAI owns the wire DTO and proxy tool behavior.
 
@@ -24288,6 +24291,22 @@ execute(
 | `correlationId` | `correlationId: string;` | Correlation id used to resume the session (opaque to the LLM). |
 | `message` | `message: string;` | Human-readable confirmation, e.g., "Slack DM to |
 | `suspended` | `suspended: true;` | Whether the agent is now suspended (always true on success). |
+
+</details>
+
+---
+
+### ResolvedLocalTool `interface`
+
+📍 [`src/portable/types.ts:131`](src/portable/types.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `tool` | `tool: ToolFunction;` | - |
+| `implementationFingerprint` | `implementationFingerprint: string;` | Must match the fingerprint selected by the exporting runtime. |
 
 </details>
 
@@ -24922,6 +24941,7 @@ Metadata for a tool in the registry
 | `description` | `description: string;` | Brief description |
 | `tool` | `tool: ToolFunction;` | The actual tool function |
 | `safeByDefault` | `safeByDefault: boolean;` | Whether this tool is safe without explicit approval |
+| `implementationHash?` | `implementationHash?: string;` | SHA-256 fingerprint of the tool source and its OneRingAI runtime source. |
 | `requiresConnector?` | `requiresConnector?: boolean;` | Whether this tool requires a connector |
 | `connectorServiceTypes?` | `connectorServiceTypes?: string[];` | Supported connector service types (if requiresConnector) |
 
@@ -25053,12 +25073,12 @@ type DesktopToolName = (typeof DESKTOP_TOOL_NAMES)[number]
 
 ### LocalToolResolver `type`
 
-📍 [`src/portable/types.ts:114`](src/portable/types.ts)
+📍 [`src/portable/types.ts:137`](src/portable/types.ts)
 
 ```typescript
 type LocalToolResolver = (
   descriptor: PortableToolDescriptor,
-) =&gt; ToolFunction | undefined | Promise&lt;ToolFunction | undefined&gt;
+) =&gt; ResolvedLocalTool | undefined | Promise&lt;ResolvedLocalTool | undefined&gt;
 ```
 
 ---
@@ -25113,9 +25133,21 @@ type PendingAsyncToolStatus = 'running' | 'completed' | 'failed' | 'timeout' | '
 
 ---
 
+### PortableToolPermissionResolver `type`
+
+📍 [`src/portable/types.ts:141`](src/portable/types.ts)
+
+```typescript
+type PortableToolPermissionResolver = (
+  descriptor: PortableToolDescriptor,
+) =&gt; ToolPermissionConfig | undefined
+```
+
+---
+
 ### PortableToolPlacement `type`
 
-📍 [`src/portable/types.ts:17`](src/portable/types.ts)
+📍 [`src/portable/types.ts:18`](src/portable/types.ts)
 
 ```typescript
 type PortableToolPlacement = 'local' | 'remote'
@@ -25125,7 +25157,7 @@ type PortableToolPlacement = 'local' | 'remote'
 
 ### PortableToolPlacementResolver `type`
 
-📍 [`src/portable/types.ts:80`](src/portable/types.ts)
+📍 [`src/portable/types.ts:88`](src/portable/types.ts)
 
 ```typescript
 type PortableToolPlacementResolver = (
@@ -25138,7 +25170,7 @@ type PortableToolPlacementResolver = (
 
 ### RemoteToolExecutionResponse `type`
 
-📍 [`src/portable/types.ts:185`](src/portable/types.ts)
+📍 [`src/portable/types.ts:214`](src/portable/types.ts)
 
 ```typescript
 type RemoteToolExecutionResponse = | {
@@ -25893,6 +25925,23 @@ export function createMicrosoftSearchFilesTool(
 
 ---
 
+### createPortableToolImplementationFingerprint `function`
+
+📍 [`src/portable/AgentPackage.ts:565`](src/portable/AgentPackage.ts)
+
+Create the stable wire fingerprint used to reject mismatched local
+executables. Dynamic function descriptions are excluded from the executable
+contract because each host regenerates them from its own trusted context.
+
+```typescript
+export function createPortableToolImplementationFingerprint(
+  definition: PortableToolDescriptor['definition'],
+  implementationId: string,
+): string
+```
+
+---
+
 ### createPostMessageTool `function`
 
 📍 [`src/tools/slack/postMessage.ts:30`](src/tools/slack/postMessage.ts)
@@ -25970,7 +26019,7 @@ export function createRememberTool(deps: MemoryToolDeps): ToolFunction&lt;Rememb
 
 ### createRemoteTool `function`
 
-📍 [`src/portable/AgentPackage.ts:360`](src/portable/AgentPackage.ts)
+📍 [`src/portable/AgentPackage.ts:383`](src/portable/AgentPackage.ts)
 
 Build a normal ToolFunction whose execution is delegated through a typed transport.
 
@@ -26000,6 +26049,23 @@ export function createRequestUserInputTool(
   delivery: IUserInteractionDelivery,
   options: CreateRequestUserInputToolOptions = {},
 ): ToolFunction&lt;RequestUserInputToolArgs, SuspendSignal&gt;
+```
+
+---
+
+### createResolvedLocalTool `function`
+
+📍 [`src/portable/AgentPackage.ts:616`](src/portable/AgentPackage.ts)
+
+Resolve a trusted local executable with a fingerprint suitable for package
+hydration. Custom tools require a stable implementation ID shared by the
+exporting and receiving runtimes. Generated built-ins use registry metadata.
+
+```typescript
+export function createResolvedLocalTool(
+  tool: ToolFunction,
+  implementationId?: string,
+): ResolvedLocalTool
 ```
 
 ---
@@ -26246,7 +26312,7 @@ export function generateWebAPITool(): ToolFunction&lt;APIRequestArgs, APIRequest
 
 ### getAllBuiltInTools `function`
 
-📍 [`src/tools/registry.generated.ts:432`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:473`](src/tools/registry.generated.ts)
 
 Get all built-in tools as ToolFunction array
 
@@ -26270,7 +26336,7 @@ export function getConnectorTools(connectorName: string): ToolFunction[]
 
 ### getToolByName `function`
 
-📍 [`src/tools/registry.generated.ts:447`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:488`](src/tools/registry.generated.ts)
 
 Get tool by name
 
@@ -26298,7 +26364,7 @@ export function getToolCallDescription&lt;TArgs&gt;(
 
 ### getToolCategories `function`
 
-📍 [`src/tools/registry.generated.ts:457`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:498`](src/tools/registry.generated.ts)
 
 Get all unique category names
 
@@ -26310,7 +26376,7 @@ export function getToolCategories(): ToolCategory[]
 
 ### getToolRegistry `function`
 
-📍 [`src/tools/registry.generated.ts:437`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:478`](src/tools/registry.generated.ts)
 
 Get full tool registry with metadata
 
@@ -26322,7 +26388,7 @@ export function getToolRegistry(): ToolRegistryEntry[]
 
 ### getToolsByCategory `function`
 
-📍 [`src/tools/registry.generated.ts:442`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:483`](src/tools/registry.generated.ts)
 
 Get tools by category
 
@@ -26334,7 +26400,7 @@ export function getToolsByCategory(category: ToolCategory): ToolRegistryEntry[]
 
 ### getToolsRequiringConnector `function`
 
-📍 [`src/tools/registry.generated.ts:452`](src/tools/registry.generated.ts)
+📍 [`src/tools/registry.generated.ts:493`](src/tools/registry.generated.ts)
 
 Get tools that require connector configuration
 
@@ -32324,7 +32390,7 @@ token acts as that user. When unset, `sub` defaults to `clientId`
 
 ### OAuthConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:35`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:36`](src/domain/entities/Connector.ts)
 
 OAuth 2.0 authentication for connectors
 Supports multiple OAuth flows
@@ -34136,7 +34202,7 @@ Error types and handling
 
 ### AgentPackageCompatibilityError `class`
 
-📍 [`src/portable/AgentPackage.ts:56`](src/portable/AgentPackage.ts)
+📍 [`src/portable/AgentPackage.ts:58`](src/portable/AgentPackage.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -46510,7 +46576,7 @@ Map of all event names to their payload types
 
 ### AgentPackageConnectorResolution `interface`
 
-📍 [`src/portable/types.ts:119`](src/portable/types.ts)
+📍 [`src/portable/types.ts:146`](src/portable/types.ts)
 
 Trusted connector and model selected by the receiving application host.
 
@@ -46528,7 +46594,7 @@ Trusted connector and model selected by the receiving application host.
 
 ### AgentPackageContextFactoryInput `interface`
 
-📍 [`src/portable/types.ts:102`](src/portable/types.ts)
+📍 [`src/portable/types.ts:119`](src/portable/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -46765,7 +46831,7 @@ validateBinding(userId: string, anchorId: string): Promise&lt;boolean&gt;;
 
 ### APIKeyConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:92`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:93`](src/domain/entities/Connector.ts)
 
 Static API key authentication
 For services like OpenAI, Anthropic, many SaaS APIs
@@ -46786,6 +46852,25 @@ the request URL and does NOT add an auth header. `headerName` and
 that authenticate via `?key=...`. |
 | `extra?` | `extra?: Record&lt;string, string&gt;;` | Vendor-specific extra credentials beyond the primary API key.
 E.g., Slack Socket Mode needs { appToken: 'xapp-...', signingSecret: '...' } |
+
+</details>
+
+---
+
+### APIKeyProviderConnectorAuth `interface`
+
+📍 [`src/domain/entities/Connector.ts:119`](src/domain/entities/Connector.ts)
+
+Host-local rotating API key authentication. This runtime-only form is not
+serializable and ConnectorConfigStore deliberately refuses to persist it.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'api_key_provider';` | - |
+| `getApiKey` | `getApiKey: () =&gt; Promise&lt;string&gt;;` | - |
 
 </details>
 
@@ -46990,7 +47075,7 @@ Base configuration for all capability providers
 
 ### BaseProviderConfig `interface`
 
-📍 [`src/domain/types/ProviderConfig.ts:13`](src/domain/types/ProviderConfig.ts)
+📍 [`src/domain/types/ProviderConfig.ts:19`](src/domain/types/ProviderConfig.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47367,7 +47452,7 @@ resolveDisplayNames(ids: EntityId[]): Promise&lt;Array&lt;string | null&gt;&gt;;
 
 ### ConnectorConfig `interface`
 
-📍 [`src/domain/entities/Connector.ts:137`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:147`](src/domain/entities/Connector.ts)
 
 Complete connector configuration
 Used for BOTH AI providers AND external APIs
@@ -47441,7 +47526,7 @@ Used for BOTH AI providers AND external APIs
 
 ### ConnectorConfigResult `interface`
 
-📍 [`src/domain/entities/Connector.ts:241`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:251`](src/domain/entities/Connector.ts)
 
 Result from ProviderConfigAgent
 Includes setup instructions and environment variables
@@ -49269,7 +49354,7 @@ This captures the essential info without importing full AgentConfig.
 
 ### ExportAgentPackageOptions `interface`
 
-📍 [`src/portable/types.ts:85`](src/portable/types.ts)
+📍 [`src/portable/types.ts:93`](src/portable/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -49284,6 +49369,12 @@ This captures the essential info without importing full AgentConfig.
 | `instructionTemplate?` | `instructionTemplate?: string;` | Explicit unrendered instruction template. Required when the Agent's
 instructions were installed by mutating its context after construction. |
 | `toolPlacement?` | `toolPlacement?: PortableToolPlacementResolver;` | Tools default to remote because executable functions cannot cross a wire. |
+| `toolImplementationFingerprint?` | `toolImplementationFingerprint?: (
+    toolName: string,
+    definition: FunctionToolDefinition,
+  ) =&gt; string | undefined;` | Supply the authoritative implementation fingerprint for custom local tools.
+Generated built-ins are fingerprinted automatically; remote tools do not
+require an implementation-specific value. |
 | `pluginNames?` | `pluginNames?: string[];` | Override the plugin set that the receiving context must provide. |
 
 </details>
@@ -52762,7 +52853,7 @@ destroy(): Promise&lt;void&gt;;
 
 ### JWTConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:118`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:128`](src/domain/entities/Connector.ts)
 
 JWT Bearer token authentication
 For service accounts (Google, Salesforce)
@@ -54500,7 +54591,7 @@ Decision returned by a permission policy.
 
 ### PortableAgentContext `interface`
 
-📍 [`src/portable/types.ts:39`](src/portable/types.ts)
+📍 [`src/portable/types.ts:47`](src/portable/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -54517,7 +54608,7 @@ Decision returned by a permission policy.
 
 ### PortableRealtimeProfile `interface`
 
-📍 [`src/portable/types.ts:46`](src/portable/types.ts)
+📍 [`src/portable/types.ts:54`](src/portable/types.ts)
 
 Provider-neutral Realtime profile. Provider credentials are deliberately excluded.
 
@@ -56036,7 +56127,7 @@ an `IngestionError` entry rather than silently failing.
 
 ### SerializedAgentPackage `interface`
 
-📍 [`src/portable/types.ts:58`](src/portable/types.ts)
+📍 [`src/portable/types.ts:66`](src/portable/types.ts)
 
 Data-only snapshot used to recreate one effective agent in another trusted
 application process. It is an execution package, not an authorization token,
@@ -58257,7 +58348,7 @@ type AgenticLoopEventName = keyof AgenticLoopEvents
 
 ### AgentPackageContextFactory `type`
 
-📍 [`src/portable/types.ts:110`](src/portable/types.ts)
+📍 [`src/portable/types.ts:127`](src/portable/types.ts)
 
 ```typescript
 type AgentPackageContextFactory = (
@@ -58269,7 +58360,7 @@ type AgentPackageContextFactory = (
 
 ### AgentPackageProtocolVersion `type`
 
-📍 [`src/portable/types.ts:15`](src/portable/types.ts)
+📍 [`src/portable/types.ts:16`](src/portable/types.ts)
 
 ```typescript
 type AgentPackageProtocolVersion = typeof AGENT_PACKAGE_PROTOCOL_VERSION
@@ -58505,6 +58596,7 @@ Supports OAuth 2.0, API keys, JWT bearer tokens, and none (for testing)
 ```typescript
 type ConnectorAuth = | OAuthConnectorAuth
   | APIKeyConnectorAuth
+  | APIKeyProviderConnectorAuth
   | JWTConnectorAuth
   | NoneConnectorAuth
 ```
@@ -58816,7 +58908,7 @@ type HookName = keyof Omit&lt;HookConfig, 'hookTimeout' | 'parallelHooks'&gt;
 
 ### HydrateAgentPackageOptions `type`
 
-📍 [`src/portable/types.ts:155`](src/portable/types.ts)
+📍 [`src/portable/types.ts:184`](src/portable/types.ts)
 
 Hydration always requires the trusted host to select both connector and
 model. Package values are hints for the resolver, never authorization.
@@ -59223,7 +59315,7 @@ type PluginFactory = (
 
 ### PortableAgentRuntimeConfig `type`
 
-📍 [`src/portable/types.ts:25`](src/portable/types.ts)
+📍 [`src/portable/types.ts:26`](src/portable/types.ts)
 
 Runtime options that are safe to carry across an application boundary.
 Arbitrary vendor options, provider-hosted tools, and data-governance policy
@@ -59761,7 +59853,7 @@ export function applyRestrainedExtractionContract(
 
 ### assertAgentPackageCompatible `function`
 
-📍 [`src/portable/AgentPackage.ts:289`](src/portable/AgentPackage.ts)
+📍 [`src/portable/AgentPackage.ts:312`](src/portable/AgentPackage.ts)
 
 Validate the public protocol version and the bounded fields used for routing.
 
@@ -60367,7 +60459,7 @@ initialUserMessage: 'Execute the selected action: Send reply.',
 
 ### exportAgentPackage `function`
 
-📍 [`src/portable/AgentPackage.ts:76`](src/portable/AgentPackage.ts)
+📍 [`src/portable/AgentPackage.ts:78`](src/portable/AgentPackage.ts)
 
 Export one already-resolved Agent as a data-only package for another runtime.
 
@@ -60853,7 +60945,7 @@ export function getUserPathPrefix(
 
 ### hydrateAgentPackage `function`
 
-📍 [`src/portable/AgentPackage.ts:190`](src/portable/AgentPackage.ts)
+📍 [`src/portable/AgentPackage.ts:211`](src/portable/AgentPackage.ts)
 
 Recreate an Agent from a portable package using trusted host connector and tool resolvers.
 

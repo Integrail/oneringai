@@ -5,21 +5,34 @@
  */
 
 import { Connector } from './Connector.js';
-import type { OpenAIMediaConfig, GoogleConfig, GoogleMediaConfig, GrokMediaConfig } from '../domain/types/ProviderConfig.js';
+import { Vendor } from './Vendor.js';
+import type {
+  APIKeyAuth,
+  APIKeyProviderAuth,
+  OpenAIMediaConfig,
+  GoogleConfig,
+  GoogleMediaConfig,
+  GrokMediaConfig,
+} from '../domain/types/ProviderConfig.js';
 
 /**
  * Extract OpenAI/OpenAI-compatible config from connector.
- * Supports api_key auth and none auth (for Ollama/local providers).
+ * Supports static and rotating OpenAI auth, plus none auth for local providers.
  */
 export function extractOpenAICompatConfig(connector: Connector, providerLabel?: string): OpenAIMediaConfig {
   const auth = connector.config.auth;
-  let apiKey: string;
+  let resolvedAuth: APIKeyAuth | APIKeyProviderAuth;
 
   if (auth.type === 'api_key') {
-    apiKey = auth.apiKey;
+    resolvedAuth = auth;
+  } else if (auth.type === 'api_key_provider' && connector.vendor === Vendor.OpenAI) {
+    resolvedAuth = {
+      type: 'api_key_provider',
+      getApiKey: () => connector.getToken(),
+    };
   } else if (auth.type === 'none') {
     // Local providers like Ollama don't need a real key
-    apiKey = 'ollama';
+    resolvedAuth = { type: 'api_key', apiKey: 'ollama' };
   } else {
     throw new Error(`${providerLabel ?? 'Provider'} requires API key authentication`);
   }
@@ -27,10 +40,7 @@ export function extractOpenAICompatConfig(connector: Connector, providerLabel?: 
   const options = connector.getOptions();
 
   return {
-    auth: {
-      type: 'api_key',
-      apiKey,
-    },
+    auth: resolvedAuth,
     baseURL: connector.baseURL,
     organization: options.organization as string | undefined,
     timeout: options.timeout as number | undefined,

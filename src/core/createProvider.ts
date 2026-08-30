@@ -73,6 +73,11 @@ export function createProvider(connector: Connector): ITextProvider {
         `Set vendor to create an AI provider.`
     );
   }
+  if (connector.config.auth.type === 'api_key_provider' && vendor !== Vendor.OpenAI) {
+    throw new Error(
+      `Connector '${connector.name}' uses rotating API key auth, which is currently supported only for OpenAI.`,
+    );
+  }
 
   // Extract config from connector
   const config = extractProviderConfig(connector);
@@ -145,9 +150,13 @@ function extractProviderConfig(connector: Connector): ProviderConfig {
 
   // Get API key based on auth type
   let apiKey: string;
+  let apiKeyProvider: (() => Promise<string>) | undefined;
 
   if (auth.type === 'api_key') {
     apiKey = auth.apiKey;
+  } else if (auth.type === 'api_key_provider') {
+    apiKey = 'runtime-key-provider';
+    apiKeyProvider = () => connector.getToken();
   } else if (auth.type === 'none') {
     // For testing/mock providers and local services like Ollama
     apiKey = 'mock-key';
@@ -169,6 +178,7 @@ function extractProviderConfig(connector: Connector): ProviderConfig {
 
   return {
     apiKey,
+    ...(apiKeyProvider ? { apiKeyProvider } : {}),
     baseURL: connector.config.baseURL,
     timeout: connector.getOptions().timeout as number | undefined,
     maxRetries: connector.getOptions().maxRetries as number | undefined,
@@ -186,7 +196,7 @@ export async function createProviderAsync(
   const auth = connector.config.auth;
 
   // For API key auth, use sync version
-  if (auth.type === 'api_key') {
+  if (auth.type === 'api_key' || auth.type === 'api_key_provider') {
     return createProvider(connector);
   }
 

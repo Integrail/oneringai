@@ -118,7 +118,7 @@ export class CodexSdkDriver implements AgentDriver {
     const config = parseDriverConfig(request.spec);
     const { Codex: CodexClass } = await this.loadSdk();
     const connector = request.connectorRegistry.get(request.spec.connector!);
-    const apiKey = connector.getApiKey();
+    const apiKey = await connector.getToken();
     const redact = createRedactor([apiKey]);
     const codexHome = await mkdtemp(path.join(tmpdir(), 'oneringai-codex-'));
     try {
@@ -614,8 +614,11 @@ function validateConnectorAndModel(context: Parameters<AgentDriver['inspect']>[0
   if (connector.vendor !== Vendor.OpenAI) {
     throw new AgentDriverConfigurationError(`Codex SDK connector '${connector.name}' must declare Vendor.OpenAI`);
   }
-  if (connector.config.auth.type !== 'api_key') {
-    throw new AgentDriverConfigurationError(`Codex SDK connector '${connector.name}' must use api_key authentication`);
+  if (connector.config.auth.type !== 'api_key'
+    && connector.config.auth.type !== 'api_key_provider') {
+    throw new AgentDriverConfigurationError(
+      `Codex SDK connector '${connector.name}' must use api_key or api_key_provider authentication`,
+    );
   }
   if (connector.config.options?.organization || connector.config.options?.project) {
     throw new AgentDriverConfigurationError(

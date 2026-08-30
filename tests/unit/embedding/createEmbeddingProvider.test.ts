@@ -31,6 +31,17 @@ describe('createEmbeddingProvider', () => {
     expect(provider.capabilities.embeddings).toBe(true);
   });
 
+  it('should create an OpenAI provider with rotating API key auth', () => {
+    const connector = Connector.create({
+      name: 'rotating-openai',
+      vendor: Vendor.OpenAI,
+      auth: { type: 'api_key_provider', getApiKey: async () => 'runtime-key' },
+    });
+
+    const provider = createEmbeddingProvider(connector);
+    expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+  });
+
   it('should create Google provider for Google vendor', () => {
     const connector = Connector.create({
       name: 'test-google',

@@ -24,6 +24,7 @@ export interface NoneConnectorAuth {
 export type ConnectorAuth =
   | OAuthConnectorAuth
   | APIKeyConnectorAuth
+  | APIKeyProviderConnectorAuth
   | JWTConnectorAuth
   | NoneConnectorAuth;
 
@@ -109,6 +110,15 @@ export interface APIKeyConnectorAuth {
    * E.g., Slack Socket Mode needs { appToken: 'xapp-...', signingSecret: '...' }
    */
   extra?: Record<string, string>;
+}
+
+/**
+ * Host-local rotating API key authentication. This runtime-only form is not
+ * serializable and ConnectorConfigStore deliberately refuses to persist it.
+ */
+export interface APIKeyProviderConnectorAuth {
+  type: 'api_key_provider';
+  getApiKey: () => Promise<string>;
 }
 
 /**

@@ -160,6 +160,43 @@ describe('CodexSdkDriver', () => {
     await runtime.destroy();
   });
 
+  it('resolves and validates rotating API keys when opening a Codex session', async () => {
+    Connector.remove('codex-test');
+    let currentKey = 'rotating-session-key';
+    let resolutions = 0;
+    Connector.create({
+      name: 'codex-test',
+      vendor: Vendor.OpenAI,
+      auth: {
+        type: 'api_key_provider',
+        getApiKey: async () => {
+          resolutions++;
+          return currentKey;
+        },
+      },
+    });
+    const workspace = await temporaryDirectory();
+    const runtime = runtimeWithFakeSdk();
+
+    const session = await runtimeAgent(runtime).openSession({
+      context: {},
+      workspace: { type: 'local-directory', path: workspace },
+      policy: policy(),
+    });
+    expect(capturedCodexOptions?.apiKey).toBe('rotating-session-key');
+    expect(resolutions).toBe(1);
+    await session.destroy();
+
+    currentKey = '   ';
+    await expect(runtimeAgent(runtime).openSession({
+      context: {},
+      workspace: { type: 'local-directory', path: workspace },
+      policy: policy(),
+    })).rejects.toThrow("Connector 'codex-test' API key provider returned an empty key");
+    expect(resolutions).toBe(2);
+    await runtime.destroy();
+  });
+
   it('continues a second turn by resuming the native Codex thread', async () => {
     const workspace = await temporaryDirectory();
     const runtime = runtimeWithFakeSdk();

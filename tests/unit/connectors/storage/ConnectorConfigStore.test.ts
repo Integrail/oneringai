@@ -213,6 +213,18 @@ describe('ConnectorConfigStore', () => {
   });
 
   describe('save() validation', () => {
+    it('rejects runtime API key providers because callbacks are not persistable', async () => {
+      const config: ConnectorConfig = {
+        name: 'runtime-only',
+        vendor: 'openai',
+        auth: { type: 'api_key_provider', getApiKey: async () => 'fresh' },
+      };
+
+      await expect(store.save('runtime-only', config)).rejects.toThrow(
+        'Runtime API key providers cannot be persisted',
+      );
+    });
+
     it('should throw if name is empty', async () => {
       const config: ConnectorConfig = {
         auth: { type: 'api_key', apiKey: 'key' },

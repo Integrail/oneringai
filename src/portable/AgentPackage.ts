@@ -1,13 +1,15 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { Agent, type AgentRuntimeConfigSnapshot } from '../core/Agent.js';
 import type { ToolFunction } from '../domain/entities/Tool.js';
 import { ToolCallState } from '../domain/entities/Tool.js';
+import { getToolByName } from '../tools/registry.generated.js';
 import {
   AGENT_PACKAGE_PROTOCOL_VERSION,
   type ExportAgentPackageOptions,
   type HydrateAgentPackageOptions,
   type PortableAgentRuntimeConfig,
   type PortableToolDescriptor,
+  type ResolvedLocalTool,
   type RemoteToolExecutionRequest,
   type RemoteToolExecutionResponse,
   type RemoteToolTransport,
@@ -97,9 +99,28 @@ export function exportAgentPackage(
     const placement = options.toolPlacement?.(toolName, definition) ?? 'remote';
     if (placement === 'omit') continue;
     const registration = agent.tools.getRegistration(toolName);
+    const permission = registration?.permission ?? registration?.tool.permission;
+    const definitionFingerprint = createPortableToolDefinitionFingerprint(definition);
+    const explicitFingerprint = placement === 'local'
+      ? options.toolImplementationFingerprint?.(toolName, definition)
+      : undefined;
+    const builtInFingerprint = placement === 'local' && registration
+      ? getBuiltInToolFingerprint(registration.tool, registration.tool.definition)
+      : undefined;
+    if (placement === 'local'
+      && (!explicitFingerprint || explicitFingerprint === definitionFingerprint)
+      && !builtInFingerprint) {
+      throw new AgentPackageCompatibilityError(
+        `Local tool '${toolName}' requires an authoritative implementation fingerprint`,
+      );
+    }
     tools.push(cloneJson({
       definition,
       placement,
+      implementationFingerprint: placement === 'local'
+        ? explicitFingerprint ?? builtInFingerprint!
+        : definitionFingerprint,
+      ...(permission ? { permission } : {}),
       ...(registration?.namespace && registration.namespace !== 'default'
         ? { namespace: registration.namespace }
         : {}),
@@ -263,10 +284,12 @@ export async function hydrateAgentPackage(
       }
     }
     for (const { descriptor, tool } of hydratedTools) {
+      const permission = options.toolPermissionResolver?.(descriptor);
       agent.tools.register(tool, {
         ...(descriptor.namespace ? { namespace: descriptor.namespace } : {}),
         ...(descriptor.category ? { category: descriptor.category } : {}),
         ...(descriptor.tags ? { tags: [...descriptor.tags] } : {}),
+        ...(permission ? { permission } : {}),
       });
     }
     const contextState = cloneJson(packageValue.agent.context.state);
@@ -534,6 +557,86 @@ interface HydratedPortableTool {
   tool: ToolFunction;
 }
 
+/**
+ * Create the stable wire fingerprint used to reject mismatched local
+ * executables. Dynamic function descriptions are excluded from the executable
+ * contract because each host regenerates them from its own trusted context.
+ */
+export function createPortableToolImplementationFingerprint(
+  definition: PortableToolDescriptor['definition'],
+  implementationId: string,
+): string {
+  if (typeof implementationId !== 'string' || !implementationId.trim()) {
+    throw new TypeError('implementationId must be a non-empty string');
+  }
+  return createPortableToolFingerprint(
+    createPortableToolImplementationContract(definition),
+    implementationId,
+  );
+}
+
+function createPortableToolDefinitionFingerprint(
+  definition: PortableToolDescriptor['definition'],
+): string {
+  return createPortableToolFingerprint(definition);
+}
+
+/**
+ * Dynamic function descriptions are prompt presentation, not executable
+ * compatibility. Keep the callable schema and execution metadata while
+ * canonicalizing optional values exactly as they cross the JSON wire.
+ */
+function createPortableToolImplementationContract(
+  definition: PortableToolDescriptor['definition'],
+): PortableToolDescriptor['definition'] {
+  const contract = cloneJson(definition);
+  delete contract.function.description;
+  return contract;
+}
+
+function createPortableToolFingerprint(
+  definition: PortableToolDescriptor['definition'],
+  implementationId?: string,
+): string {
+  const hash = createHash('sha256');
+  hash.update('oneringai-portable-tool-v2\0');
+  hash.update(stableWireJson(definition));
+  if (implementationId !== undefined) {
+    hash.update('\0');
+    hash.update(implementationId);
+  }
+  return `sha256:${hash.digest('hex')}`;
+}
+
+/**
+ * Resolve a trusted local executable with a fingerprint suitable for package
+ * hydration. Custom tools require a stable implementation ID shared by the
+ * exporting and receiving runtimes. Generated built-ins use registry metadata.
+ */
+export function createResolvedLocalTool(
+  tool: ToolFunction,
+  implementationId?: string,
+): ResolvedLocalTool {
+  const implementationFingerprint = implementationId === undefined
+    ? getBuiltInToolFingerprint(tool, tool.definition)
+    : createPortableToolImplementationFingerprint(tool.definition, implementationId);
+  if (!implementationFingerprint) {
+    throw new TypeError(
+      `Custom local tool '${tool.definition.function.name}' requires a stable implementationId`,
+    );
+  }
+  return { tool, implementationFingerprint };
+}
+
+function getBuiltInToolFingerprint(
+  tool: ToolFunction,
+  definition: PortableToolDescriptor['definition'],
+): string | undefined {
+  const entry = getToolByName(definition.function.name);
+  if (!entry?.implementationHash || entry.tool !== tool) return undefined;
+  return createPortableToolImplementationFingerprint(definition, entry.implementationHash);
+}
+
 async function hydrateTools(
   packageValue: SerializedAgentPackage,
   options: HydrateAgentPackageOptions,
@@ -552,15 +655,39 @@ async function hydrateTools(
       });
       continue;
     }
-    const resolved = await options.localToolResolver?.(descriptor);
-    if (!resolved) {
+    const resolution = await options.localToolResolver?.(descriptor);
+    if (!resolution) {
       throw new AgentPackageCompatibilityError(
         `Local tool '${descriptor.definition.function.name}' could not be resolved`,
       );
     }
+    if (!isRecord(resolution)
+      || !isRecord(resolution.tool)
+      || !isRecord(resolution.tool.definition)
+      || !isRecord(resolution.tool.definition.function)
+      || typeof resolution.tool.definition.function.name !== 'string'
+      || typeof resolution.tool.execute !== 'function'
+      || typeof resolution.implementationFingerprint !== 'string') {
+      throw new AgentPackageCompatibilityError(
+        `Local tool '${descriptor.definition.function.name}' resolver must return a ResolvedLocalTool with an authoritative implementation fingerprint`,
+      );
+    }
+    const resolved = resolution.tool;
+    const implementationFingerprint = resolution.implementationFingerprint;
     if (resolved.definition.function.name !== descriptor.definition.function.name) {
       throw new AgentPackageCompatibilityError(
         `Local tool resolver returned '${resolved.definition.function.name}' for '${descriptor.definition.function.name}'`,
+      );
+    }
+    if (stableWireJson(createPortableToolImplementationContract(resolved.definition))
+      !== stableWireJson(createPortableToolImplementationContract(descriptor.definition))) {
+      throw new AgentPackageCompatibilityError(
+        `Local tool '${descriptor.definition.function.name}' definition is incompatible with the package`,
+      );
+    }
+    if (implementationFingerprint !== descriptor.implementationFingerprint) {
+      throw new AgentPackageCompatibilityError(
+        `Local tool '${descriptor.definition.function.name}' implementation is incompatible with the package`,
       );
     }
     tools.push({ descriptor, tool: resolved });
@@ -1164,10 +1291,24 @@ function validatePortableTool(
 ): void {
   const field = `agent.tools[${index}]`;
   if (!isRecord(value)) throw new AgentPackageCompatibilityError(`${field} must be an object`);
-  assertOnlyKeys(value, ['definition', 'placement', 'namespace', 'category', 'tags'], field);
+  assertOnlyKeys(value, [
+    'definition', 'placement', 'permission', 'implementationFingerprint',
+    'namespace', 'category', 'tags',
+  ], field);
   if (value.placement !== 'local' && value.placement !== 'remote') {
     throw new AgentPackageCompatibilityError(`${field}.placement must be 'local' or 'remote'`);
   }
+  assertBoundedString(
+    value.implementationFingerprint,
+    `${field}.implementationFingerprint`,
+    MAX_METADATA_STRING_LENGTH,
+  );
+  if (!/^sha256:[a-f0-9]{64}$/.test(value.implementationFingerprint)) {
+    throw new AgentPackageCompatibilityError(
+      `${field}.implementationFingerprint must be a SHA-256 fingerprint`,
+    );
+  }
+  if (value.permission !== undefined) validatePortableToolPermission(value.permission, field);
   if (!isRecord(value.definition)) {
     throw new AgentPackageCompatibilityError(`${field}.definition must be an object`);
   }
@@ -1224,6 +1365,61 @@ function validatePortableTool(
       assertBoundedString(tag, `${field}.tags[]`, MAX_METADATA_STRING_LENGTH);
     }
   }
+  if (value.placement === 'remote') {
+    const expectedFingerprint = createPortableToolDefinitionFingerprint(
+      value.definition as unknown as PortableToolDescriptor['definition'],
+    );
+    if (value.implementationFingerprint !== expectedFingerprint) {
+      throw new AgentPackageCompatibilityError(
+        `${field}.implementationFingerprint does not match its remote tool definition`,
+      );
+    }
+  }
+}
+
+function validatePortableToolPermission(value: unknown, toolField: string): void {
+  const field = `${toolField}.permission`;
+  if (!isRecord(value)) throw new AgentPackageCompatibilityError(`${field} must be an object`);
+  assertOnlyKeys(
+    value,
+    ['scope', 'riskLevel', 'approvalMessage', 'sensitiveArgs', 'sessionTTLMs'],
+    field,
+  );
+  if (value.scope !== undefined
+    && value.scope !== 'once'
+    && value.scope !== 'session'
+    && value.scope !== 'always'
+    && value.scope !== 'never') {
+    throw new AgentPackageCompatibilityError(`${field}.scope is unsupported`);
+  }
+  if (value.riskLevel !== undefined
+    && value.riskLevel !== 'low'
+    && value.riskLevel !== 'medium'
+    && value.riskLevel !== 'high'
+    && value.riskLevel !== 'critical') {
+    throw new AgentPackageCompatibilityError(`${field}.riskLevel is unsupported`);
+  }
+  if (value.approvalMessage !== undefined) {
+    assertBoundedString(
+      value.approvalMessage,
+      `${field}.approvalMessage`,
+      MAX_METADATA_STRING_LENGTH,
+    );
+  }
+  if (value.sensitiveArgs !== undefined) {
+    if (!Array.isArray(value.sensitiveArgs) || value.sensitiveArgs.length > MAX_TAGS_PER_TOOL) {
+      throw new AgentPackageCompatibilityError(
+        `${field}.sensitiveArgs must be an array of at most ${MAX_TAGS_PER_TOOL} entries`,
+      );
+    }
+    for (const arg of value.sensitiveArgs) {
+      assertBoundedString(arg, `${field}.sensitiveArgs[]`, MAX_METADATA_STRING_LENGTH);
+    }
+  }
+  assertOptionalFiniteNumber(value.sessionTTLMs, `${field}.sessionTTLMs`, {
+    integer: true,
+    min: 1,
+  });
 }
 
 function validateRealtimeProfile(value: unknown): void {
@@ -1328,6 +1524,11 @@ function stableJson(value: unknown): string {
     ).join(',')}}`;
   }
   return JSON.stringify(value) ?? 'null';
+}
+
+/** Canonicalize with JSON wire semantics before sorting object keys. */
+function stableWireJson(value: unknown): string {
+  return stableJson(cloneJson(value));
 }
 
 function cloneJson<T>(value: T): T {

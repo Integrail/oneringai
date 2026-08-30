@@ -370,6 +370,38 @@ describe('createProvider', () => {
       );
     });
 
+    it('passes validated runtime OpenAI API key providers without resolving them eagerly', async () => {
+      const getApiKey = vi.fn(async () => 'fresh-key');
+      Connector.create({
+        name: 'openai-runtime-key',
+        vendor: Vendor.OpenAI,
+        auth: { type: 'api_key_provider', getApiKey },
+      });
+
+      createProvider(Connector.get('openai-runtime-key'));
+
+      expect(getApiKey).not.toHaveBeenCalled();
+      const config = MockOpenAITextProvider.mock.calls.at(-1)?.[0];
+      expect(config?.apiKeyProvider).toEqual(expect.any(Function));
+      expect(config?.apiKeyProvider).not.toBe(getApiKey);
+      await expect(config?.apiKeyProvider()).resolves.toBe('fresh-key');
+      expect(getApiKey).toHaveBeenCalledOnce();
+    });
+
+    it('rejects empty runtime OpenAI API keys before the SDK receives them', async () => {
+      Connector.create({
+        name: 'openai-empty-runtime-key',
+        vendor: Vendor.OpenAI,
+        auth: { type: 'api_key_provider', getApiKey: async () => '   ' },
+      });
+
+      createProvider(Connector.get('openai-empty-runtime-key'));
+      const config = MockOpenAITextProvider.mock.calls.at(-1)?.[0];
+      await expect(config?.apiKeyProvider()).rejects.toThrow(
+        "Connector 'openai-empty-runtime-key' API key provider returned an empty key",
+      );
+    });
+
     it('should pass baseURL from connector', () => {
       Connector.create({
         name: 'openai-baseurl',

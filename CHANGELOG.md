@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rotating host credentials.** Runtime-only `api_key_provider` connector auth
+  resolves and validates a fresh API key for OpenAI text, image, audio, video,
+  and embedding SDK requests, and once per Codex SDK session. Connector
+  persistence rejects this host-local callback form.
+- **Portable executable compatibility.** Protocol v2 fingerprints local tool
+  implementations, requires explicit shared fingerprints for custom local
+  tools, automatically fingerprints generated built-ins against runtime source,
+  canonicalizes definitions and generated source hashes across JSON and host
+  platforms, verifies remote definition fingerprints, and lets the receiving
+  host supply authoritative per-tool permissions while retaining packaged
+  permission metadata as information only. Dynamic prompt descriptions remain
+  host-local presentation data. Version 1 and 2 peers require a coordinated
+  rollout and cannot share a tool-server session.
 - **Explicit semantic context rollover.** `Agent.rolloverContext()` and
   `AgentContextNextGen.rollover()` compact an older conversation prefix at a
   provider-session boundary while preserving recent turns, tool pairs, plugin

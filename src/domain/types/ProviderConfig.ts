@@ -10,6 +10,12 @@ export interface APIKeyAuth {
   apiKey: string;
 }
 
+/** Runtime-only OpenAI API key provider. */
+export interface APIKeyProviderAuth {
+  type: 'api_key_provider';
+  getApiKey: () => Promise<string>;
+}
+
 export interface BaseProviderConfig {
   apiKey: string;
   baseURL?: string;
@@ -23,7 +29,7 @@ export interface BaseProviderConfig {
  * Supports both legacy apiKey and new auth structure
  */
 export interface OpenAIMediaConfig {
-  auth: APIKeyAuth;
+  auth: APIKeyAuth | APIKeyProviderAuth;
   baseURL?: string;
   organization?: string;
   timeout?: number;
@@ -53,6 +59,7 @@ export interface GrokMediaConfig {
 }
 
 export interface OpenAIConfig extends BaseProviderConfig {
+  apiKeyProvider?: () => Promise<string>;
   organization?: string;
   project?: string;
 }

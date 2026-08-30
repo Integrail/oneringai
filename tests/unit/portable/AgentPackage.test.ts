@@ -3,12 +3,16 @@ import { Agent } from '../../../src/core/Agent.js';
 import { Connector } from '../../../src/core/Connector.js';
 import { Vendor } from '../../../src/core/Vendor.js';
 import type { ToolFunction } from '../../../src/domain/entities/Tool.js';
+import { executeJavaScript } from '../../../src/tools/code/executeJavaScript.js';
+import { jsonManipulator } from '../../../src/tools/json/jsonManipulator.js';
 import {
   AGENT_PACKAGE_PROTOCOL_VERSION,
   AgentPackageCompatibilityError,
   AgentPackageToolServer,
   type AgentPackageContextFactory,
   assertAgentPackageCompatible,
+  createPortableToolImplementationFingerprint,
+  createResolvedLocalTool,
   createRemoteTool,
   exportAgentPackage,
   hydrateAgentPackage,
@@ -29,6 +33,15 @@ const localTool: ToolFunction = {
     },
   },
   execute: async ({ value }) => ({ local: value }),
+};
+
+const localToolFingerprint = createPortableToolImplementationFingerprint(
+  localTool.definition,
+  'tests:local_echo:v1',
+);
+const resolvedLocalTool = {
+  tool: localTool,
+  implementationFingerprint: localToolFingerprint,
 };
 
 const remoteTool: ToolFunction = {
@@ -89,6 +102,11 @@ describe('portable agent packages', () => {
     vi.clearAllMocks();
   });
 
+  it('requires a non-empty implementation ID for custom local fingerprints', () => {
+    expect(() => createPortableToolImplementationFingerprint(localTool.definition, '   '))
+      .toThrow('implementationId must be a non-empty string');
+  });
+
   it('hydrates the effective agent with local and session-bound remote tools', async () => {
     const sourceConnector = Connector.create({
       name: 'server-openai',
@@ -139,6 +157,9 @@ describe('portable agent packages', () => {
       packageId: 'pkg-1',
       revision: 7,
       toolPlacement: (name) => name === 'local_echo' ? 'local' : 'remote',
+      toolImplementationFingerprint: (name) => name === 'local_echo'
+        ? localToolFingerprint
+        : undefined,
       realtime: {
         provider: 'openai',
         connectorName: 'server-openai',
@@ -155,7 +176,7 @@ describe('portable agent packages', () => {
       contextFactory: trustedContextFactory,
       userId: 'desktop-user',
       localToolResolver: (descriptor) => descriptor.definition.function.name === 'local_echo'
-        ? localTool
+        ? resolvedLocalTool
         : undefined,
       remoteToolTransport: remoteTransport,
       agentConfig: {
@@ -200,7 +221,7 @@ describe('portable agent packages', () => {
       contextFactory: trustedContextFactory,
       userId: 'desktop-user',
       localToolResolver: (descriptor) => descriptor.definition.function.name === 'local_echo'
-        ? localTool
+        ? resolvedLocalTool
         : undefined,
       remoteToolTransport: remoteTransport,
     });
@@ -215,7 +236,7 @@ describe('portable agent packages', () => {
       contextFactory: trustedContextFactory,
       userId: 'desktop-user',
       localToolResolver: (descriptor) => descriptor.definition.function.name === 'local_echo'
-        ? localTool
+        ? resolvedLocalTool
         : undefined,
       remoteToolTransport: remoteTransport,
     });
@@ -248,8 +269,12 @@ describe('portable agent packages', () => {
       model: 'gpt-5.6-terra',
       tools: [localTool],
     });
+    expect(() => exportAgentPackage(source, {
+      toolPlacement: () => 'local',
+    })).toThrow("Local tool 'local_echo' requires an authoritative implementation fingerprint");
     const packageValue = exportAgentPackage(source, {
       toolPlacement: (name) => name === 'local_echo' ? 'local' : 'omit',
+      toolImplementationFingerprint: () => localToolFingerprint,
     });
 
     await expect(hydrateAgentPackage(packageValue, {
@@ -269,6 +294,23 @@ describe('portable agent packages', () => {
       permissions: {},
       contextFactory: trustedContextFactory,
     })).rejects.toBeInstanceOf(AgentPackageCompatibilityError);
+
+    source.destroy();
+  });
+
+  it('rejects a remote definition whose fingerprint was not updated', () => {
+    const connector = Connector.create({
+      name: 'portable-remote-fingerprint',
+      vendor: Vendor.OpenAI,
+      auth: { type: 'api_key', apiKey: 'test' },
+    });
+    const source = Agent.create({ connector, model: 'source-model', tools: [remoteTool] });
+    const packageValue = exportAgentPackage(source);
+    packageValue.agent.tools[0]!.definition.function.description = 'Mutated after export';
+
+    expect(() => assertAgentPackageCompatible(packageValue)).toThrow(
+      'implementationFingerprint does not match its remote tool definition',
+    );
 
     source.destroy();
   });
@@ -721,20 +763,30 @@ describe('portable agent packages', () => {
       vendor: Vendor.OpenAI,
       auth: { type: 'api_key', apiKey: 'test' },
     });
-    const source = Agent.create({ connector, model: 'source-model', tools: [remoteTool] });
-    const packageValue = exportAgentPackage(source, { toolPlacement: () => 'remote' });
+    const source = Agent.create({ connector, model: 'source-model', tools: [localTool] });
+    const packageValue = exportAgentPackage(source, {
+      toolPlacement: () => 'local',
+      toolImplementationFingerprint: () => localToolFingerprint,
+    });
     packageValue.agent.tools[0]!.definition.function.name = 'store_set';
+    const collidingTool: ToolFunction = {
+      ...localTool,
+      definition: {
+        ...localTool.definition,
+        function: { ...localTool.definition.function, name: 'store_set' },
+      },
+    };
 
     await expect(hydrateAgentPackage(packageValue, {
       connector,
       model: 'trusted-model',
       permissions: {},
       contextFactory: trustedContextFactory,
-      remoteToolTransport: { execute: vi.fn() },
+      localToolResolver: () => ({
+        tool: collidingTool,
+        implementationFingerprint: localToolFingerprint,
+      }),
     })).rejects.toThrow("Portable tool 'store_set' conflicts with a trusted host tool");
-    expect(() => new AgentPackageToolServer(source, packageValue)).toThrow(
-      "Remote tool 'store_set' conflicts with a source context tool",
-    );
 
     source.destroy();
   });
@@ -746,7 +798,10 @@ describe('portable agent packages', () => {
       auth: { type: 'api_key', apiKey: 'test' },
     });
     const source = Agent.create({ connector, model: 'source-model', tools: [localTool] });
-    const packageValue = exportAgentPackage(source, { toolPlacement: () => 'local' });
+    const packageValue = exportAgentPackage(source, {
+      toolPlacement: () => 'local',
+      toolImplementationFingerprint: () => localToolFingerprint,
+    });
 
     await expect(hydrateAgentPackage(packageValue, undefined as any)).rejects.toThrow(
       'Trusted hydration options are required',
@@ -755,18 +810,18 @@ describe('portable agent packages', () => {
       connector,
       permissions: {},
       contextFactory: trustedContextFactory,
-      localToolResolver: () => localTool,
+      localToolResolver: () => resolvedLocalTool,
     } as any)).rejects.toThrow('resolved model must be a non-empty string');
     await expect(hydrateAgentPackage(packageValue, {
       connector,
       model: 'trusted-model',
-      localToolResolver: () => localTool,
+      localToolResolver: () => resolvedLocalTool,
     } as any)).rejects.toThrow('Trusted host permissions are required');
     await expect(hydrateAgentPackage(packageValue, {
       connector,
       model: 'trusted-model',
       permissions: {},
-      localToolResolver: () => localTool,
+      localToolResolver: () => resolvedLocalTool,
     } as any)).rejects.toThrow('Trusted host contextFactory is required');
 
     const hydrated = await hydrateAgentPackage(packageValue, {
@@ -774,10 +829,211 @@ describe('portable agent packages', () => {
       model: 'trusted-model',
       permissions: { autoApproveAll: true, blocklist: ['local_echo'] },
       contextFactory: trustedContextFactory,
-      localToolResolver: () => localTool,
+      localToolResolver: () => resolvedLocalTool,
     });
     expect(hydrated.model).toBe('trusted-model');
     expect(hydrated.toolIsBlocked('local_echo')).toBe(true);
+
+    hydrated.destroy();
+    source.destroy();
+  });
+
+  it('treats packaged permissions as informational and rejects mismatched local implementations', async () => {
+    const connector = Connector.create({
+      name: 'trusted-tool-policy',
+      vendor: Vendor.OpenAI,
+      auth: { type: 'api_key', apiKey: 'test' },
+    });
+    const declaredSafe = { ...localTool, permission: { scope: 'always' as const } };
+    const source = Agent.create({
+      connector,
+      model: 'source-model',
+      tools: [declaredSafe],
+    });
+    const packageValue = exportAgentPackage(source, {
+      toolPlacement: () => 'local',
+      toolImplementationFingerprint: () => localToolFingerprint,
+    });
+    expect(packageValue.agent.tools[0]?.permission?.scope).toBe('always');
+
+    const hydrated = await hydrateAgentPackage(packageValue, {
+      connector,
+      model: 'trusted-model',
+      permissions: { autoApproveAll: true },
+      contextFactory: trustedContextFactory,
+      localToolResolver: () => resolvedLocalTool,
+      toolPermissionResolver: () => ({ scope: 'once', riskLevel: 'high' }),
+    });
+    expect(hydrated.tools.getRegistration('local_echo')?.permission).toEqual({
+      scope: 'once',
+      riskLevel: 'high',
+    });
+    hydrated.destroy();
+
+    await expect(hydrateAgentPackage(packageValue, {
+      connector,
+      model: 'trusted-model',
+      permissions: {},
+      contextFactory: trustedContextFactory,
+      localToolResolver: () => localTool as never,
+    })).rejects.toThrow('resolver must return a ResolvedLocalTool');
+
+    const incompatibleLocalTool: ToolFunction = {
+      ...localTool,
+      execute: async ({ value }) => ({ replaced: value }),
+    };
+    await expect(hydrateAgentPackage(packageValue, {
+      connector,
+      model: 'trusted-model',
+      permissions: {},
+      contextFactory: trustedContextFactory,
+      localToolResolver: () => ({
+        tool: incompatibleLocalTool,
+        implementationFingerprint: createPortableToolImplementationFingerprint(
+          incompatibleLocalTool.definition,
+          'tests:local_echo:v2',
+        ),
+      }),
+    })).rejects.toThrow("Local tool 'local_echo' implementation is incompatible");
+
+    const incompatibleDefinitionTool: ToolFunction = {
+      ...localTool,
+      definition: {
+        ...localTool.definition,
+        function: {
+          ...localTool.definition.function,
+          parameters: {
+            type: 'object',
+            properties: { value: { type: 'number' } },
+            required: ['value'],
+            additionalProperties: false,
+          },
+        },
+      },
+    };
+    await expect(hydrateAgentPackage(packageValue, {
+      connector,
+      model: 'trusted-model',
+      permissions: {},
+      contextFactory: trustedContextFactory,
+      localToolResolver: () => ({
+        tool: incompatibleDefinitionTool,
+        implementationFingerprint: localToolFingerprint,
+      }),
+    })).rejects.toThrow("Local tool 'local_echo' definition is incompatible");
+
+    const malformed = structuredClone(packageValue) as any;
+    malformed.agent.tools[0].permission = { scope: 'sometimes' };
+    expect(() => assertAgentPackageCompatible(malformed)).toThrow('permission.scope');
+    source.destroy();
+  });
+
+  it('fingerprints generated built-in local tools automatically', async () => {
+    const connector = Connector.create({
+      name: 'portable-built-in',
+      vendor: Vendor.OpenAI,
+      auth: { type: 'api_key', apiKey: 'test' },
+    });
+    const source = Agent.create({
+      connector,
+      model: 'source-model',
+      tools: [jsonManipulator],
+    });
+
+    const packageValue = exportAgentPackage(source, { toolPlacement: () => 'local' });
+    const resolution = createResolvedLocalTool(jsonManipulator);
+    expect(packageValue.agent.tools[0]?.implementationFingerprint)
+      .toBe(resolution.implementationFingerprint);
+
+    const hydrated = await hydrateAgentPackage(packageValue, {
+      connector,
+      model: 'trusted-model',
+      permissions: {},
+      contextFactory: trustedContextFactory,
+      localToolResolver: () => resolution,
+    });
+    expect(hydrated.listTools()).toContain('json_manipulate');
+
+    hydrated.destroy();
+    source.destroy();
+  });
+
+  it('hydrates built-ins whose descriptions are generated from host context', async () => {
+    const connector = Connector.create({
+      name: 'portable-dynamic-description',
+      vendor: Vendor.OpenAI,
+      auth: { type: 'api_key', apiKey: 'test' },
+    });
+    const source = Agent.create({
+      connector,
+      model: 'source-model',
+      tools: [executeJavaScript],
+    });
+
+    const packageValue = exportAgentPackage(source, { toolPlacement: () => 'local' });
+    const resolution = createResolvedLocalTool(executeJavaScript);
+    expect(packageValue.agent.tools[0]?.definition.function.description)
+      .not.toBe(executeJavaScript.definition.function.description);
+    expect(packageValue.agent.tools[0]?.implementationFingerprint)
+      .toBe(resolution.implementationFingerprint);
+
+    const hydrated = await hydrateAgentPackage(packageValue, {
+      connector,
+      model: 'trusted-model',
+      permissions: {},
+      contextFactory: trustedContextFactory,
+      localToolResolver: () => resolution,
+    });
+    expect(hydrated.listTools()).toContain('execute_javascript');
+
+    hydrated.destroy();
+    source.destroy();
+  });
+
+  it('canonicalizes optional undefined definition fields like the JSON wire', async () => {
+    const connector = Connector.create({
+      name: 'portable-optional-definition',
+      vendor: Vendor.OpenAI,
+      auth: { type: 'api_key', apiKey: 'test' },
+    });
+    const optionalDefinitionTool: ToolFunction = {
+      definition: {
+        type: 'function',
+        function: {
+          name: 'optional_definition',
+          description: undefined,
+          parameters: { type: 'object', properties: {} },
+        },
+      },
+      execute: async () => ({ ok: true }),
+    };
+    const fingerprint = createPortableToolImplementationFingerprint(
+      optionalDefinitionTool.definition,
+      'tests:optional_definition:v1',
+    );
+    const source = Agent.create({
+      connector,
+      model: 'source-model',
+      tools: [optionalDefinitionTool],
+    });
+    const packageValue = exportAgentPackage(source, {
+      toolPlacement: () => 'local',
+      toolImplementationFingerprint: () => fingerprint,
+    });
+    expect(packageValue.agent.tools[0]?.definition.function)
+      .not.toHaveProperty('description');
+
+    const hydrated = await hydrateAgentPackage(packageValue, {
+      connector,
+      model: 'trusted-model',
+      permissions: {},
+      contextFactory: trustedContextFactory,
+      localToolResolver: () => ({
+        tool: optionalDefinitionTool,
+        implementationFingerprint: fingerprint,
+      }),
+    });
+    expect(hydrated.listTools()).toContain('optional_definition');
 
     hydrated.destroy();
     source.destroy();
@@ -790,13 +1046,16 @@ describe('portable agent packages', () => {
       auth: { type: 'api_key', apiKey: 'test' },
     });
     const source = Agent.create({ connector, model: 'source-model', tools: [localTool] });
-    const packageValue = exportAgentPackage(source, { toolPlacement: () => 'local' });
+    const packageValue = exportAgentPackage(source, {
+      toolPlacement: () => 'local',
+      toolImplementationFingerprint: () => localToolFingerprint,
+    });
     const hydrate = (value: unknown) => hydrateAgentPackage(value as any, {
       connector,
       model: 'trusted-model',
       permissions: {},
       contextFactory: trustedContextFactory,
-      localToolResolver: () => localTool,
+      localToolResolver: () => resolvedLocalTool,
     });
 
     await expect(hydrate({ ...packageValue, expiresAt: 'not-a-date' })).rejects.toThrow(

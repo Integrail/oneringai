@@ -178,6 +178,7 @@ export type {
   ConnectorAuth,
   OAuthConnectorAuth,
   APIKeyConnectorAuth,
+  APIKeyProviderConnectorAuth,
   JWTConnectorAuth,
 } from '../domain/entities/Connector.js';
 

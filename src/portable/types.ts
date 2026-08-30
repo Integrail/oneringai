@@ -7,10 +7,11 @@ import type {
 } from '../core/context-nextgen/types.js';
 import type { Connector } from '../core/Connector.js';
 import type { FunctionToolDefinition, ToolFunction } from '../domain/entities/Tool.js';
+import type { ToolPermissionConfig } from '../domain/entities/Tool.js';
 import type { SerializedContextState } from '../domain/interfaces/IContextStorage.js';
 
 /** Wire compatibility version for portable agent packages and remote tool calls. */
-export const AGENT_PACKAGE_PROTOCOL_VERSION = 1 as const;
+export const AGENT_PACKAGE_PROTOCOL_VERSION = 2 as const;
 
 export type AgentPackageProtocolVersion = typeof AGENT_PACKAGE_PROTOCOL_VERSION;
 
@@ -31,6 +32,13 @@ export type PortableAgentRuntimeConfig = Omit<
 export interface PortableToolDescriptor {
   definition: FunctionToolDefinition;
   placement: PortableToolPlacement;
+  /** Informational only. Hydration ignores this unless a trusted host resolves it. */
+  permission?: ToolPermissionConfig;
+  /**
+   * Local tools identify the executable selected by the trusted host; remote
+   * tools carry a canonical definition fingerprint for wire consistency.
+   */
+  implementationFingerprint: string;
   namespace?: string;
   category?: string;
   tags?: string[];
@@ -95,6 +103,15 @@ export interface ExportAgentPackageOptions {
   instructionTemplate?: string;
   /** Tools default to remote because executable functions cannot cross a wire. */
   toolPlacement?: PortableToolPlacementResolver;
+  /**
+   * Supply the authoritative implementation fingerprint for custom local tools.
+   * Generated built-ins are fingerprinted automatically; remote tools do not
+   * require an implementation-specific value.
+   */
+  toolImplementationFingerprint?: (
+    toolName: string,
+    definition: FunctionToolDefinition,
+  ) => string | undefined;
   /** Override the plugin set that the receiving context must provide. */
   pluginNames?: string[];
 }
@@ -111,9 +128,19 @@ export type AgentPackageContextFactory = (
   input: AgentPackageContextFactoryInput,
 ) => AgentContextNextGen | AgentContextNextGenConfig | Promise<AgentContextNextGen | AgentContextNextGenConfig>;
 
+export interface ResolvedLocalTool {
+  tool: ToolFunction;
+  /** Must match the fingerprint selected by the exporting runtime. */
+  implementationFingerprint: string;
+}
+
 export type LocalToolResolver = (
   descriptor: PortableToolDescriptor,
-) => ToolFunction | undefined | Promise<ToolFunction | undefined>;
+) => ResolvedLocalTool | undefined | Promise<ResolvedLocalTool | undefined>;
+
+export type PortableToolPermissionResolver = (
+  descriptor: PortableToolDescriptor,
+) => ToolPermissionConfig | undefined;
 
 /** Trusted connector and model selected by the receiving application host. */
 export interface AgentPackageConnectorResolution {
@@ -127,6 +154,8 @@ interface HydrateAgentPackageBaseOptions {
   userId?: string;
   identities?: AuthIdentity[];
   localToolResolver?: LocalToolResolver;
+  /** Trusted policy resolver. Descriptor permission data is never applied directly. */
+  toolPermissionResolver?: PortableToolPermissionResolver;
   remoteToolTransport?: RemoteToolTransport;
   /**
    * Required host-owned context policy. Package feature flags and plugin names

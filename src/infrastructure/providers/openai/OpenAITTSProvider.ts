@@ -14,6 +14,7 @@ import type {
 import type { AudioFormat } from '../../../domain/types/SharedTypes.js';
 import type { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
 import type { OpenAIMediaConfig } from '../../../domain/types/ProviderConfig.js';
+import { resolveOpenAIBaseProviderKey, resolveOpenAISDKAPIKey } from './OpenAIAuth.js';
 import type { IVoiceInfo } from '../../../domain/entities/SharedVoices.js';
 import { OPENAI_VOICES } from '../../../domain/entities/SharedVoices.js';
 import {
@@ -38,10 +39,10 @@ export class OpenAITTSProvider extends BaseMediaProvider implements IStreamingTe
   private client: OpenAI;
 
   constructor(config: OpenAIMediaConfig) {
-    super({ apiKey: config.auth.apiKey, ...config });
+    super({ apiKey: resolveOpenAIBaseProviderKey(config), ...config });
 
     this.client = new OpenAI({
-      apiKey: config.auth.apiKey,
+      apiKey: resolveOpenAISDKAPIKey(config),
       baseURL: config.baseURL,
       organization: config.organization,
       timeout: config.timeout ?? 60000,
