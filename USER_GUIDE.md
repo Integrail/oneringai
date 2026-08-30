@@ -1,6 +1,6 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 1.1.2
+**Version:** 1.1.3
 **Last Updated:** 2026-08-30
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
@@ -9,6 +9,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 
 ## Table of Contents
 
+- [Upgrading to 1.1.3](#upgrading-to-113) — refreshed model registries, lifecycle metadata, pricing, and provider defaults
 - [Upgrading to 1.1.2](#upgrading-to-112) — context rollover, portable protocol v2, rotating OpenAI credentials, and the runtime baseline
 - [Upgrading to 1.1.1](#upgrading-to-111) — portable Agents, Agent-aware Realtime, and WebRTC call metadata
 - [Portable Agent Packages](#portable-agent-packages) — trusted-host hydration with local and remote tools
@@ -154,6 +155,20 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 38. [Production Deployment](#production-deployment)
 
 ---
+
+## Upgrading to 1.1.3
+
+OneRingAI 1.1.3 updates the text, image, video, speech, and embedding model
+registries against current vendor documentation. Public APIs remain
+source-compatible. Registry-driven model selection now prefers current models
+and excludes retired entries, while callable deprecated models retain explicit
+deprecation and retirement dates.
+
+Sora 2 and Sora 2 Pro remain callable and are marked deprecated until OpenAI's
+Videos API shutdown on September 24, 2026. Applications with explicit Sora
+configuration should migrate before that date. See the
+[model registry audit](./docs/MODEL_REGISTRY_AUDIT.md) for the complete vendor,
+model, lifecycle, and validation record.
 
 ## Upgrading to 1.1.2
 
@@ -18138,4 +18153,4 @@ MIT License - see LICENSE file for details.
 ---
 
 **Last Updated:** 2026-08-30
-**Version:** 1.1.2
+**Version:** 1.1.3

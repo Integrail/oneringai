@@ -6,39 +6,32 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22.13%2B%20%7C%2024%2B-green.svg)](https://nodejs.org/)
 
-## What's new in v1.1.2
+## What's new in v1.1.3
 
-Version 1.1.2 strengthens long-lived and distributed Agent execution. It adds
-an explicit semantic rollover for provider-session boundaries, upgrades
-portable Agent packages to an executable-compatibility protocol, and supports
-runtime-only rotating credentials throughout the OpenAI stack.
+Version 1.1.3 refreshes OneRingAI's vendor-neutral model catalog against the
+official OpenAI, Anthropic, Google, xAI, DeepSeek, Groq, Mistral, and Ollama
+documentation as of August 30, 2026.
 
-| Area | 1.1.2 outcome |
+| Area | 1.1.3 outcome |
 |------|---------------|
-| Context rollover | `Agent.rolloverContext()` summarizes the older prefix while preserving recent turns, complete tool pairs, plugin state, the history journal, and configured session storage |
-| Portable Agents | Protocol v2 verifies local executable fingerprints and remote definitions instead of trusting matching names or schemas |
-| Host-owned policy | Package permission metadata stays informational; a trusted `toolPermissionResolver` supplies the effective receiving-host policy |
-| Rotating credentials | OpenAI text, image, audio, video, embeddings, and Codex sessions support runtime-only `api_key_provider` connectors |
-| Runtime baseline | Provider, MCP, document, WebSocket, build, and test dependencies are refreshed; supported Node releases are 22.13+ and 24+ |
+| Text models | Adds current Gemini 3.7, Grok 4.6, and DeepSeek V4 variants; refreshes pricing, context limits, endpoint support, preferred models, and lifecycle metadata |
+| Images and video | Adds Gemini Omni 1.1 Flash and Grok Imagine Image 2.0; updates Google and xAI defaults and retires elapsed image models |
+| Speech and embeddings | Adds Gemini 3.5 Transcribe/Live, Groq Whisper Turbo, Codestral Embed, EmbeddingGemma, and All MiniLM |
+| OpenAI migrations | Retired aliases no longer drive runtime defaults; Sora 2 and Sora 2 Pro remain callable but deprecated until the Videos API shutdown on September 24, 2026 |
+| Auditability | Every registry records verified official sources, and the release includes a consolidated model-registry audit |
 
 ### Upgrade notes
 
-- Existing connector-first `Agent` and `AgentRuntime` applications remain
-  source-compatible. Use rollover only at a completed provider-session
-  boundary, after releasing any active external-execution lease.
-- Portable package and remote-tool protocol v2 is intentionally incompatible
-  with v1. Upgrade exporting servers and receiving hosts together. Custom local
-  tools need a shared implementation ID; generated built-ins are fingerprinted
-  automatically.
-- `api_key_provider` is currently OpenAI-only, is resolved per SDK request
-  (once per Codex SDK session), and cannot be persisted by
-  `ConnectorConfigStore`.
-- Node.js 22 users must run 22.13.0 or newer. Node.js 23 and other non-LTS major
-  versions are outside the declared engine range; Node.js 24+ is supported.
+- Existing connector-first `Agent`, Agent Runtime, and multimodal integrations
+  remain source-compatible.
+- Applications selecting models by registry metadata automatically avoid
+  retired entries. Explicitly configured deprecated models remain available
+  only while their vendors continue serving them.
+- Migrate Sora workloads before September 24, 2026; OpenAI has not announced a
+  direct replacement for the Videos API.
 
-Read the [complete 1.1.2 release notes](./CHANGELOG.md#112--2026-08-30),
-the [upgrade guide](./USER_GUIDE.md#upgrading-to-112), and the
-[distributed execution design](./docs/designs/DISTRIBUTED_AGENT_EXECUTION.md).
+Read the [complete 1.1.3 release notes](./CHANGELOG.md#113--2026-08-30) and the
+[model registry audit](./docs/MODEL_REGISTRY_AUDIT.md).
 The preview [Agent Runtime guide](./USER_GUIDE.md#agent-runtime-preview)
 continues to cover complete OneRingAI and Codex SDK agent runtimes.
 
@@ -207,7 +200,7 @@ plugin lifecycle, stores, compaction, persistence, and custom plugins.
 
 ## Table of Contents
 
-- [What's new in v1.1.2](#whats-new-in-v112)
+- [What's new in v1.1.3](#whats-new-in-v113)
 - [Upgrade notes](#upgrade-notes)
 - [Built for coding agents](#built-for-coding-agents)
 - [Agent Runtime: run complete agents through one API](#agent-runtime-run-complete-agents-through-one-api)
@@ -3501,4 +3494,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 1.1.2 | **Last Updated:** 2026-08-30 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 1.1.3 | **Last Updated:** 2026-08-30 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**

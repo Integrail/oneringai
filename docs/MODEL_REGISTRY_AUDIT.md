@@ -1,6 +1,6 @@
 # Model Registry and Provider API Audit — 2026-08-30
 
-**Release:** 1.1.2 registry refresh
+**Release:** 1.1.3 registry refresh
 
 This audit covers every vendor represented in OneRingAI's model registries:
 OpenAI, Anthropic, Google, xAI, DeepSeek, Groq, Mistral, and Ollama. It includes
