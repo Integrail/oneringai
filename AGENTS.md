@@ -10,7 +10,7 @@ the documentation links near the end instead of guessing an API.
 ## Fast facts
 
 - Package: `@everworker/oneringai`
-- Runtime: Node.js 22+
+- Runtime: Node.js 22.13+ or 24+
 - Language: strict TypeScript
 - Package format: ESM with ESM and CJS build outputs
 - Public API: import from `@everworker/oneringai` unless a documented subpath is
@@ -488,5 +488,5 @@ path. Never add or print secrets to make them pass.
 
 ---
 
-Version: 1.1.1 | Runtime: Node.js 22+ | Architecture: Connector-first +
+Version: 1.1.2 | Runtime: Node.js 22.13+ or 24+ | Architecture: Connector-first +
 NextGen context

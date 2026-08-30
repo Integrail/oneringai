@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] — 2026-08-30
+
+Version 1.1.2 strengthens long-lived provider sessions, distributed Agent
+packages, and host-managed OpenAI credentials. Existing connector-first Agent
+and Agent Runtime applications remain source-compatible. Portable package peers
+must upgrade together because the wire protocol moves from version 1 to 2.
+
 ### Added
 
 - **Rotating host credentials.** Runtime-only `api_key_provider` connector auth
@@ -26,7 +33,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AgentContextNextGen.rollover()` compact an older conversation prefix at a
   provider-session boundary while preserving recent turns, tool pairs, plugin
   state, and the append-only history journal. Agent-level rollover shares the
-  normal execution lease and checkpoints configured session storage.
+  normal execution lease, uses a tool-free configured-model summary by default,
+  checkpoints configured session storage, reports detailed token/item counts,
+  and emits `context:rolled_over` after an atomic commit.
+
+### Changed
+
+- **Portable package protocol v2.** `LocalToolResolver` now returns a
+  `ResolvedLocalTool`; custom local exports provide a stable shared
+  implementation ID through `toolImplementationFingerprint`, while generated
+  built-ins can use `createResolvedLocalTool()`. Portable descriptors now carry
+  `implementationFingerprint`, optional informational permission metadata, and
+  canonical remote-definition validation. Protocol v1 and v2 peers reject one
+  another by design.
+- **Trusted receiving hosts own portable permissions.** Hydration requires the
+  existing host Agent permission system and applies per-tool overrides only
+  when a trusted `toolPermissionResolver` returns them. Package data never
+  grants tool authority.
+- **Runtime and dependency baseline.** The supported engine range is now
+  Node.js `^22.13.0 || >=24.0.0`. Direct dependencies move to Google Gen AI
+  2.19, MCP 1.30, OpenAI 7.8, glob 13, jsdom 29, officeparser 7.8, and ws 8.21;
+  Vitest and its coverage provider move to 3.2.7. Repository overrides pin
+  current patched transitive releases, and install-script allowlisting is
+  explicit.
+
+### Fixed
+
+- **Stable cross-host tool compatibility.** Generated built-in hashes include
+  normalized OneRingAI runtime and tool source, use platform-independent paths
+  and line endings, and are regenerated with the tool registry. JSON-wire
+  canonicalization prevents omitted and `undefined` optionals from producing
+  different fingerprints; dynamic descriptions remain host-local, while
+  callable schemas, blocking mode, and timeouts must match.
+- **Consistent rotating-key use.** All OpenAI SDK-backed text and media
+  providers use the validated runtime callback. The Codex SDK driver resolves
+  connector tokens through `getToken()` and accepts `api_key_provider`, while
+  non-OpenAI providers and connector persistence fail closed for that auth
+  form.
+
+### Migration notes
+
+- Upgrade every Agent-package exporter, receiving host, and remote-tool server
+  in one coordinated rollout. Do not mix protocol versions within a session.
+- For a custom tool placed `local`, use the same stable implementation ID on
+  both hosts with `createPortableToolImplementationFingerprint()` and return
+  `{ tool, implementationFingerprint }` from `localToolResolver`.
+- Treat `descriptor.permission` as display or transport metadata only. Resolve
+  effective policy from trusted host state with `toolPermissionResolver`.
+- End an active Realtime/external execution before calling
+  `agent.rolloverContext()`. Supply a trusted `summarize` callback if the
+  Agent's configured model cannot perform normal text generation.
+- Upgrade Node.js 22 deployments to 22.13.0 or newer. Node.js 24 and later are
+  supported; Node.js 23 is outside the declared range.
 
 ## [1.1.1] — 2026-08-28
 
@@ -3073,7 +3131,8 @@ StorageRegistry.setContext({ userId: currentUser.id });
 [0.1.2]: https://github.com/aantich/oneringai/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/aantich/oneringai/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aantich/oneringai/releases/tag/v0.1.0
-[Unreleased]: https://github.com/aantich/oneringai/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/aantich/oneringai/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/aantich/oneringai/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/aantich/oneringai/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/aantich/oneringai/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/aantich/oneringai/compare/v1.0.0...v1.0.1

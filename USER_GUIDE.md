@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 1.1.1
-**Last Updated:** 2026-08-28
+**Version:** 1.1.2
+**Last Updated:** 2026-08-30
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -9,6 +9,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 
 ## Table of Contents
 
+- [Upgrading to 1.1.2](#upgrading-to-112) — context rollover, portable protocol v2, rotating OpenAI credentials, and the runtime baseline
 - [Upgrading to 1.1.1](#upgrading-to-111) — portable Agents, Agent-aware Realtime, and WebRTC call metadata
 - [Portable Agent Packages](#portable-agent-packages) — trusted-host hydration with local and remote tools
 - [Upgrading to 1.0.0](#upgrading-to-100) — runtime requirements, breaking changes, compatibility guarantees, and migration checklist
@@ -154,6 +155,76 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 
 ---
 
+## Upgrading to 1.1.2
+
+OneRingAI 1.1.2 is a focused release for long provider sessions and portable
+Agent execution across trusted hosts. Normal connector-first Agent and Agent
+Runtime applications remain source-compatible, but portable package peers must
+move to protocol v2 together and Node.js 22 installations must be at least
+22.13.0.
+
+| Change | Who is affected | Required action |
+|--------|-----------------|-----------------|
+| Explicit semantic rollover | Long-lived Realtime or other provider sessions | End the active execution, then call `agent.rolloverContext()` before creating the replacement provider session |
+| Portable protocol v2 | Applications exchanging Agent packages or remote-tool DTOs | Upgrade exporting and receiving runtimes together; do not mix v1 and v2 in one tool-server session |
+| Local executable fingerprints | Portable custom tools placed `local` | Share a stable implementation ID and return a `ResolvedLocalTool`; use `createResolvedLocalTool()` for generated built-ins |
+| Host-owned portable permissions | Receiving portable-Agent hosts | Derive effective per-tool policy with `toolPermissionResolver`; never trust packaged permission metadata directly |
+| Rotating OpenAI credentials | Hosts using short-lived or brokered keys | Use runtime-only `api_key_provider`; keep the callback out of connector persistence |
+| Updated runtime baseline | All Node.js 22 consumers | Run Node.js 22.13.0+ or Node.js 24+; non-LTS Node.js 23 is outside the declared engine range |
+
+Rollover is an explicit provider-session operation, not a replacement for the
+normal token-triggered compaction performed by `prepare()`. The Agent-level API
+uses the configured connector/model for a tool-free continuity summary by
+default, preserves eight recent user turns and complete tool pairs, leaves
+plugin state and the append-only history journal intact, and checkpoints
+configured session storage. Call it only after the old Realtime or external
+session has released the Agent's execution lease:
+
+```typescript
+await oldRealtimeSession.close();
+
+const result = await agent.rolloverContext({
+  preserveRecentTurns: 8,
+  reason: 'provider-session-expiring',
+});
+
+if (result.performed) {
+  console.log({ estimatedNetTokensFreed: result.tokensFreed });
+}
+
+const replacementSession = new OpenAIRealtimeAgentSession({ agent });
+await replacementSession.connect();
+```
+
+If the Agent's configured model cannot make a normal text generation call,
+pass a trusted `summarize` callback backed by a text-capable Agent or server
+proxy. Standalone contexts expose
+`ctx.rollover({ summarize, preserveRecentTurns, reason })` and require the host
+to supply that summarizer.
+
+Portable package version 2 treats executable compatibility separately from the
+JSON tool definition. Custom local tools must use the same stable
+implementation ID on both sides with
+`createPortableToolImplementationFingerprint()`. Generated OneRingAI built-ins
+carry runtime-aware registry fingerprints and can be returned with
+`createResolvedLocalTool(tool)`. Remote definitions carry their own canonical
+fingerprint. A matching tool name or schema alone is insufficient.
+
+Packaged `descriptor.permission` data is informational. Hydration applies a
+per-tool override only when the trusted receiving host returns one from
+`toolPermissionResolver`; the required host-owned Agent permission system still
+governs every execution.
+
+For brokered OpenAI credentials, `api_key_provider` resolves and validates a
+fresh value for text, image, audio, video, and embedding SDK requests. The
+Codex SDK driver resolves it once while opening each Codex session. The auth
+form is OpenAI-only and `ConnectorConfigStore` deliberately rejects it because
+callbacks and runtime secrets are not serializable.
+
+The dependency refresh moves the direct OpenAI SDK baseline to 7.8, Google Gen
+AI to 2.19, MCP to 1.30, and the test runner to Vitest 3.2. Recompile custom
+provider wrappers that consume SDK-native types and run their contract tests.
+
 ## Upgrading to 1.1.1
 
 OneRingAI 1.1.1 is additive. Existing connector-first Agents, the preview Agent
@@ -265,6 +336,13 @@ The RPC host must authenticate and authorize each request before forwarding it
 to `toolServer.execute(request)`. Hydration also rejects a package tool whose
 name collides with a trusted context, identity, or host tool; package tools
 never overwrite host authority.
+
+Packaged `descriptor.permission` values are informational and are never applied
+directly. If a portable tool needs a receiving-host override, provide
+`toolPermissionResolver: (descriptor) => trustedPolicyFor(descriptor)` to
+`hydrateAgentPackage()`. Returning `undefined` leaves the tool without a
+per-tool override; the Agent's required host-owned permission system still
+governs execution.
 
 The package and remote-tool protocol require exact JSON objects. A package is
 limited to 10,000,000 UTF-8 bytes. Remote arguments and successful results are
@@ -2464,6 +2542,58 @@ console.log(`Tokens: ${budget.totalUsed}/${budget.maxTokens}`);
 console.log(`Utilization: ${budget.utilizationPercent}%`);
 console.log(`Available: ${budget.available}`);
 ```
+
+### Semantic Rollover at Provider-Session Boundaries
+
+Automatic compaction is token-triggered. Use explicit rollover when the
+provider session itself must be replaced—for example, before OpenAI Realtime's
+hard session lifetime—but the same OneRingAI Agent should continue:
+
+```typescript
+const result = await agent.rolloverContext({
+  preserveRecentTurns: 8,
+  maxSummaryTokens: 2048,
+  reason: 'provider-session-expiring',
+});
+```
+
+The Agent obtains its normal exclusive execution lease, loads persisted state,
+summarizes the older prefix with a tool-free direct call, and commits a
+developer continuity brief only after a non-empty summary succeeds. Recent
+turns and complete tool-call/result pairs remain exact. Plugin state and the
+append-only history journal are not compacted. With session storage,
+`checkpoint` defaults to `true`; without it, checkpointing defaults to `false`.
+
+Use a trusted custom summarizer when the Agent model is not text-capable or the
+summary must run through another service:
+
+```typescript
+await agent.rolloverContext({
+  summarize: async ({ items, estimatedTokens, preservedRecentTurns, reason }) =>
+    summaryService.createContinuityBrief({
+      items,
+      estimatedTokens,
+      preservedRecentTurns,
+      reason,
+    }),
+});
+```
+
+The lower-level context API requires the summarizer explicitly:
+
+```typescript
+const result = await agent.context.rollover({
+  preserveRecentTurns: 8,
+  reason: 'manual-handoff',
+  summarize: ({ items }) => summarizeWithTrustedModel(items),
+});
+```
+
+Call either API only between turns, with no pending input. Agent-level rollover
+cannot overlap `run()`, `stream()`, async continuation, or external execution;
+context-level rollover rejects concurrent rollover and aborts if the live
+context changes while the summary is being generated. Observe committed
+rollovers with `context:rolled_over` and inspect the returned token/item counts.
 
 ### Context Structure
 
@@ -18001,5 +18131,5 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Last Updated:** 2026-08-28
-**Version:** 1.1.1
+**Last Updated:** 2026-08-30
+**Version:** 1.1.2

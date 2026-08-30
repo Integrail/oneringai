@@ -4,40 +4,40 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-22+-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22.13%2B%20%7C%2024%2B-green.svg)](https://nodejs.org/)
 
-## What's new in v1.1.1
+## What's new in v1.1.2
 
-Version 1.1.1 adds portable native-Agent execution and completes the
-Agent-aware OpenAI Realtime path. A trusted server can export a data-only Agent
-package, hydrate it under desktop-owned connector and permission policy, and
-keep browser audio on WebRTC while the hydrated Agent handles context and
-tools.
+Version 1.1.2 strengthens long-lived and distributed Agent execution. It adds
+an explicit semantic rollover for provider-session boundaries, upgrades
+portable Agent packages to an executable-compatibility protocol, and supports
+runtime-only rotating credentials throughout the OpenAI stack.
 
-| Area | 1.1.1 outcome |
+| Area | 1.1.2 outcome |
 |------|---------------|
-| Portable Agents | Versioned, JSON-only Agent packages with trusted-host hydration and explicit local/remote tool placement |
-| Realtime voice | One Agent-aware session for context, local tools, hosted MCP approval, usage, WebRTC sideband, and telephony |
-| Browser/desktop bridge | Browser-safe `realtime-browser` export plus an ordered, bounded data-channel transport for Electron-style process boundaries |
-| Per-call isolation | `VoiceBridge` can create a fresh Agent for each call so tenant, user, tools, and context are never shared accidentally |
-| Safety and correctness | Credentials and host policy stay out of packages; wire DTOs, sizes, tool collisions, execution ownership, and cleanup fail closed |
-| Packaging | Every declared ESM, CJS, type, Agent Runtime, and browser export is verified after each build |
+| Context rollover | `Agent.rolloverContext()` summarizes the older prefix while preserving recent turns, complete tool pairs, plugin state, the history journal, and configured session storage |
+| Portable Agents | Protocol v2 verifies local executable fingerprints and remote definitions instead of trusting matching names or schemas |
+| Host-owned policy | Package permission metadata stays informational; a trusted `toolPermissionResolver` supplies the effective receiving-host policy |
+| Rotating credentials | OpenAI text, image, audio, video, embeddings, and Codex sessions support runtime-only `api_key_provider` connectors |
+| Runtime baseline | Provider, MCP, document, WebSocket, build, and test dependencies are refreshed; supported Node releases are 22.13+ and 24+ |
 
 ### Upgrade notes
 
-- Version 1.1.1 is additive. Existing connector-first `Agent`,
-  `AgentRuntime`, and `createWebRTCCall()` applications keep their current
-  behavior.
-- Use `createWebRTCCallWithMetadata()` when sideband control or reliable
-  provider-call cleanup needs the opaque call ID.
-- Treat portable packages as editable client data, never authority. The
-  receiving host must supply connector/model authorization, permissions,
-  context/plugin policy, executable local tools, and remote transport access.
-- Node.js 22 remains required. The registry and provider compatibility baseline
-  established by 1.0 remains unchanged.
+- Existing connector-first `Agent` and `AgentRuntime` applications remain
+  source-compatible. Use rollover only at a completed provider-session
+  boundary, after releasing any active external-execution lease.
+- Portable package and remote-tool protocol v2 is intentionally incompatible
+  with v1. Upgrade exporting servers and receiving hosts together. Custom local
+  tools need a shared implementation ID; generated built-ins are fingerprinted
+  automatically.
+- `api_key_provider` is currently OpenAI-only, is resolved per SDK request
+  (once per Codex SDK session), and cannot be persisted by
+  `ConnectorConfigStore`.
+- Node.js 22 users must run 22.13.0 or newer. Node.js 23 and other non-LTS major
+  versions are outside the declared engine range; Node.js 24+ is supported.
 
-Read the [complete 1.1.1 release notes](./CHANGELOG.md#111--2026-08-28),
-the [Realtime guide](./USER_GUIDE.md#openai-realtime-api), and the
+Read the [complete 1.1.2 release notes](./CHANGELOG.md#112--2026-08-30),
+the [upgrade guide](./USER_GUIDE.md#upgrading-to-112), and the
 [distributed execution design](./docs/designs/DISTRIBUTED_AGENT_EXECUTION.md).
 The preview [Agent Runtime guide](./USER_GUIDE.md#agent-runtime-preview)
 continues to cover complete OneRingAI and Codex SDK agent runtimes.
@@ -207,7 +207,7 @@ plugin lifecycle, stores, compaction, persistence, and custom plugins.
 
 ## Table of Contents
 
-- [What's new in v1.1.1](#whats-new-in-v111)
+- [What's new in v1.1.2](#whats-new-in-v112)
 - [Upgrade notes](#upgrade-notes)
 - [Built for coding agents](#built-for-coding-agents)
 - [Agent Runtime: run complete agents through one API](#agent-runtime-run-complete-agents-through-one-api)
@@ -3497,4 +3497,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 1.1.1 | **Last Updated:** 2026-08-28 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 1.1.2 | **Last Updated:** 2026-08-30 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
