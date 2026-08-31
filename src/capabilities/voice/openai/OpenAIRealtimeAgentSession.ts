@@ -163,6 +163,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
   private syncChain: Promise<void> = Promise.resolve();
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
   private configuredInstructions = '';
+  private lastInstructions = '';
   private lastToolsSignature = '';
   private completionPromise: Promise<void> | null = null;
   private sessionUpdateSequence = 0;
@@ -244,6 +245,8 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
         historyItems: prepared.history.length,
       }, 'Prepared Realtime agent context');
       await this.updateSessionAcknowledged(prepared.session, options.signal);
+      this.lastInstructions = prepared.session.instructions ?? '';
+      this.lastToolsSignature = JSON.stringify(prepared.session.tools ?? []);
       const replayedItems = this.replayContext(prepared.history);
       if (replayedItems > 0) {
         // Realtime control events are ordered. A second acknowledged update is
@@ -527,7 +530,6 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
       .join('\n\n');
     const configured = this.options.session ?? {};
     const tools = this.getCurrentTools();
-    this.lastToolsSignature = JSON.stringify(tools);
     const configuredInput = configured.audio?.input ?? {};
     const turnDetection = configuredInput.turn_detection;
     const managedTurnDetection = this.contextSync === 'per_turn'
@@ -804,13 +806,23 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
         .join('\n\n');
       const tools = this.getCurrentTools();
       const toolsSignature = JSON.stringify(tools);
+      const instructionsChanged = instructions !== this.lastInstructions;
       const toolsChanged = toolsSignature !== this.lastToolsSignature;
-      await this.updateSessionAcknowledged({
-        type: 'realtime',
-        instructions,
-        ...(toolsChanged ? { tools } : {}),
-      });
-      if (toolsChanged) this.lastToolsSignature = toolsSignature;
+      if (instructionsChanged || toolsChanged) {
+        realtimeLogger.debug({
+          instructionsChanged,
+          toolsChanged,
+        }, 'Realtime agent context changed');
+        await this.updateSessionAcknowledged({
+          type: 'realtime',
+          ...(instructionsChanged ? { instructions } : {}),
+          ...(toolsChanged ? { tools } : {}),
+        });
+        if (instructionsChanged) this.lastInstructions = instructions;
+        if (toolsChanged) this.lastToolsSignature = toolsSignature;
+      } else {
+        realtimeLogger.debug({}, 'Realtime agent context unchanged; reusing provider session');
+      }
       this.createResponse(response);
     });
     // Keep the serialization tail fulfilled so one transient turn failure does

@@ -138,7 +138,7 @@ describe('OpenAIRealtimeAgentSession', () => {
     agent.destroy();
   });
 
-  it('refreshes Agent context before each audio turn and manages response creation', async () => {
+  it('refreshes Agent context without resending unchanged session configuration', async () => {
     const socket = new MockSocket();
     const connector = createConnector();
     const agent = Agent.create({
@@ -193,8 +193,50 @@ describe('OpenAIRealtimeAgentSession', () => {
     await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => expect(socket.sent.some((event) => event.type === 'response.create')).toBe(true));
     const updates = socket.sent.filter((event) => event.type === 'session.update');
-    expect(updates).toHaveLength(2);
-    expect(updates[1]?.session.instructions).toContain('Speak briefly.');
+    expect(updates).toHaveLength(1);
+
+    await session.close();
+    agent.destroy();
+  });
+
+  it('updates acknowledged Realtime instructions only after Agent context changes', async () => {
+    const socket = new MockSocket();
+    const connector = createConnector();
+    const agent = Agent.create({
+      connector,
+      model: 'gpt-realtime-2.1',
+      instructions: 'Use the original page context.',
+      permissions: { autoApproveAll: true },
+    });
+    const transport = new OpenAIRealtimeSession({
+      connector,
+      webSocketFactory: async () => {
+        setTimeout(() => socket.emit('message', JSON.stringify({ type: 'session.created' })), 0);
+        return socket;
+      },
+    });
+    const session = new OpenAIRealtimeAgentSession({ agent, transport });
+    session.on('error', () => undefined);
+
+    await session.connect();
+    agent.context.systemPrompt = 'Use the updated page context.';
+
+    socket.emit('message', JSON.stringify({
+      type: 'conversation.item.input_audio_transcription.completed',
+      transcript: 'What is on this page?',
+    }));
+
+    await vi.waitFor(() => {
+      expect(socket.sent.filter((event) => event.type === 'session.update')).toHaveLength(2);
+    });
+    await vi.waitFor(() => {
+      expect(socket.sent.filter((event) => event.type === 'response.create')).toHaveLength(1);
+    });
+    const updates = socket.sent.filter((event) => event.type === 'session.update');
+    expect(updates[1]?.session.instructions).toContain('Use the updated page context.');
+    expect(socket.sent.indexOf(updates[1]!)).toBeLessThan(
+      socket.sent.findIndex((event) => event.type === 'response.create'),
+    );
 
     await session.close();
     agent.destroy();
