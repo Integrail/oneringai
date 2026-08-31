@@ -18,7 +18,25 @@ class MockSocket extends EventEmitter {
 
   send(data: string | Buffer): void {
     if (Buffer.isBuffer(data)) this.binarySent.push(data);
-    else this.sent.push(JSON.parse(data));
+    else {
+      const event = JSON.parse(data) as Record<string, unknown>;
+      this.sent.push(event);
+      if (event.type === 'session.update') {
+        setTimeout(() => this.emit('message', JSON.stringify({
+          type: 'session.updated',
+          session: { id: 'sess_test' },
+        })), 0);
+      }
+    }
+  }
+}
+
+class OpeningMockSocket extends MockSocket {
+  override readyState = 0;
+
+  open(): void {
+    this.readyState = 1;
+    this.emit('open');
   }
 }
 
@@ -113,22 +131,33 @@ describe('OpenAI Realtime GA support', () => {
     expect(socket.sent[2]).toMatchObject({ type: 'conversation.item.create' });
   });
 
-  it('joins a WebRTC call through an authenticated server sideband connection', async () => {
-    const socket = new MockSocket();
+  it('joins a WebRTC sideband after open without waiting for session.created', async () => {
+    const socket = new OpeningMockSocket();
     let requestedURL = '';
     const client = new OpenAIRealtimeSession({
       connector: createConnector(),
       callId: 'call/123',
       webSocketFactory: async (url) => {
         requestedURL = url;
-        return connectedFactory(socket)();
+        return socket;
       },
     });
     client.on('error', () => undefined);
 
-    await client.connect();
+    const connecting = client.connect();
+    await vi.waitFor(() => expect(requestedURL).not.toBe(''));
+    expect(socket.sent).toEqual([]);
+
+    socket.open();
+    expect(client.isConnected).toBe(false);
+    await expect(connecting).resolves.toMatchObject({ type: 'session.updated' });
+    expect(client.isConnected).toBe(true);
 
     expect(requestedURL).toBe('wss://api.openai.com/v1/realtime?call_id=call%2F123');
+    expect(socket.sent).toEqual([{
+      type: 'session.update',
+      session: { type: 'realtime' },
+    }]);
   });
 
   it('cancels an in-flight connection when close is called before token resolution', async () => {

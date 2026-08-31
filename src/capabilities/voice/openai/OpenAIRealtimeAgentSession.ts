@@ -69,6 +69,10 @@ export interface OpenAIRealtimeAgentSessionOptions {
   ) => Promise<OpenAIRealtimeMCPApprovalDecision> | OpenAIRealtimeMCPApprovalDecision;
   /** Emit session:expiring before OpenAI's hard 60-minute limit. Default: 55 minutes. */
   sessionExpiryWarningMs?: number;
+  /** Maximum time to wait for OpenAI to acknowledge a session update. Default: 10 seconds. */
+  sessionUpdateTimeoutMs?: number;
+  /** Maximum time to drain active local tools during shutdown. Default: 5 seconds. */
+  toolDrainTimeoutMs?: number;
 }
 
 export interface OpenAIRealtimeAgentUsage extends TokenUsage {
@@ -113,6 +117,18 @@ const EMPTY_USAGE = (): OpenAIRealtimeAgentUsage => ({
   native_tool_calls: {},
 });
 
+const DEFAULT_SESSION_UPDATE_TIMEOUT_MS = 10_000;
+const DEFAULT_TOOL_DRAIN_TIMEOUT_MS = 5_000;
+
+interface PendingSessionUpdate {
+  eventId: string;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+  signal?: AbortSignal;
+  abort?: () => void;
+}
+
 /**
  * Agent-aware controller for OpenAI Realtime voice sessions.
  *
@@ -129,6 +145,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
   private readonly options: OpenAIRealtimeAgentSessionOptions;
   private readonly contextSync: 'per_turn' | 'initial';
   private started = false;
+  private closing = false;
   private destroyed = false;
   private responseActive = false;
   private waitingForToolContinuation = false;
@@ -146,6 +163,8 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
   private configuredInstructions = '';
   private lastToolsSignature = '';
   private completionPromise: Promise<void> | null = null;
+  private sessionUpdateSequence = 0;
+  private pendingSessionUpdates: PendingSessionUpdate[] = [];
 
   private readonly onTransportEvent = (event: OpenAIRealtimeServerEvent): void => {
     void this.handleServerEvent(event).catch((error) => this.emitError(error));
@@ -153,8 +172,11 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
   private readonly onTransportAudio = (audio: Buffer): void => { this.emit('audio', audio); };
   private readonly onTransportError = (error: Error): void => { this.emitError(error); };
   private readonly onTransportClose = (code: number, reason: string): void => {
+    this.rejectPendingSessionUpdates(
+      new Error(`OpenAI Realtime transport closed before session setup completed: ${code} ${reason}`.trim()),
+    );
     this.emit('close', code, reason);
-    if (!this.destroyed && this.started) {
+    if (!this.destroyed && !this.closing && this.started) {
       const message = `OpenAI Realtime transport closed unexpectedly: ${code} ${reason}`.trim();
       this.emitError(new Error(message));
       if (!this.completionPromise) {
@@ -191,7 +213,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
 
   async connect(options: { signal?: AbortSignal } = {}): Promise<OpenAIRealtimeServerEvent | undefined> {
     if (this.started) throw new Error('Realtime agent session is already started');
-    if (this.destroyed) throw new Error('Realtime agent session is destroyed');
+    if (this.destroyed || this.closing) throw new Error('Realtime agent session is destroyed');
     this.validateAgent();
 
     let created: OpenAIRealtimeServerEvent | undefined;
@@ -204,8 +226,13 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
       await this.agent.beginExternalExecution({ source: 'openai-realtime' });
       executionStarted = true;
       const prepared = await this.prepareSession();
-      this.updateSession(prepared.session);
-      this.replayContext(prepared.history);
+      await this.updateSessionAcknowledged(prepared.session, options.signal);
+      const replayedItems = this.replayContext(prepared.history);
+      if (replayedItems > 0) {
+        // Realtime control events are ordered. A second acknowledged update is
+        // therefore a barrier proving the preceding context replay was applied.
+        await this.updateSessionAcknowledged({ type: 'realtime' }, options.signal);
+      }
       this.started = true;
       const warningMs = this.options.sessionExpiryWarningMs ?? 55 * 60 * 1000;
       if (warningMs > 0) {
@@ -287,7 +314,8 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
 
   /** Public for custom transports that cannot expose EventEmitter-style events. */
   async handleServerEvent(event: OpenAIRealtimeServerEvent): Promise<void> {
-    if (this.destroyed) return;
+    if (this.destroyed || this.closing) return;
+    this.handleSessionUpdateEvent(event);
     this.emit('event', event);
 
     switch (event.type) {
@@ -415,11 +443,16 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
     reason: string,
     outcome: 'normal' | 'unexpected',
   ): Promise<void> {
-    if (this.destroyed) return;
-    this.destroyed = true;
+    if (this.destroyed || this.closing) return;
+    this.closing = true;
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
     this.expiryTimer = null;
-    await Promise.allSettled([...this.activeToolExecutions]);
+    const toolsDrained = await this.drainActiveTools();
+    if (!toolsDrained && !this.agent.isCancelled()) {
+      this.agent.cancel('Realtime tool drain deadline exceeded');
+    }
+    this.destroyed = true;
+    this.rejectPendingSessionUpdates(new Error('OpenAI Realtime session closed during setup'));
     this.flushContextResults();
     this.transport.close(code, reason);
 
@@ -440,6 +473,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
       });
     }
     this.started = false;
+    this.closing = false;
     this.detachTransport();
     this.removeAllListeners();
   }
@@ -543,7 +577,8 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
       .join('\n\n');
   }
 
-  private replayContext(history: readonly InputItem[]): void {
+  private replayContext(history: readonly InputItem[]): number {
+    let replayedItems = 0;
     for (const item of history) {
       if (item.type !== 'message') continue;
       const text = item.content
@@ -559,6 +594,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
             content: [{ type: item.role === MessageRole.ASSISTANT ? 'output_text' : 'input_text', text }],
           },
         });
+        replayedItems += 1;
       }
       for (const content of item.content) {
         if (content.type === ContentType.TOOL_USE) {
@@ -571,6 +607,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
               arguments: content.arguments,
             },
           });
+          replayedItems += 1;
         } else if (content.type === ContentType.TOOL_RESULT) {
           this.send({
             type: 'conversation.item.create',
@@ -580,9 +617,11 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
               output: this.serialize(content.error ? { error: content.error } : content.content),
             },
           });
+          replayedItems += 1;
         }
       }
     }
+    return replayedItems;
   }
 
   private startLocalToolCall(event: OpenAIRealtimeServerEvent): void {
@@ -623,6 +662,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
         state: ToolCallState.FAILED,
       };
     }
+    if (this.destroyed) return;
     this.pendingContextResults.push(result);
     this.emit('tool:complete', result);
     this.send({
@@ -636,6 +676,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
   }
 
   private async maybeContinueAfterTools(): Promise<void> {
+    if (this.destroyed || this.closing) return;
     if (this.responseActive || this.activeToolExecutions.size > 0) return;
     this.flushContextResults();
     if (!this.waitingForToolContinuation) return;
@@ -739,7 +780,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
       const tools = this.getCurrentTools();
       const toolsSignature = JSON.stringify(tools);
       const toolsChanged = toolsSignature !== this.lastToolsSignature;
-      this.updateSession({
+      await this.updateSessionAcknowledged({
         type: 'realtime',
         instructions,
         ...(toolsChanged ? { tools } : {}),
@@ -793,6 +834,90 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
     else this.send({ type: 'session.update', session });
   }
 
+  private updateSessionAcknowledged(
+    session: OpenAIRealtimeSessionConfig,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason instanceof Error ? signal.reason : new Error('Aborted'));
+    }
+    const eventId = `oneringai_session_update_${++this.sessionUpdateSequence}`;
+    const timeoutMs = this.options.sessionUpdateTimeoutMs ?? DEFAULT_SESSION_UPDATE_TIMEOUT_MS;
+    return new Promise<void>((resolve, reject) => {
+      const pending: PendingSessionUpdate = {
+        eventId,
+        resolve: () => {
+          this.removePendingSessionUpdate(pending);
+          resolve();
+        },
+        reject: (error) => {
+          this.removePendingSessionUpdate(pending);
+          reject(error);
+        },
+        timer: setTimeout(() => {
+          pending.reject(new Error('OpenAI Realtime session update was not acknowledged in time'));
+        }, Math.max(1, timeoutMs)),
+        ...(signal ? { signal } : {}),
+      };
+      pending.timer.unref?.();
+      if (signal) {
+        pending.abort = () => pending.reject(
+          signal.reason instanceof Error ? signal.reason : new Error('Aborted'),
+        );
+        signal.addEventListener('abort', pending.abort, { once: true });
+      }
+      this.pendingSessionUpdates.push(pending);
+      try {
+        this.send({ type: 'session.update', event_id: eventId, session });
+      } catch (error) {
+        pending.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  private handleSessionUpdateEvent(event: OpenAIRealtimeServerEvent): void {
+    if (event.type === 'session.updated') {
+      this.pendingSessionUpdates[0]?.resolve();
+      return;
+    }
+    if (event.type !== 'error') return;
+    const eventId = String(event.error?.event_id ?? event.event_id ?? '');
+    const pending = this.pendingSessionUpdates.find((item) => item.eventId === eventId);
+    if (pending) {
+      pending.reject(new Error(String(event.error?.message ?? 'OpenAI rejected the session update')));
+    }
+  }
+
+  private removePendingSessionUpdate(pending: PendingSessionUpdate): void {
+    const index = this.pendingSessionUpdates.indexOf(pending);
+    if (index >= 0) this.pendingSessionUpdates.splice(index, 1);
+    clearTimeout(pending.timer);
+    if (pending.signal && pending.abort) {
+      pending.signal.removeEventListener('abort', pending.abort);
+    }
+  }
+
+  private rejectPendingSessionUpdates(error: Error): void {
+    for (const pending of [...this.pendingSessionUpdates]) pending.reject(error);
+  }
+
+  private async drainActiveTools(): Promise<boolean> {
+    const active = [...this.activeToolExecutions];
+    if (active.length === 0) return true;
+    const timeoutMs = this.options.toolDrainTimeoutMs ?? DEFAULT_TOOL_DRAIN_TIMEOUT_MS;
+    if (timeoutMs <= 0) return false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const drained = await Promise.race([
+      Promise.allSettled(active).then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+    return drained;
+  }
+
   /** Send an advanced Realtime client event through the configured transport. */
   send(event: OpenAIRealtimeClientEvent): void {
     if (!this.transport.isConnected) throw new Error('OpenAI Realtime transport is not connected');
@@ -809,6 +934,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
   }
 
   private emitError(error: unknown): void {
+    if (this.destroyed) return;
     this.emit('error', error instanceof Error ? error : new Error(String(error)));
   }
 

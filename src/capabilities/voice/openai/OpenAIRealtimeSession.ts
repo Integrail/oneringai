@@ -143,8 +143,10 @@ export class OpenAIRealtimeSession extends EventEmitter {
       const socket = await this.awaitSocket(socketPromise, controller.signal);
       this.socket = socket;
 
-      const created = await new Promise<OpenAIRealtimeServerEvent>((resolve, reject) => {
+      const isSideband = Boolean(this.options.callId);
+      const ready = await new Promise<OpenAIRealtimeServerEvent>((resolve, reject) => {
         let settled = false;
+        let sidebandHandshakeSent = false;
         const settle = (action: () => void): void => {
           if (settled) return;
           settled = true;
@@ -153,14 +155,28 @@ export class OpenAIRealtimeSession extends EventEmitter {
           action();
         };
         const timeout = setTimeout(() => {
+          const event = isSideband ? 'session.updated' : 'session.created';
           settle(() => reject(
-            new Error(`Timeout waiting for ${this.providerLabel} Realtime session.created`),
+            new Error(`Timeout waiting for ${this.providerLabel} Realtime ${event}`),
           ));
         }, this.options.connectTimeoutMs ?? 15_000);
         const onAbort = (): void => settle(() => reject(this.abortError(controller.signal.reason)));
+        const beginSidebandHandshake = (): void => {
+          if (!isSideband || sidebandHandshakeSent || settled) return;
+          sidebandHandshakeSent = true;
+          try {
+            // A sideband WebSocket joins a Realtime call that was already created
+            // by WebRTC or SIP, so OpenAI does not replay session.created. Send an
+            // acknowledged no-op update to prove the control channel is ready.
+            this.updateSession(this.initialSession ?? { type: 'realtime' });
+          } catch (error) {
+            settle(() => reject(error instanceof Error ? error : new Error(String(error))));
+          }
+        };
 
         controller.signal.addEventListener('abort', onAbort, { once: true });
         if (controller.signal.aborted) onAbort();
+        socket.on('open', beginSidebandHandshake);
         socket.on('message', (data: Buffer | string, isBinary?: boolean) => {
           if (isBinary) {
             this.emit('audio', Buffer.isBuffer(data) ? data : Buffer.from(data));
@@ -169,7 +185,10 @@ export class OpenAIRealtimeSession extends EventEmitter {
           const event = this.parseEvent(data);
           if (!event) return;
           this.emitServerEvent(event);
-          if (event.type === 'session.created') {
+          const isReadyEvent = isSideband
+            ? sidebandHandshakeSent && event.type === 'session.updated'
+            : event.type === 'session.created';
+          if (isReadyEvent) {
             settle(() => {
               this.connected = true;
               resolve(event);
@@ -194,11 +213,12 @@ export class OpenAIRealtimeSession extends EventEmitter {
           )));
           this.emit('close', code, reason?.toString() ?? '');
         });
+        if (socket.readyState === 1) beginSidebandHandshake();
       });
 
       this.throwIfAborted(controller.signal);
-      if (this.initialSession) this.updateSession(this.initialSession);
-      return created;
+      if (this.initialSession && !isSideband) this.updateSession(this.initialSession);
+      return ready;
     } catch (error) {
       this.connected = false;
       this.closeSocket(this.socket, 1000, 'Connect cancelled');

@@ -12971,9 +12971,12 @@ realtime.commitAudio();
 realtime.createResponse();
 ```
 
-`connect()` resolves after `session.created`. If an initial `session` was
-provided, the library then sends it through `session.update`. Register event
-listeners before connecting so no early events are missed.
+For a new Realtime WebSocket, `connect()` resolves after `session.created`. For
+a `callId` sideband connection to an existing WebRTC or SIP call, OpenAI does
+not replay that creation event; the library waits for the socket to open, sends
+an initial `session.update`, and resolves after `session.updated` acknowledges
+the control channel. Register event listeners before connecting so no early
+events are missed.
 
 ### Session Helpers and Events
 

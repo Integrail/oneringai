@@ -15,7 +15,15 @@ class MockSocket extends EventEmitter {
   close = vi.fn(() => { this.readyState = 3; });
 
   send(data: string | Buffer): void {
-    if (!Buffer.isBuffer(data)) this.sent.push(JSON.parse(data));
+    if (Buffer.isBuffer(data)) return;
+    const event = JSON.parse(data);
+    this.sent.push(event);
+    if (event.type === 'session.update') {
+      queueMicrotask(() => this.emit('message', JSON.stringify({
+        type: 'session.updated',
+        session: event.session,
+      })));
+    }
   }
 }
 
@@ -30,6 +38,9 @@ class AudioForwardingTransport extends EventEmitter {
 
   send(event: Record<string, any>): void {
     this.sent.push(event);
+    if (event.type === 'session.update') {
+      queueMicrotask(() => this.emit('event', { type: 'session.updated', session: event.session }));
+    }
   }
 
   close(): void {
@@ -54,6 +65,78 @@ function functionOutputEvents(socket: MockSocket): Array<Record<string, any>> {
 
 describe('OpenAIRealtimeAgentSession', () => {
   beforeEach(() => Connector.clear());
+
+  it('does not become ready until OpenAI acknowledges the configured session', async () => {
+    const connector = createConnector();
+    const agent = Agent.create({ connector, model: 'gpt-realtime-2.1' });
+    const transport = new EventEmitter() as EventEmitter & {
+      isConnected: boolean;
+      sent: Array<Record<string, any>>;
+      send: (event: Record<string, any>) => void;
+      close: () => void;
+    };
+    transport.isConnected = true;
+    transport.sent = [];
+    transport.send = (event) => transport.sent.push(event);
+    transport.close = () => { transport.isConnected = false; };
+    const session = new OpenAIRealtimeAgentSession({ agent, transport });
+    session.on('error', () => undefined);
+
+    let ready = false;
+    const connecting = session.connect().then(() => { ready = true; });
+    await vi.waitFor(() => expect(transport.sent[0]?.type).toBe('session.update'));
+    expect(ready).toBe(false);
+
+    transport.emit('event', { type: 'session.updated', session: transport.sent[0]?.session });
+    await connecting;
+    expect(session.isConnected).toBe(true);
+
+    await session.close();
+    agent.destroy();
+  });
+
+  it('bounds tool draining during shutdown', async () => {
+    const connector = createConnector();
+    const execute = vi.fn(() => new Promise(() => undefined));
+    const tool: ToolFunction = {
+      definition: {
+        type: 'function',
+        function: {
+          name: 'never_finishes',
+          description: 'Never finishes.',
+          parameters: { type: 'object', properties: {} },
+        },
+      },
+      execute,
+    };
+    const agent = Agent.create({
+      connector,
+      model: 'gpt-realtime-2.1',
+      tools: [tool],
+      permissions: { autoApproveAll: true },
+    });
+    const transport = new AudioForwardingTransport();
+    const session = new OpenAIRealtimeAgentSession({
+      agent,
+      transport,
+      toolDrainTimeoutMs: 10,
+    });
+    session.on('error', () => undefined);
+    await session.connect();
+    transport.emit('event', {
+      type: 'response.function_call_arguments.done',
+      call_id: 'call_never',
+      name: 'never_finishes',
+      arguments: '{}',
+    });
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledOnce());
+
+    await session.close();
+
+    expect(transport.isConnected).toBe(false);
+    expect(agent.isCancelled()).toBe(true);
+    agent.destroy();
+  });
 
   it('refreshes Agent context before each audio turn and manages response creation', async () => {
     const socket = new MockSocket();

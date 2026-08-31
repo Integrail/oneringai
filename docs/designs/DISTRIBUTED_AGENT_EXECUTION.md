@@ -225,7 +225,10 @@ For a browser product whose tools and context remain server-owned, the browser
 still uses direct WebRTC media. The server keeps the Agent and attaches an
 `OpenAIRealtimeAgentSession({ agent, callId })` sideband WebSocket using the
 `callId` returned by `createWebRTCCallWithMetadata()`. The Agent session then
-drives tools and context from the server.
+drives tools and context from the server. Because this sideband joins an
+already-created provider session, connection readiness is established by an
+acknowledged `session.update`; it does not wait for `session.created` to be
+replayed.
 
 This differs from desktop-local execution only in Agent ownership. The browser
 WebRTC peer and SDP setup remain the same.
