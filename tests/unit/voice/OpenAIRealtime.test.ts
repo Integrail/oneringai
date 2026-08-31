@@ -419,6 +419,16 @@ describe('OpenAI Realtime GA support', () => {
       .rejects.toThrow('did not include a call ID');
   });
 
+  it('treats an already-closed Realtime call as a successful idempotent hangup', async () => {
+    const connector = createConnector();
+    vi.spyOn(connector, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      error: { code: 'call_id_not_found' },
+    }), { status: 404, headers: { 'Content-Type': 'application/json' } }));
+    const api = new OpenAIRealtimeAPI(connector);
+
+    await expect(api.hangupCall('rtc_already_closed')).resolves.toBeUndefined();
+  });
+
   it('keeps createWebRTCCall backward compatible with its SDP string return', async () => {
     const connector = createConnector();
     vi.spyOn(connector, 'fetch').mockResolvedValue(new Response('v=0\r\ns=answer\r\n', {

@@ -34,6 +34,7 @@
 import { EventEmitter } from 'events';
 import { Connector } from '../../../../core/Connector.js';
 import { logger } from '../../../../infrastructure/observability/Logger.js';
+import { loadWebSocketModule } from '../../../../infrastructure/websocket/loadWebSocket.js';
 import { mulawToPcm, pcmToMulaw, resamplePcm } from './codecs.js';
 import type {
   ITelephonyAdapter,
@@ -210,8 +211,7 @@ export class TwilioAdapter extends EventEmitter implements ITelephonyAdapter {
     }
 
     const http = await import('http');
-    // Dynamic import — ws is an optional peer dependency
-    const { WebSocketServer } = await import('ws' as string);
+    const { WebSocketServer } = await loadWebSocketModule();
 
     const port = this.config.port ?? 3000;
 

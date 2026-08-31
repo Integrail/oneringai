@@ -109,7 +109,16 @@ export class OpenAIRealtimeAPI {
   }
 
   async hangupCall(callId: string): Promise<void> {
-    await this.request(`/realtime/calls/${encodeURIComponent(callId)}/hangup`);
+    // Closing the WebRTC peer and asking the trusted host to release the call
+    // are intentionally concurrent. If peer closure wins that race, OpenAI
+    // reports call_id_not_found; the requested terminal state is already true.
+    await this.request(
+      `/realtime/calls/${encodeURIComponent(callId)}/hangup`,
+      undefined,
+      undefined,
+      'json',
+      [404],
+    );
   }
 
   async referCall(callId: string, targetUri: string): Promise<void> {
@@ -121,8 +130,16 @@ export class OpenAIRealtimeAPI {
     body?: Record<string, unknown>,
     safetyIdentifier?: string,
     responseType: 'json' | 'text' = 'json',
+    acceptedStatuses: readonly number[] = [],
   ): Promise<unknown> {
-    const response = await this.requestResponse(path, body, safetyIdentifier);
+    const response = await this.requestResponse(
+      path,
+      body,
+      safetyIdentifier,
+      'json',
+      acceptedStatuses,
+    );
+    if (!response.ok) return undefined;
     if (response.status === 204) return undefined;
     const text = await response.text();
     if (responseType === 'text') return text;
@@ -134,6 +151,7 @@ export class OpenAIRealtimeAPI {
     body?: Record<string, unknown> | FormData,
     safetyIdentifier?: string,
     encoding: 'json' | 'multipart' = 'json',
+    acceptedStatuses: readonly number[] = [],
   ): Promise<Response> {
     const base = this.connector.baseURL || 'https://api.openai.com/v1';
     const url = `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
@@ -147,7 +165,7 @@ export class OpenAIRealtimeAPI {
         body: encoding === 'json' ? JSON.stringify(body) : body as FormData,
       }),
     });
-    if (!response.ok) {
+    if (!response.ok && !acceptedStatuses.includes(response.status)) {
       const detail = await response.text();
       throw new Error(`OpenAI Realtime API ${response.status}: ${detail || response.statusText}`);
     }

@@ -8,6 +8,7 @@ import type {
 import type { AudioFormat } from '../../../domain/types/SharedTypes.js';
 import type { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
 import type { GrokMediaConfig } from '../../../domain/types/ProviderConfig.js';
+import { loadWebSocketModule } from '../../websocket/loadWebSocket.js';
 import type { IVoiceInfo } from '../../../domain/entities/SharedVoices.js';
 import { XAI_VOICES } from '../../../domain/entities/SharedVoices.js';
 import {
@@ -174,7 +175,7 @@ export class GrokTTSProvider extends BaseMediaProvider implements IStreamingText
     send(data: string): void;
     close(): void;
   }> {
-    const { default: WebSocket } = await import('ws' as string);
+    const { default: WebSocket } = await loadWebSocketModule();
     return new WebSocket(url, { headers: { Authorization: `Bearer ${this.apiKey}` } });
   }
 

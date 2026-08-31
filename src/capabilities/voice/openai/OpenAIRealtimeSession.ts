@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { Connector } from '../../../core/Connector.js';
 import { Vendor } from '../../../core/Vendor.js';
+import { loadWebSocketModule } from '../../../infrastructure/websocket/loadWebSocket.js';
 import type {
   OpenAIRealtimeClientEvent,
   OpenAIRealtimeModel,
@@ -327,7 +328,7 @@ export class OpenAIRealtimeSession extends EventEmitter {
   }
 
   private async createDefaultSocket(url: string, headers: Record<string, string>): Promise<WebSocketLike> {
-    const { default: WebSocket } = await import('ws' as string);
+    const { default: WebSocket } = await loadWebSocketModule();
     return new WebSocket(url, { headers }) as WebSocketLike;
   }
 

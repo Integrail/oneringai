@@ -16,6 +16,7 @@ import {
   ProviderError,
 } from '../../../domain/errors/AIErrors.js';
 import { detectAudioContainer } from '../../../utils/audioUtils.js';
+import { loadWebSocketModule } from '../../websocket/loadWebSocket.js';
 
 export class GrokSTTProvider extends BaseMediaProvider implements IStreamingSpeechToTextProvider {
   readonly name = 'grok-stt';
@@ -219,7 +220,7 @@ export class GrokSTTProvider extends BaseMediaProvider implements IStreamingSpee
     send(data: string | Buffer): void;
     close(): void;
   }> {
-    const { default: WebSocket } = await import('ws' as string);
+    const { default: WebSocket } = await loadWebSocketModule();
     return new WebSocket(url, { headers: { Authorization: `Bearer ${this.apiKey}` } });
   }
 
