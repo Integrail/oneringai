@@ -200,6 +200,43 @@ describe('OpenAIRealtimeAgentSession', () => {
     agent.destroy();
   });
 
+  it('places the complete Agent prompt in the acknowledged Realtime session context', async () => {
+    const socket = new MockSocket();
+    const connector = createConnector();
+    const agentPrompt = [
+      'ICOS_EOS_PROMPT_START',
+      'Facilitate the live L10 meeting concisely.',
+      'Challenge vague commitments and preserve every safety constraint.',
+      'ICOS_EOS_PROMPT_END',
+    ].join('\n');
+    const agent = Agent.create({
+      connector,
+      model: 'gpt-realtime-2.1',
+      instructions: agentPrompt,
+      permissions: { autoApproveAll: true },
+    });
+    const transport = new OpenAIRealtimeSession({
+      connector,
+      callId: 'provider_call_prompt_context',
+      webSocketFactory: async () => socket,
+    });
+    const session = new OpenAIRealtimeAgentSession({ agent, transport });
+    session.on('error', () => undefined);
+
+    await session.connect();
+
+    const acknowledgedUpdate = socket.sent.find(
+      (event) => event.type === 'session.update' && typeof event.event_id === 'string',
+    );
+    expect(acknowledgedUpdate?.event_id).toMatch(/^oneringai_session_update_/);
+    expect(acknowledgedUpdate?.session.instructions).toContain(
+      `# System Prompt\n\n${agentPrompt}`,
+    );
+
+    await session.close();
+    agent.destroy();
+  });
+
   it('continues synchronizing later turns after one context refresh fails', async () => {
     const socket = new MockSocket();
     const connector = createConnector();

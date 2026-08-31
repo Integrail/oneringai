@@ -47,9 +47,9 @@ export interface OpenAIRealtimeWebRTCPeerOptions {
   dataChannelLabel?: string;
   connectTimeoutMs?: number;
   maxBufferedAmountBytes?: number;
-  /** Maximum event count retained before the first message subscriber. Default: 256. */
+  /** Maximum event count retained before the first raw-message or parsed-event subscriber. Default: 256. */
   maxPendingMessages?: number;
-  /** Maximum UTF-8 bytes retained before the first message subscriber. Default: 1 MiB. */
+  /** Maximum UTF-8 bytes retained before the first raw-message or parsed-event subscriber. Default: 1 MiB. */
   maxPendingMessageBytes?: number;
   stopLocalTracksOnClose?: boolean;
   onRemoteTrack?: (streamOrTrack: unknown) => void;
@@ -250,9 +250,11 @@ export class OpenAIRealtimeWebRTCPeer implements RealtimeMessageChannel {
         this.emit('error', new TypeError('OpenAI Realtime data channel emitted non-text data'));
         return;
       }
-      if ((this.handlers.get('message')?.size ?? 0) > 0) {
+      const hasRawMessageConsumer = (this.handlers.get('message')?.size ?? 0) > 0;
+      const hasParsedEventConsumer = (this.handlers.get('event')?.size ?? 0) > 0;
+      if (hasRawMessageConsumer) {
         this.emit('message', event.data);
-      } else if (!this.bufferPendingMessage(event.data)) {
+      } else if (!hasParsedEventConsumer && !this.bufferPendingMessage(event.data)) {
         const error = new Error('OpenAI Realtime pending event buffer exceeded its limit');
         this.emit('error', error);
         this.shutdown(1009, 'Pending event buffer exceeded', true);

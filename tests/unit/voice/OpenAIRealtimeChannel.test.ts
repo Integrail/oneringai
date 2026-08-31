@@ -342,6 +342,52 @@ describe('OpenAI Realtime cross-process channels', () => {
     expect(errors).toContain('OpenAI Realtime pending event buffer exceeded its limit');
   });
 
+  it('does not buffer or disconnect when parsed events have a consumer', async () => {
+    const dataChannel = new MockDataChannel();
+    const releaseCall = vi.fn(async () => undefined);
+    const peer = {
+      localDescription: { sdp: 'offer' },
+      connectionState: 'connected',
+      ontrack: null,
+      onconnectionstatechange: null,
+      addTrack: vi.fn(),
+      createDataChannel: vi.fn(() => dataChannel),
+      createOffer: vi.fn(async () => ({ type: 'offer', sdp: 'offer' })),
+      setLocalDescription: vi.fn(async () => undefined),
+      setRemoteDescription: vi.fn(async () => undefined),
+      close: vi.fn(),
+    };
+    const webRTC = new OpenAIRealtimeWebRTCPeer({
+      exchangeSdp: async () => ({ sdp: 'answer', callId: 'call_event_consumer' }),
+      releaseCall,
+      localStream: { getTracks: () => [] },
+      peerConnectionFactory: () => peer as any,
+      maxPendingMessages: 2,
+    });
+    const events: string[] = [];
+    const errors: string[] = [];
+    webRTC.on('event', (event) => events.push(event.type));
+    webRTC.onError((error) => errors.push(error.message));
+
+    const connecting = webRTC.connect();
+    await vi.waitFor(() => expect(peer.setRemoteDescription).toHaveBeenCalledOnce());
+    dataChannel.triggerOpen();
+    await connecting;
+
+    for (let index = 0; index < 10; index += 1) {
+      dataChannel.onmessage?.({
+        data: JSON.stringify({ type: 'response.done', response: { id: `response_${index}` } }),
+      });
+    }
+
+    expect(events).toHaveLength(10);
+    expect(errors).toEqual([]);
+    expect(webRTC.isOpen).toBe(true);
+    expect(releaseCall).not.toHaveBeenCalled();
+
+    await webRTC.closeAndRelease();
+  });
+
   it('releases a created provider call when applying the SDP answer fails', async () => {
     const dataChannel = new MockDataChannel();
     const releaseCall = vi.fn(async () => undefined);

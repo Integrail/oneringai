@@ -6,6 +6,7 @@ import { getModelInfo } from '../../../domain/entities/Model.js';
 import { MessageRole, type InputItem, type OutputItem } from '../../../domain/entities/Message.js';
 import { ToolCallState, type ToolResult } from '../../../domain/entities/Tool.js';
 import type { TokenUsage } from '../../../domain/entities/Response.js';
+import { logger } from '../../../infrastructure/observability/Logger.js';
 import { OpenAIRealtimeSession } from './OpenAIRealtimeSession.js';
 import type {
   OpenAIRealtimeClientEvent,
@@ -119,6 +120,7 @@ const EMPTY_USAGE = (): OpenAIRealtimeAgentUsage => ({
 
 const DEFAULT_SESSION_UPDATE_TIMEOUT_MS = 10_000;
 const DEFAULT_TOOL_DRAIN_TIMEOUT_MS = 5_000;
+const realtimeLogger = logger.child({ component: 'OpenAIRealtimeAgentSession' });
 
 interface PendingSessionUpdate {
   eventId: string;
@@ -170,8 +172,12 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
     void this.handleServerEvent(event).catch((error) => this.emitError(error));
   };
   private readonly onTransportAudio = (audio: Buffer): void => { this.emit('audio', audio); };
-  private readonly onTransportError = (error: Error): void => { this.emitError(error); };
+  private readonly onTransportError = (error: Error): void => {
+    realtimeLogger.debug({ errorName: error.name }, 'Realtime agent transport error');
+    this.emitError(error);
+  };
   private readonly onTransportClose = (code: number, reason: string): void => {
+    realtimeLogger.debug({ code, reasonCharacters: reason.length }, 'Realtime agent transport closed');
     this.rejectPendingSessionUpdates(
       new Error(`OpenAI Realtime transport closed before session setup completed: ${code} ${reason}`.trim()),
     );
@@ -219,6 +225,11 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
     let created: OpenAIRealtimeServerEvent | undefined;
     let executionStarted = false;
     try {
+      realtimeLogger.debug({
+        model: this.agent.model,
+        contextSync: this.contextSync,
+        sideband: Boolean(this.options.callId),
+      }, 'Connecting Realtime agent session');
       if (!this.transport.isConnected) {
         if (!this.transport.connect) throw new Error('Realtime transport is not connected');
         created = await this.transport.connect(options);
@@ -226,6 +237,12 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
       await this.agent.beginExternalExecution({ source: 'openai-realtime' });
       executionStarted = true;
       const prepared = await this.prepareSession();
+      realtimeLogger.debug({
+        model: this.agent.model,
+        instructionCharacters: prepared.session.instructions?.length ?? 0,
+        toolCount: prepared.session.tools?.length ?? 0,
+        historyItems: prepared.history.length,
+      }, 'Prepared Realtime agent context');
       await this.updateSessionAcknowledged(prepared.session, options.signal);
       const replayedItems = this.replayContext(prepared.history);
       if (replayedItems > 0) {
@@ -234,6 +251,7 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
         await this.updateSessionAcknowledged({ type: 'realtime' }, options.signal);
       }
       this.started = true;
+      realtimeLogger.debug({ model: this.agent.model }, 'Realtime agent session ready');
       const warningMs = this.options.sessionExpiryWarningMs ?? 55 * 60 * 1000;
       if (warningMs > 0) {
         this.expiryTimer = setTimeout(() => this.emit('session:expiring'), warningMs);
@@ -241,6 +259,10 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
       }
       return created;
     } catch (error) {
+      realtimeLogger.debug({
+        model: this.agent.model,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      }, 'Realtime agent session setup failed');
       this.transport.close(1011, 'Realtime agent setup failed');
       try {
         if (executionStarted) {
@@ -315,6 +337,9 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
   /** Public for custom transports that cannot expose EventEmitter-style events. */
   async handleServerEvent(event: OpenAIRealtimeServerEvent): Promise<void> {
     if (this.destroyed || this.closing) return;
+    if (typeof event.type === 'string' && !event.type.endsWith('.delta')) {
+      realtimeLogger.debug({ eventType: event.type }, 'Realtime server event');
+    }
     this.handleSessionUpdateEvent(event);
     this.emit('event', event);
 
@@ -843,6 +868,11 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
     }
     const eventId = `oneringai_session_update_${++this.sessionUpdateSequence}`;
     const timeoutMs = this.options.sessionUpdateTimeoutMs ?? DEFAULT_SESSION_UPDATE_TIMEOUT_MS;
+    realtimeLogger.debug({
+      eventId,
+      instructionCharacters: session.instructions?.length ?? 0,
+      toolCount: session.tools?.length ?? 0,
+    }, 'Sending acknowledged Realtime session update');
     return new Promise<void>((resolve, reject) => {
       const pending: PendingSessionUpdate = {
         eventId,
@@ -877,6 +907,9 @@ export class OpenAIRealtimeAgentSession extends EventEmitter {
 
   private handleSessionUpdateEvent(event: OpenAIRealtimeServerEvent): void {
     if (event.type === 'session.updated') {
+      realtimeLogger.debug({
+        pendingUpdates: this.pendingSessionUpdates.length,
+      }, 'Realtime session update acknowledged');
       this.pendingSessionUpdates[0]?.resolve();
       return;
     }
