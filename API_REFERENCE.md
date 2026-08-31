@@ -18924,7 +18924,7 @@ override updateSession(
 
 ### OpenAIRealtimeAgentSession `class`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:141`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:143`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 Agent-aware controller for OpenAI Realtime voice sessions.
 
@@ -20010,7 +20010,7 @@ Unified agent storage interface
 
 ### OpenAIRealtimeAgentSessionEvents `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:85`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:86`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -20042,7 +20042,7 @@ Unified agent storage interface
 
 ### OpenAIRealtimeAgentSessionOptions `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:47`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:48`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -20073,7 +20073,7 @@ automatic response behavior. Default: `per_turn`. |
 
 ### OpenAIRealtimeAgentTransport `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:18`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:19`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 Transport contract implemented by WebSocket, WebRTC data-channel, and SIP control adapters.
 
@@ -20224,7 +20224,7 @@ off?(event: string, handler: (...args: any[]) =&gt; void): unknown;
 
 ### OpenAIRealtimeAgentUsage `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:78`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:79`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -20257,7 +20257,7 @@ off?(event: string, handler: (...args: any[]) =&gt; void): unknown;
 
 ### OpenAIRealtimeMCPApprovalDecision `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:42`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:43`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -20273,7 +20273,7 @@ off?(event: string, handler: (...args: any[]) =&gt; void): unknown;
 
 ### OpenAIRealtimeMCPApprovalRequest `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:35`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:36`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>

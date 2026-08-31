@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] — 2026-08-31
+
+### Fixed
+
+- **Realtime WebRTC event buffering.** Parsed server events are no longer also
+  retained in the pre-consumer raw-message buffer when an event listener is
+  already attached, preventing active voice sessions from disconnecting after
+  the pending-message limit is reached.
+- **Realtime voice prompt caching.** Per-turn context synchronization now
+  resends instructions and tools only when they actually change, preserving
+  OpenAI prompt-cache reuse while still applying updated Agent context before
+  the next response.
+
 ## [1.1.4] — 2026-08-31
 
 ### Added
@@ -3179,7 +3192,8 @@ StorageRegistry.setContext({ userId: currentUser.id });
 [0.1.2]: https://github.com/aantich/oneringai/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/aantich/oneringai/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aantich/oneringai/releases/tag/v0.1.0
-[Unreleased]: https://github.com/aantich/oneringai/compare/v1.1.4...HEAD
+[Unreleased]: https://github.com/aantich/oneringai/compare/v1.1.5...HEAD
+[1.1.5]: https://github.com/aantich/oneringai/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/aantich/oneringai/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/aantich/oneringai/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/aantich/oneringai/compare/v1.1.1...v1.1.2
