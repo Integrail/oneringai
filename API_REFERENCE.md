@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-08-30
+**Generated:** 2026-08-31
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -18924,7 +18924,7 @@ override updateSession(
 
 ### OpenAIRealtimeAgentSession `class`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:125`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:141`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 Agent-aware controller for OpenAI Realtime voice sessions.
 
@@ -19135,7 +19135,7 @@ send(event: OpenAIRealtimeClientEvent): void
 
 ### OpenAIRealtimeSession `class`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:68`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:69`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
 
 Connector-first, server-side WebSocket client for OpenAI's GA Realtime API.
 It intentionally exposes the raw event stream while providing helpers for
@@ -20010,7 +20010,7 @@ Unified agent storage interface
 
 ### OpenAIRealtimeAgentSessionEvents `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:81`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:85`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -20064,6 +20064,8 @@ automatic response behavior. Default: `per_turn`. |
     request: OpenAIRealtimeMCPApprovalRequest,
   ) =&gt; Promise&lt;OpenAIRealtimeMCPApprovalDecision&gt; | OpenAIRealtimeMCPApprovalDecision;` | Called for provider-hosted MCP tools. Missing handlers reject approval requests. |
 | `sessionExpiryWarningMs?` | `sessionExpiryWarningMs?: number;` | Emit session:expiring before OpenAI's hard 60-minute limit. Default: 55 minutes. |
+| `sessionUpdateTimeoutMs?` | `sessionUpdateTimeoutMs?: number;` | Maximum time to wait for OpenAI to acknowledge a session update. Default: 10 seconds. |
+| `toolDrainTimeoutMs?` | `toolDrainTimeoutMs?: number;` | Maximum time to drain active local tools during shutdown. Default: 5 seconds. |
 
 </details>
 
@@ -20222,7 +20224,7 @@ off?(event: string, handler: (...args: any[]) =&gt; void): unknown;
 
 ### OpenAIRealtimeAgentUsage `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:74`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts:78`](src/capabilities/voice/openai/OpenAIRealtimeAgentSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -20240,7 +20242,7 @@ off?(event: string, handler: (...args: any[]) =&gt; void): unknown;
 
 ### OpenAIRealtimeConnectOptions `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:50`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:51`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -20342,7 +20344,7 @@ off?(event: string, handler: (...args: any[]) =&gt; void): unknown;
 
 ### OpenAIRealtimeSessionEvents `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:54`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:55`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -20361,7 +20363,7 @@ off?(event: string, handler: (...args: any[]) =&gt; void): unknown;
 
 ### OpenAIRealtimeSessionOptions `interface`
 
-📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:23`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
+📍 [`src/capabilities/voice/openai/OpenAIRealtimeSession.ts:24`](src/capabilities/voice/openai/OpenAIRealtimeSession.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -46097,7 +46099,7 @@ async destroy(): Promise&lt;void&gt;
 
 ### TwilioAdapter `class`
 
-📍 [`src/capabilities/voice/adapters/twilio/TwilioAdapter.ts:123`](src/capabilities/voice/adapters/twilio/TwilioAdapter.ts)
+📍 [`src/capabilities/voice/adapters/twilio/TwilioAdapter.ts:124`](src/capabilities/voice/adapters/twilio/TwilioAdapter.ts)
 
 <details>
 <summary><strong>Static Methods</strong></summary>

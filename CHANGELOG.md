@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] — 2026-08-31
+
+### Added
+
+- **Live Realtime voice-agent E2E coverage.** Added the opt-in
+  `npm run test:realtime:e2e` path covering a real browser microphone fixture,
+  WebRTC media, the server sideband Agent session, a local tool call, returned
+  assistant audio/transcript, and provider-call release.
+
+### Fixed
+
+- **OpenAI WebRTC/SIP sideband handshake.** Sideband WebSockets now wait for
+  the socket to open, send an initial `session.update`, and become connected
+  only after `session.updated`; they no longer wait indefinitely for a
+  `session.created` event that OpenAI does not replay for existing calls.
+- **Acknowledged Agent-session readiness.** `OpenAIRealtimeAgentSession.connect()`
+  now waits for OpenAI to acknowledge the configured session and uses a second
+  acknowledged update as a barrier after replaying managed history. Rejected,
+  aborted, timed-out, or transport-closed setup fails instead of exposing a
+  prematurely ready session.
+- **Bounded Realtime shutdown.** Active local tools receive a configurable
+  drain deadline, overdue work cancels the Agent, late tool continuations and
+  errors are suppressed after closure, and an already-closed OpenAI call makes
+  `hangupCall()` succeed idempotently.
+- **Bundler-safe WebSocket transport.** OpenAI Realtime, xAI speech, and Twilio
+  now share a cached `ws` loader that forces the portable JavaScript masker,
+  avoiding crashes when bundlers replace the optional native `bufferutil`
+  dependency with a non-functional module stub.
+
 ## [1.1.3] — 2026-08-30
 
 ### Added
@@ -3150,7 +3179,8 @@ StorageRegistry.setContext({ userId: currentUser.id });
 [0.1.2]: https://github.com/aantich/oneringai/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/aantich/oneringai/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aantich/oneringai/releases/tag/v0.1.0
-[Unreleased]: https://github.com/aantich/oneringai/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/aantich/oneringai/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/aantich/oneringai/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/aantich/oneringai/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/aantich/oneringai/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/aantich/oneringai/compare/v1.1.0...v1.1.1
