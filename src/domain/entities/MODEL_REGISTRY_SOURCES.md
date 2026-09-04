@@ -1,6 +1,6 @@
 # Model Registry Sources
 
-Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`ImageModel.ts`), Video (`VideoModel.ts`), TTS (`TTSModel.ts`), STT (`STTModel.ts`), and embeddings (`EmbeddingModel.ts`). Last audited 2026-08-30.
+Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`ImageModel.ts`), Video (`VideoModel.ts`), TTS (`TTSModel.ts`), STT (`STTModel.ts`), and embeddings (`EmbeddingModel.ts`). Last audited 2026-09-04.
 
 ---
 
@@ -42,10 +42,13 @@ Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`
 
 ### LLM Models (`Model.ts`)
 - **Models overview**: https://platform.claude.com/docs/en/models/overview
+- **Fable 5.1**: https://platform.claude.com/docs/en/models/fable-5-1/overview
+- **Mythos 5.1**: https://platform.claude.com/docs/en/models/mythos-5-1/overview
 - **Pricing page**: https://platform.claude.com/docs/en/about-claude/pricing
 - **Release notes**: https://platform.claude.com/docs/en/release-notes/overview
+- **Deprecations**: https://platform.claude.com/docs/en/about-claude/model-deprecations
 - **Key fields**: context window (200K standard, 1M beta for some), max output, pricing (input/cached/output), extended thinking support
-- **Notes**: All Claude 4+ models support extended thinking. Cached pricing is 10x cheaper. Prompt caching via cache_control blocks.
+- **Notes**: Current adaptive-thinking models accept model-specific effort levels. Fable 5.1 and Mythos 5.1 cache reads are $0.25/MTok; their input/output prices remain $10/$50. Prompt caching uses cache_control blocks.
 
 ---
 
@@ -58,6 +61,7 @@ Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`
 - **Deprecations**: https://ai.google.dev/gemini-api/docs/deprecations
 
 ### LLM Model Detail Pages
+- **Gemini 3.8 Flash**: https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash
 - **Gemini 3.7 Flash**: https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash
 - **Gemini 3.1 Pro Preview**: https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview
 - **Gemini 3 Flash**: https://ai.google.dev/gemini-api/docs/models/gemini-3-flash
@@ -98,8 +102,8 @@ Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`
 - **Model**: `gemini-2.5-flash-native-audio-preview` — Live API model for bidirectional voice/video agents. 131K input, 8K output. Not a traditional TTS model.
 
 ### Music Models (not yet in registry)
-- **Lyria**: https://ai.google.dev/gemini-api/docs/models/lyria-realtime-exp
-- **Model**: `lyria-realtime-exp` — Experimental music generation. 48kHz stereo PCM output, text-prompt input. No dedicated registry exists for music models.
+- **Music generation**: https://ai.google.dev/gemini-api/docs/music-generation
+- **Models**: `lyria-3.5-clip-preview` and `lyria-3.5-pro-preview` are the current public-preview music models; Lyria endpoints remain outside the existing capability registries because OneRingAI has no music-generation surface yet.
 
 ---
 
@@ -116,7 +120,7 @@ Reference document for updating ALL model registries: LLM (`Model.ts`), Image (`
 - **Image generation guide**: https://docs.x.ai/docs/guides/image-generation
 - **Models**: `grok-imagine-image-2.0`, `grok-imagine-image-quality`, `grok-imagine-image`; retired `grok-2-image-1212`
 - **Key fields**: aspect ratios, resolutions (1K/2K), quality tiers, max images per request, and tiered per-image pricing
-- **Notes**: `grok-imagine-image` supports multi-turn editing and style transfer. Generated URLs are temporary.
+- **Notes**: `grok-imagine-image-quality` is deprecated and retires 2026-11-02; migrate to `grok-imagine-image-2.0` with low quality. `grok-imagine-image` remains active. Generated URLs are temporary.
 
 ### Video Models (`VideoModel.ts`)
 - **Video generation guide**: https://docs.x.ai/docs/guides/video-generations

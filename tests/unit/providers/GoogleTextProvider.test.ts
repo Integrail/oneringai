@@ -235,6 +235,22 @@ describe('GoogleTextProvider', () => {
   });
 
   describe('Interactions API', () => {
+    it('routes Gemini 3.8 Flash through Interactions by default', async () => {
+      mockInteractionsCreate.mockResolvedValue({
+        id: 'int_38',
+        model: 'gemini-3.8-flash',
+        status: 'completed',
+        steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Gemini 3.8' }] }],
+      });
+
+      await provider.generate({ model: 'gemini-3.8-flash', input: 'hello' });
+
+      expect(mockInteractionsCreate).toHaveBeenCalledWith(expect.objectContaining({
+        model: 'gemini-3.8-flash',
+      }));
+      expect(mockGenerateContent).not.toHaveBeenCalled();
+    });
+
     it('uses Interactions by default for Gemini 3.5+ and converts steps', async () => {
       mockInteractionsCreate.mockResolvedValue({
         id: 'int_123',

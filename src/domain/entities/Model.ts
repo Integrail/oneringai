@@ -296,6 +296,8 @@ export const LLM_MODELS = {
   },
   [Vendor.Anthropic]: {
     // Claude 5 Series
+    CLAUDE_FABLE_5_1: 'claude-fable-5-1',
+    CLAUDE_MYTHOS_5_1: 'claude-mythos-5-1',
     CLAUDE_OPUS_5: 'claude-opus-5',
     CLAUDE_MYTHOS_5: 'claude-mythos-5',
     CLAUDE_OPUS_4_8: 'claude-opus-4-8',
@@ -318,6 +320,7 @@ export const LLM_MODELS = {
   },
   [Vendor.Google]: {
     // Current Gemini 3.x production models
+    GEMINI_3_8_FLASH: 'gemini-3.8-flash',
     GEMINI_3_7_FLASH: 'gemini-3.7-flash',
     GEMINI_3_6_FLASH: 'gemini-3.6-flash',
     GEMINI_3_5_FLASH: 'gemini-3.5-flash',
@@ -2270,9 +2273,62 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   },
 
   // ============================================================================
-  // Anthropic Models (Verified from platform.claude.com - April 2026)
-  // Source: https://platform.claude.com/docs/en/about-claude/models/overview
+  // Anthropic Models (Verified from platform.claude.com - September 2026)
+  // Source: https://platform.claude.com/docs/en/models/overview
   // ============================================================================
+
+  'claude-fable-5-1': {
+    name: 'claude-fable-5-1',
+    provider: Vendor.Anthropic,
+    description: 'Anthropic\'s most capable public model for demanding reasoning and long-horizon agentic work; adaptive thinking is always on',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['messages', 'batch'],
+    releaseDate: '2026-09-01',
+    knowledgeCutoff: '2026-06-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/fable-5-1/overview', pricing: 'https://platform.claude.com/docs/en/models/fable-5-1/overview', lastVerified: '2026-09-04' },
+    features: {
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, topK: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1_000_000, text: true, image: true, cpm: 10, cpmCached: 0.25 },
+      output: { tokens: 128_000, text: true, cpm: 50 },
+      pricing: {
+        text: { input: 10, cachedInput: 0.25, cacheWrite: 12.5, output: 50 },
+        processingMultipliers: { batch: 0.5 },
+      },
+    },
+  },
+
+  'claude-mythos-5-1': {
+    name: 'claude-mythos-5-1',
+    provider: Vendor.Anthropic,
+    description: 'Invite-only Project Glasswing counterpart to Claude Fable 5.1 with the same specifications, capabilities, and pricing',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'invite_only',
+    endpoints: ['messages', 'batch'],
+    releaseDate: '2026-09-01',
+    knowledgeCutoff: '2026-06-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/mythos-5-1/overview', pricing: 'https://platform.claude.com/docs/en/models/mythos-5-1/overview', lastVerified: '2026-09-04' },
+    features: {
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, topK: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1_000_000, text: true, image: true, cpm: 10, cpmCached: 0.25 },
+      output: { tokens: 128_000, text: true, cpm: 50 },
+      pricing: {
+        text: { input: 10, cachedInput: 0.25, cacheWrite: 12.5, output: 50 },
+        processingMultipliers: { batch: 0.5 },
+      },
+    },
+  },
 
   'claude-opus-5': {
     name: 'claude-opus-5',
@@ -2283,11 +2339,12 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     availability: 'public',
     preferred: true,
     endpoints: ['messages', 'batch'],
-    releaseDate: '2026-07-01',
+    releaseDate: '2026-07-24',
     knowledgeCutoff: '2026-05-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/opus-5/overview', pricing: 'https://platform.claude.com/docs/en/models/opus-5/overview', lastVerified: '2026-09-04' },
     features: {
-      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
       audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
       parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
@@ -2305,14 +2362,16 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     provider: Vendor.Anthropic,
     description: 'Limited-release counterpart to Claude Fable 5 without its safety classifiers; always-on adaptive thinking',
     isActive: true,
-    lifecycle: 'active',
+    lifecycle: 'legacy',
     availability: 'invite_only',
+    replacementModel: 'claude-mythos-5-1',
     endpoints: ['messages', 'batch'],
     releaseDate: '2026-06-09',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/mythos-5/overview', pricing: 'https://platform.claude.com/docs/en/models/mythos-5/overview', lastVerified: '2026-09-04' },
     features: {
-      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
       audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
       parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
@@ -2331,12 +2390,11 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   'claude-opus-4-8': {
     name: 'claude-opus-4-8',
     provider: Vendor.Anthropic,
-    description: 'Most capable Opus-tier model — highly autonomous, state-of-the-art long-horizon agentic work, knowledge work, and memory. 1M context, 128K output, adaptive thinking (low/medium/high/xhigh/max effort), high-resolution vision. Does not accept `temperature`.',
+    description: 'Previous-generation active Opus model for autonomous long-horizon agentic work, knowledge work, and memory. 1M context, 128K output, adaptive thinking (low/medium/high/xhigh/max effort), high-resolution vision. Does not accept `temperature`.',
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
     endpoints: ['messages', 'batch'],
-    preferred: true,
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-01-01',
     features: {
@@ -2380,10 +2438,12 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     availability: 'public',
     endpoints: ['messages', 'batch'],
     preferred: true,
-    releaseDate: '2026-05-01',
+    releaseDate: '2026-06-30',
     knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/sonnet-5/overview', pricing: 'https://platform.claude.com/docs/en/models/sonnet-5/overview', lastVerified: '2026-09-04' },
     features: {
       reasoning: true,
+      reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -2403,13 +2463,17 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
         tokens: 1000000,
         text: true,
         image: true,
-        cpm: 3,
-        cpmCached: 0.3,
+        cpm: 2,
+        cpmCached: 0.2,
       },
       output: {
         tokens: 128000,
         text: true,
-        cpm: 15,
+        cpm: 10,
+      },
+      pricing: {
+        text: { input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 10 },
+        processingMultipliers: { batch: 0.5 },
       },
     },
   },
@@ -2417,16 +2481,18 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   'claude-fable-5': {
     name: 'claude-fable-5',
     provider: Vendor.Anthropic,
-    description: 'Anthropic\'s most capable widely released model, for the most demanding reasoning and long-horizon agentic work. 1M context, 128K output, thinking always on (raw chain of thought never returned). Does not accept `temperature`. Requires 30-day data retention.',
+    description: 'Legacy Fable model for demanding reasoning and long-horizon agentic work. 1M context, 128K output, thinking always on (raw chain of thought never returned). Does not accept `temperature`. Requires 30-day data retention.',
     isActive: true,
-    lifecycle: 'active',
+    lifecycle: 'legacy',
     availability: 'public',
+    replacementModel: 'claude-fable-5-1',
     endpoints: ['messages', 'batch'],
     releaseDate: '2026-06-09',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/fable-5/overview', pricing: 'https://platform.claude.com/docs/en/models/fable-5/overview', lastVerified: '2026-09-04' },
     features: {
       reasoning: true,
+      reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -2687,7 +2753,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     isActive: false,
     lifecycle: 'retired',
     retirementDate: '2026-08-05',
-    replacementModel: 'claude-opus-5',
+    replacementModel: 'claude-opus-4-8',
     releaseDate: '2025-08-05',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -2726,7 +2792,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     isActive: false,
     lifecycle: 'retired',
     retirementDate: '2026-06-15',
-    replacementModel: 'claude-opus-5',
+    replacementModel: 'claude-opus-4-8',
     releaseDate: '2025-05-14',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -2765,7 +2831,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     isActive: false,
     lifecycle: 'retired',
     retirementDate: '2026-06-15',
-    replacementModel: 'claude-sonnet-5',
+    replacementModel: 'claude-sonnet-4-6',
     releaseDate: '2025-05-14',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -2804,7 +2870,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     isActive: false,
     lifecycle: 'retired',
     retirementDate: '2026-02-19',
-    replacementModel: 'claude-sonnet-5',
+    replacementModel: 'claude-sonnet-4-6',
     releaseDate: '2025-02-19',
     knowledgeCutoff: '2024-10-01',
     features: {
@@ -2838,22 +2904,47 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
 
 
   // ============================================================================
-  // Google Models (Verified from ai.google.dev - August 2026)
+  // Google Models (Verified from ai.google.dev - September 2026)
   // ============================================================================
 
-  'gemini-3.7-flash': {
-    name: 'gemini-3.7-flash',
+  'gemini-3.8-flash': {
+    name: 'gemini-3.8-flash',
     provider: Vendor.Google,
-    description: 'Latest production Gemini Flash model for agentic workflows and multimodal reasoning',
+    description: 'Google\'s most intelligent Flash model for long-horizon software engineering, autonomous agents, and complex enterprise workflows',
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    aliases: ['gemini-flash-latest'],
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-09-02',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-09-04' },
+    features: {
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high'],
+      streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1_048_576, text: true, image: true, audio: true, video: true, cpm: 0.75, cpmCached: 0.075 },
+      output: { tokens: 65_536, text: true, cpm: 3.75 },
+      pricing: {
+        text: { input: 0.75, cachedInput: 0.075, output: 3.75 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
+      },
+    },
+  },
+
+  'gemini-3.7-flash': {
+    name: 'gemini-3.7-flash',
+    provider: Vendor.Google,
+    description: 'Previous-generation production Gemini Flash model for agentic workflows and multimodal reasoning',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-08-13',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-09-04' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -2902,6 +2993,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
+    aliases: ['gemini-flash-latest'],
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-01-01',
@@ -3355,7 +3447,7 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   },
 
   // ============================================================================
-  // xAI Grok Models (Verified from docs.x.ai - August 2026)
+  // xAI Grok Models (Verified from docs.x.ai - September 2026)
   // ============================================================================
 
   'grok-4.6': {
@@ -3366,12 +3458,13 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    endpoints: ['responses', 'chat_completions', 'messages', 'completions'],
+    endpoints: ['responses', 'chat_completions'],
     releaseDate: '2026-08-12',
     knowledgeCutoff: '2026-02-01',
-    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.6', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
+    sources: { documentation: 'https://docs.x.ai/developers/grok-4-6', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-09-04' },
     features: {
-      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+      streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
       audio: false, video: false, batchAPI: false, promptCaching: true,
       parameters: { temperature: true, topP: true, frequencyPenalty: true, presencePenalty: true },
@@ -3420,7 +3513,6 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
-    preferred: true,
     endpoints: ['responses', 'chat_completions', 'messages'],
     releaseDate: '2026-05-15',
     knowledgeCutoff: '2026-02-01',
@@ -3540,7 +3632,6 @@ export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
     provider: Vendor.Grok,
     description: 'Grok 4.20 reasoning model with a 1M-token context window and vision support',
     isActive: true,
-    preferred: true,
     releaseDate: '2026-03-09',
     knowledgeCutoff: '2024-11-01',
     features: {

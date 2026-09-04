@@ -487,7 +487,7 @@ alias only when following the vendor's moving target is intentional.
 
 ### 4. Adopt Google Interactions
 
-`gemini-3.5-*`, `gemini-3.6-*`, and `gemini-3.7-*` use the Google Interactions API by default.
+`gemini-3.5-*` through `gemini-3.8-*` use the Google Interactions API by default.
 Normal `Agent.run()`, `runDirect()`, and streaming callers receive the same
 OneRingAI response types; only callers depending on native Google wire details
 need immediate changes.
@@ -495,7 +495,7 @@ need immediate changes.
 ```typescript
 const agent = Agent.create({
   connector: 'google',
-  model: 'gemini-3.7-flash',
+  model: 'gemini-3.8-flash',
 });
 
 // Default: stored Interactions API (`steps` responses and `step.delta` streams).
@@ -554,8 +554,8 @@ Recommended starting points in 1.0.0 are:
 | Highest-capability OpenAI text/agents | `gpt-6-astra` |
 | Balanced OpenAI production agents | `gpt-5.6-terra` |
 | Economical OpenAI high-throughput work | `gpt-5.6-luna` |
-| Anthropic frontier work | `claude-opus-5`; use `claude-sonnet-5` for a balanced general path |
-| Google multimodal/agent work | `gemini-3.7-flash` through Interactions |
+| Anthropic frontier work | `claude-opus-5`; use `claude-fable-5-1` for the hardest long-horizon work and `claude-sonnet-5` for a faster path |
+| Google multimodal/agent work | `gemini-3.8-flash` through Interactions |
 | xAI text/agent work | `grok-4.6` |
 | OpenAI image generation/editing | `gpt-image-2` |
 | Google native image | `gemini-3.1-flash-image` |
@@ -685,7 +685,7 @@ Connector.create({
 
 const agent = Agent.create({
   connector: 'anthropic',
-  model: 'claude-fable-5',
+  model: 'claude-fable-5-1',
 });
 
 // Ask a question
@@ -17891,8 +17891,8 @@ if (!toolManager.isDestroyed) {
 
 1. **Use appropriate models:**
    - `gpt-5.6-luna`, `gemini-3.5-flash-lite`, or `claude-sonnet-5` for low-latency/high-throughput work
-   - `gpt-5.6-terra`, `gemini-3.7-flash`, or `grok-4.6` for balanced production agents
-   - `gpt-6-astra`, `gpt-5.5-pro`, or `claude-opus-5` for the most demanding reasoning and long-horizon work
+   - `gpt-5.6-terra`, `gemini-3.8-flash`, or `grok-4.6` for balanced production agents
+   - `gpt-6-astra`, `gpt-5.5-pro`, or `claude-fable-5-1` for the most demanding reasoning and long-horizon work
 
 2. **Leverage caching:**
    - Use provider-aware prompt caching where `getAdvancedCapabilities()` reports support
@@ -17954,7 +17954,7 @@ Connector.create({ name: 'google', vendor: Vendor.Google,
 // Create agents for each
 const openaiAgent = Agent.create({ connector: 'openai', model: 'gpt-5.6-terra' });
 const claudeAgent = Agent.create({ connector: 'anthropic', model: 'claude-opus-5' });
-const geminiAgent = Agent.create({ connector: 'google', model: 'gemini-3.7-flash' });
+const geminiAgent = Agent.create({ connector: 'google', model: 'gemini-3.8-flash' });
 
 // Compare responses
 const [r1, r2, r3] = await Promise.all([

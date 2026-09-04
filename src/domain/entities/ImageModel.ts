@@ -165,7 +165,7 @@ export const IMAGE_MODELS = {
 
 /**
  * Complete image model registry
- * Last full audit: August 2026
+ * Last full audit: September 2026
  */
 export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
   // ======================== OpenAI ========================
@@ -1261,18 +1261,21 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     name: 'grok-imagine-image-quality',
     displayName: 'Grok Imagine Image Quality',
     provider: Vendor.Grok,
-    description: 'Higher-fidelity xAI image generation and multi-image editing with 1K and 2K output',
+    description: 'Deprecated higher-fidelity xAI image model; migrate to Grok Imagine Image 2.0 low quality before retirement',
     isActive: true,
-    lifecycle: 'active',
+    lifecycle: 'deprecated',
     availability: 'public',
     aliases: ['grok-imagine-image-quality-latest', 'grok-imagine-image-pro'],
     snapshots: ['grok-imagine-image-quality-20260403'],
     endpoints: ['image_generation', 'image_edit'],
     releaseDate: '2026-04-03',
+    deprecationDate: '2026-09-02',
+    retirementDate: '2026-11-02',
+    replacementModel: 'grok-imagine-image-2.0',
     sources: {
       documentation: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
       pricing: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
-      lastVerified: '2026-08-30',
+      lastVerified: '2026-09-04',
     },
     capabilities: {
       sizes: ['1024x1024', '2048x2048', 'auto'],

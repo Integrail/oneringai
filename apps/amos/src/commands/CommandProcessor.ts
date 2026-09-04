@@ -5,6 +5,7 @@
  * Commands are registered with names and aliases.
  */
 
+import { ProviderMisalignmentError } from '@everworker/oneringai';
 import type { CommandContext, CommandResult, ICommand, IAmosApp } from '../config/types.js';
 
 export class CommandProcessor {
@@ -96,6 +97,17 @@ export class CommandProcessor {
     try {
       return await command.execute(context);
     } catch (error) {
+      if (error instanceof ProviderMisalignmentError) {
+        const ids = [
+          error.requestId ? `request ${error.requestId}` : '',
+          error.responseId ? `response ${error.responseId}` : '',
+        ].filter(Boolean).join(', ');
+        return {
+          success: false,
+          message: 'OpenAI stopped this Astra request for misalignment review; AMOS will not retry it.' +
+            (ids ? ` (${ids})` : ''),
+        };
+      }
       return {
         success: false,
         message: `Command error: ${error instanceof Error ? error.message : String(error)}`,

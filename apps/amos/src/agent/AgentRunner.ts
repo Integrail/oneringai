@@ -8,13 +8,19 @@ import {
   FileContextStorage,
   MessageRole,
   StreamEventType,
+  getModelInfo,
   type ApprovalDecision,
   type InputItem,
+  type ReasoningEffort,
   type StreamEvent as LibraryStreamEvent,
+  type ThinkingConfig,
   type ToolFunction,
 } from '@everworker/oneringai';
 import type {
   AgentResponse,
+  AstraAsyncToolResponse,
+  AstraDirectResponse,
+  AstraReasoningEffort,
   AmosConfig,
   CacheStatsInfo,
   ContextBreakdownInfo,
@@ -29,6 +35,42 @@ import type {
   ToolApprovalContext,
 } from '../config/types.js';
 import { buildPermissionsConfig } from './permissionUtils.js';
+
+export interface AmosModelRuntimeOptions {
+  temperature?: number;
+  thinking?: ThinkingConfig;
+}
+
+/** Resolve only parameters that the selected model actually accepts. */
+export function resolveAmosModelRuntimeOptions(
+  model: string,
+  temperature: number,
+  requestedEffort: ReasoningEffort,
+): AmosModelRuntimeOptions {
+  const info = getModelInfo(model);
+  const isAstra = /^gpt-6-astra(?:-|$)/.test(model);
+  const options: AmosModelRuntimeOptions = {};
+
+  if (!isAstra && info?.features.parameters?.temperature !== false) {
+    options.temperature = temperature;
+  } else if (!isAstra && !info) {
+    options.temperature = temperature;
+  }
+
+  const allowedEfforts = info?.features.reasoningEfforts ?? (isAstra
+    ? ['low', 'medium', 'high', 'xhigh', 'max'] as ReasoningEffort[]
+    : []);
+  if (info?.features.reasoning || isAstra) {
+    const effort = allowedEfforts.includes(requestedEffort)
+      ? requestedEffort
+      : allowedEfforts.includes('medium')
+        ? 'medium'
+        : allowedEfforts[0];
+    if (effort) options.thinking = { enabled: true, effort };
+  }
+
+  return options;
+}
 
 export class AgentRunner implements IAgentRunner {
   private agent: Agent | null = null;
@@ -87,12 +129,17 @@ export class AgentRunner implements IAgentRunner {
   }
 
   private buildAgentConfig(connectorName: string, model: string) {
+    const runtimeOptions = resolveAmosModelRuntimeOptions(
+      model,
+      this._currentTemperature,
+      this.config.defaults.reasoningEffort,
+    );
     return {
       name: 'amos',
       connector: connectorName,
       model,
       tools: this.tools,
-      temperature: this._currentTemperature,
+      ...runtimeOptions,
       instructions: this.buildInstructions(),
       session: {
         storage: this.storage,
@@ -208,6 +255,110 @@ export class AgentRunner implements IAgentRunner {
 
   getTemperature(): number {
     return this._currentTemperature;
+  }
+
+  getReasoningEffort(): ReasoningEffort | null {
+    return resolveAmosModelRuntimeOptions(
+      this._currentModel,
+      this._currentTemperature,
+      this.config.defaults.reasoningEffort,
+    ).thinking?.effort ?? null;
+  }
+
+  async runAstraDirect(
+    input: string | InputItem[],
+    options: { previousResponseId?: string; effort?: AstraReasoningEffort } = {},
+  ): Promise<AstraDirectResponse> {
+    this.assertAstraCapability('configurationUpdates');
+    const response = await this.requireAgent().runDirect(input, {
+      instructions: this.buildInstructions(),
+      maxOutputTokens: this.config.defaults.maxOutputTokens,
+      ...(options.previousResponseId ? { previousResponseId: options.previousResponseId } : {}),
+      ...(options.effort ? { thinking: { enabled: true, effort: options.effort } } : {}),
+    });
+    return { responseId: response.id, text: response.output_text ?? '' };
+  }
+
+  async runAstraAsyncTool(toolName: string, prompt: string): Promise<AstraAsyncToolResponse> {
+    this.assertAstraCapability('asyncToolCalling');
+    const agent = this.requireAgent();
+    const tool = agent.tools.get(toolName);
+    if (!tool) throw new Error(`Tool '${toolName}' is not registered or enabled`);
+
+    const asyncDefinition = { ...tool.definition, async: true as const };
+    const effort = this.getReasoningEffort() as AstraReasoningEffort | null;
+    const startedAt = Date.now();
+    const first = await agent.runDirect(prompt, {
+      instructions: this.buildInstructions(),
+      tools: [asyncDefinition],
+      toolChoice: { type: 'function', function: { name: toolName } },
+      maxOutputTokens: this.config.defaults.maxOutputTokens,
+      ...(effort ? { thinking: { enabled: true, effort } } : {}),
+    });
+
+    const call = first.output
+      .filter((item) => item.type === 'message')
+      .flatMap((item) => item.content)
+      .find((content) => content.type === ContentType.TOOL_USE && content.name === toolName);
+    if (!call || call.type !== ContentType.TOOL_USE) {
+      throw new Error(`Astra did not return the required '${toolName}' call`);
+    }
+    if (call.async !== true) {
+      throw new Error(`OpenAI returned '${toolName}' without the Astra async protocol marker`);
+    }
+
+    let args: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(call.arguments) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('arguments were not a JSON object');
+      }
+      args = parsed as Record<string, unknown>;
+    } catch (error) {
+      throw new Error(
+        `Astra returned invalid arguments for '${toolName}': ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    await agent.beginExternalExecution({ source: 'amos:astra-async-tool' });
+    let result: unknown;
+    try {
+      const toolResult = await agent.executeExternalToolCall({
+        id: call.id,
+        name: toolName,
+        arguments: args,
+      });
+      result = toolResult.content;
+      await agent.completeExternalExecution();
+    } catch (error) {
+      await agent.completeExternalExecution({
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
+      throw error;
+    }
+    const output = typeof result === 'string'
+      ? result
+      : JSON.stringify(result) ?? 'null';
+    const final = await agent.runDirect([
+      { type: 'function_call_output', call_id: call.id, output },
+    ], {
+      previousResponseId: first.id,
+      instructions: this.buildInstructions(),
+      tools: [asyncDefinition],
+      maxOutputTokens: this.config.defaults.maxOutputTokens,
+      ...(effort ? { thinking: { enabled: true, effort } } : {}),
+    });
+
+    return {
+      responseId: final.id,
+      text: final.output_text ?? '',
+      initialText: first.output_text ?? '',
+      callId: call.id,
+      toolName,
+      arguments: args,
+      result,
+      duration: Date.now() - startedAt,
+    };
   }
 
   updateTools(tools: ToolFunction[]): void {
@@ -463,6 +614,17 @@ export class AgentRunner implements IAgentRunner {
   private requireAgent(): Agent {
     if (!this.agent) throw new Error('Agent not initialized');
     return this.agent;
+  }
+
+  private assertAstraCapability(
+    capability: 'asyncToolCalling' | 'configurationUpdates',
+  ): void {
+    const info = getModelInfo(this._currentModel);
+    if (info?.features[capability] !== true) {
+      throw new Error(
+        `Model '${this._currentModel}' does not support ${capability}; switch with /astra use`,
+      );
+    }
   }
 
   private async autoSaveIfEnabled(): Promise<void> {

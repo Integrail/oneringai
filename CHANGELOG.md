@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.7] — 2026-09-04
+
+### Added
+
+- **Astra workflows in AMOS.** Added an `/astra` command for stored Responses
+  continuations, in-band reasoning changes, async tool execution through the
+  normal permission pipeline, live WebSocket steering, and safety-alert lookup.
+- **September model catalog.** Added Claude Fable 5.1, invite-only Claude
+  Mythos 5.1, and Gemini 3.8 Flash with current capabilities, context limits,
+  reasoning efforts, processing tiers, lifecycle, and pricing metadata.
+
+### Changed
+
+- **Model-aware AMOS execution.** Fresh AMOS configurations default to GPT-6
+  Astra, expose reasoning effort configuration, and omit unsupported sampling
+  parameters while preserving existing users' selected model.
+- **Current provider routing.** Gemini 3.8 Flash now uses Google's Interactions
+  API by default. Grok 4.6 metadata now reflects its documented Responses and
+  Chat Completions surfaces and supported reasoning efforts.
+
+### Fixed
+
+- **Registry lifecycle and pricing.** Corrected current Claude 5 release dates,
+  pricing, preferred models, and retired-model replacements; retained Google's
+  last explicitly documented `gemini-flash-latest` target; and recorded the
+  announced deprecation and replacement for Grok Imagine Image Quality.
+
 ## [1.1.6] — 2026-09-04
 
 ### Added

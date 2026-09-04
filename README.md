@@ -6,23 +6,24 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22.13%2B%20%7C%2024%2B-green.svg)](https://nodejs.org/)
 
-## What's new in v1.1.6
+## What's new in v1.1.7
 
-Version 1.1.6 adds first-class GPT-6 Astra support across the model registry,
-direct Responses calls, streaming, and Agent Runtime reasoning controls.
+Version 1.1.7 brings GPT-6 Astra's new Responses workflows into the AMOS
+reference app and refreshes OneRingAI's current model catalog.
 
-- **Async tools:** Mark function or custom tools with `async: true`, then return
-  results with the original `call_id` through a direct continuation.
-- **Mid-turn steering:** Use the connector-first
-  `OpenAIResponsesWebSocketSession` to steer active Astra responses.
-- **Reasoning and compaction:** Send `configuration_update` and
-  `compaction_trigger` items; compacted state is preserved in direct and
-  streaming output.
-- **Safety monitoring:** Handle `ProviderMisalignmentError` without automatic
-  retries and retrieve correlated alerts with `OpenAISafetyAPI`.
+- **Astra in AMOS:** The new `/astra` command demonstrates async tools with
+  `call_id` continuations, cached reasoning changes via `configuration_update`,
+  live WebSocket steering, and correlated safety-alert retrieval. AMOS now
+  selects model-safe reasoning and sampling options automatically.
+- **Anthropic:** Adds public Claude Fable 5.1 and invite-only Mythos 5.1, with
+  current context limits, reasoning efforts, lifecycle, and pricing metadata.
+- **Google:** Adds Gemini 3.8 Flash with Interactions API routing, multimodal
+  capabilities, processing tiers, and current pricing.
+- **xAI:** Refreshes Grok 4.6 endpoint and reasoning metadata and records the
+  announced retirement path for Grok Imagine Image Quality.
 
 OpenAI controls Astra availability by organization. Read the
-[complete 1.1.6 release notes](./CHANGELOG.md#116--2026-09-04), the
+[complete 1.1.7 release notes](./CHANGELOG.md#117--2026-09-04), the
 [OneRingAI Astra guide](./USER_GUIDE.md#gpt-6-astra-responses-extensions), and
 the [official OpenAI model guide](https://developers.openai.com/api/docs/guides/latest-model).
 
@@ -191,7 +192,7 @@ plugin lifecycle, stores, compaction, persistence, and custom plugins.
 
 ## Table of Contents
 
-- [What's new in v1.1.6](#whats-new-in-v116)
+- [What's new in v1.1.7](#whats-new-in-v117)
 - [Built for coding agents](#built-for-coding-agents)
 - [Agent Runtime: run complete agents through one API](#agent-runtime-run-complete-agents-through-one-api)
 - [Meet AMOS: a terminal agent built with OneRingAI](#meet-amos-a-terminal-agent-built-with-oneringai)
@@ -3473,8 +3474,8 @@ Check your `.env` file and ensure the key is correct for that vendor.
 Each vendor has different model names. Check the [User Guide](./USER_GUIDE.md) for supported models.
 
 ### Vision not working
-Use a current vision-capable model: `gpt-6-astra`, `claude-fable-5`, or
-`gemini-3.7-flash`.
+Use a current vision-capable model: `gpt-6-astra`, `claude-fable-5-1`, or
+`gemini-3.8-flash`.
 
 ## Contributing
 
@@ -3486,4 +3487,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 1.1.6 | **Last Updated:** 2026-09-04 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 1.1.7 | **Last Updated:** 2026-09-04 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**

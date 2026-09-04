@@ -4,6 +4,7 @@
 
 export { HelpCommand } from './HelpCommand.js';
 export { ModelCommand } from './ModelCommand.js';
+export { AstraCommand } from './AstraCommand.js';
 export { VendorCommand } from './VendorCommand.js';
 export { ConnectorCommand } from './ConnectorCommand.js';
 export { ToolCommand } from './ToolCommand.js';

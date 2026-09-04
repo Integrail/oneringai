@@ -136,6 +136,7 @@ Agent:
   Connector: ${config.activeConnector || '(none)'}
   Vendor: ${config.activeVendor || config.defaults.vendor}
   Model: ${config.activeModel || config.defaults.model}
+  Reasoning: ${agent?.getReasoningEffort() ?? '(not configurable)'}
 
 Planning:
   Enabled: ${config.planning.enabled ? 'Yes' : 'No'}

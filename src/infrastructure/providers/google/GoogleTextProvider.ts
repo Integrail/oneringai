@@ -31,7 +31,7 @@ import {
 const GOOGLE_SERVER_TOOL_MODELS = /^gemini-(?:2\.5|3(?:\.|-|$))/;
 const GOOGLE_STRUCTURED_WITH_TOOLS_MODELS = /^gemini-3(?:\.|-|$)/;
 const GOOGLE_NON_TEXT_VARIANTS = /(?:image|live)/;
-const GOOGLE_INTERACTIONS_DEFAULT_MODELS = /^gemini-3\.(?:5|6|7)(?:-|$)/;
+const GOOGLE_INTERACTIONS_DEFAULT_MODELS = /^gemini-3\.(?:5|6|7|8)(?:-|$)/;
 
 export class GoogleTextProvider extends BaseTextProvider {
   readonly name = 'google';

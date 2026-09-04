@@ -6,7 +6,7 @@
 
 import { join } from 'node:path';
 import type { ToolFunction, ApprovalDecision } from '@everworker/oneringai';
-import { defaultDescribeCall } from '@everworker/oneringai';
+import { ProviderMisalignmentError, defaultDescribeCall } from '@everworker/oneringai';
 import { ConfigManager } from './config/ConfigManager.js';
 import type { AmosConfig, IAmosApp, IConnectorManager, IToolLoader, IAgentRunner, IPromptManager, ICommand, ToolApprovalContext } from './config/types.js';
 import { ConnectorManager } from './connectors/ConnectorManager.js';
@@ -17,6 +17,7 @@ import { Terminal } from './ui/Terminal.js';
 import {
   CommandProcessor,
   HelpCommand,
+  AstraCommand,
   ModelCommand,
   VendorCommand,
   ConnectorCommand,
@@ -42,6 +43,7 @@ export class AmosApp implements IAmosApp {
   private agentRunner: AgentRunner | null = null;
   private terminal: Terminal;
   private commandProcessor: CommandProcessor;
+  private astraCommand: AstraCommand;
   private dataDir: string;
   private running: boolean = false;
 
@@ -54,6 +56,7 @@ export class AmosApp implements IAmosApp {
     this.toolLoader = new ToolLoader(join(dataDir, 'tools'));
     this.terminal = new Terminal();
     this.commandProcessor = new CommandProcessor(this);
+    this.astraCommand = new AstraCommand();
 
     // Register commands
     this.registerCommands();
@@ -157,6 +160,7 @@ export class AmosApp implements IAmosApp {
   /** Request a graceful stop (used by SIGINT/SIGTERM handlers). */
   stop(): void {
     this.running = false;
+    this.astraCommand.reset();
     this.agentRunner?.cancel();
     this.terminal.close();
   }
@@ -285,6 +289,14 @@ export class AmosApp implements IAmosApp {
         }
       }
     } catch (error) {
+      if (error instanceof ProviderMisalignmentError) {
+        this.terminal.printError(
+          'OpenAI stopped this Astra request for misalignment review. AMOS will not retry it.'
+        );
+        if (error.requestId) this.terminal.printDim(`Request ID: ${error.requestId}`);
+        if (error.responseId) this.terminal.printDim(`Response ID: ${error.responseId}`);
+        return;
+      }
       this.terminal.printError(
         `Agent error: ${error instanceof Error ? error.message : String(error)}`
       );
@@ -377,6 +389,7 @@ export class AmosApp implements IAmosApp {
   private registerCommands(): void {
     this.commandProcessor.registerAll([
       new HelpCommand(),
+      this.astraCommand,
       new ModelCommand(),
       new VendorCommand(),
       new ConnectorCommand(),
@@ -399,6 +412,7 @@ export class AmosApp implements IAmosApp {
    */
   private async shutdown(): Promise<void> {
     this.terminal.print('\nShutting down...');
+    this.astraCommand.reset();
 
     // Save config
     if (this.configManager.isDirty()) {
@@ -507,6 +521,9 @@ export class AmosApp implements IAmosApp {
 
   async createAgent(options: { freshSession?: boolean } = {}): Promise<void> {
     const config = this.configManager.get();
+
+    // A steering response is bound to its original connector and model.
+    this.astraCommand.reset();
 
     if (!config.activeConnector) {
       throw new Error('No active connector configured');
@@ -712,6 +729,10 @@ export class AmosApp implements IAmosApp {
 
   printDim(message: string): void {
     this.terminal.printDim(message);
+  }
+
+  write(message: string): void {
+    this.terminal.write(message);
   }
 
   async prompt(question: string): Promise<string> {

@@ -3,7 +3,14 @@
  * Type definitions for the app configuration and state
  */
 
-import type { Vendor, ToolFunction, PermissionScope, RiskLevel } from '@everworker/oneringai';
+import type {
+  InputItem,
+  PermissionScope,
+  ReasoningEffort,
+  RiskLevel,
+  ToolFunction,
+  Vendor,
+} from '@everworker/oneringai';
 import type { ExternalToolManager } from '../tools/ExternalToolManager.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,6 +28,7 @@ export interface AmosConfig {
     vendor: string;
     model: string;
     temperature: number;
+    reasoningEffort: ReasoningEffort;
     maxOutputTokens: number;
   };
 
@@ -178,6 +186,7 @@ export interface IAmosApp {
   printSuccess(message: string): void;
   printInfo(message: string): void;
   printDim(message: string): void;
+  write(message: string): void;
   prompt(question: string): Promise<string>;
   confirm(question: string): Promise<boolean>;
   select<T extends string>(question: string, options: T[]): Promise<T>;
@@ -296,6 +305,14 @@ export interface IAgentRunner {
   getModel(): string;
   setTemperature(temp: number): void;
   getTemperature(): number;
+  getReasoningEffort(): ReasoningEffort | null;
+
+  // GPT-6 Astra Responses protocol demonstrations
+  runAstraDirect(
+    input: string | InputItem[],
+    options?: { previousResponseId?: string; effort?: AstraReasoningEffort },
+  ): Promise<AstraDirectResponse>;
+  runAstraAsyncTool(toolName: string, prompt: string): Promise<AstraAsyncToolResponse>;
 
   // Session
   saveSession(name?: string): Promise<string>;
@@ -519,6 +536,22 @@ export interface ToolApprovalContext {
   reason?: string;
 }
 
+export type AstraReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+export interface AstraDirectResponse {
+  responseId: string;
+  text: string;
+}
+
+export interface AstraAsyncToolResponse extends AstraDirectResponse {
+  callId: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+  result: unknown;
+  initialText: string;
+  duration: number;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Vendor Info
 // ─────────────────────────────────────────────────────────────────────────────
@@ -553,8 +586,9 @@ export const DEFAULT_CONFIG: AmosConfig = {
 
   defaults: {
     vendor: 'openai',
-    model: 'gpt-5.6-terra',
+    model: 'gpt-6-astra',
     temperature: 0.7,
+    reasoningEffort: 'medium',
     maxOutputTokens: 4096,
   },
 

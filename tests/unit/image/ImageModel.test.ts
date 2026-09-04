@@ -33,6 +33,8 @@ describe('ImageModel Registry', () => {
     });
 
     it('should have all declared Grok models', () => {
+      expect(IMAGE_MODEL_REGISTRY['grok-imagine-image-2.0']).toBeDefined();
+      expect(IMAGE_MODEL_REGISTRY['grok-imagine-image-quality']).toBeDefined();
       expect(IMAGE_MODEL_REGISTRY['grok-imagine-image']).toBeDefined();
       expect(IMAGE_MODEL_REGISTRY['grok-2-image-1212']).toBeDefined();
     });
@@ -201,12 +203,24 @@ describe('ImageModel Registry', () => {
     });
 
     it('should have IMAGE_MODELS constants for Grok', () => {
+      expect(IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE_2).toBe('grok-imagine-image-2.0');
+      expect(IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE_QUALITY).toBe('grok-imagine-image-quality');
       expect(IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE).toBe('grok-imagine-image');
       expect(IMAGE_MODELS[Vendor.Grok].GROK_2_IMAGE_1212).toBe('grok-2-image-1212');
     });
   });
 
   describe('Model features', () => {
+    it('should track the Grok Imagine Image Quality retirement', () => {
+      expect(getImageModelInfo('grok-imagine-image-quality')).toMatchObject({
+        isActive: true,
+        lifecycle: 'deprecated',
+        deprecationDate: '2026-09-02',
+        retirementDate: '2026-11-02',
+        replacementModel: 'grok-imagine-image-2.0',
+      });
+    });
+
     it('should mark DALL-E 3 as having style control', () => {
       const model = getImageModelInfo('dall-e-3');
       expect(model?.capabilities.features.styleControl).toBe(true);

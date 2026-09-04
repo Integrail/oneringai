@@ -19,6 +19,9 @@ describe('Model Registry', () => {
       expect(MODEL_REGISTRY['gpt-6-astra']).toBeDefined();
       expect(MODEL_REGISTRY['gpt-5.6-sol']).toBeDefined();
       expect(MODEL_REGISTRY['claude-opus-5']).toBeDefined();
+      expect(MODEL_REGISTRY['claude-fable-5-1']).toBeDefined();
+      expect(MODEL_REGISTRY['claude-mythos-5-1']).toBeDefined();
+      expect(MODEL_REGISTRY['gemini-3.8-flash']).toBeDefined();
       expect(MODEL_REGISTRY['gemini-3.7-flash']).toBeDefined();
       expect(MODEL_REGISTRY['grok-4.6']).toBeDefined();
       expect(MODEL_REGISTRY['deepseek-v4-flash']).toBeDefined();
@@ -92,7 +95,7 @@ describe('Model Registry', () => {
     it('uses the lifecycle-aware registry schema', () => {
       expect(MODEL_REGISTRY_SCHEMA_VERSION).toBe(2);
       expect(MODEL_REGISTRY['gpt-5.6-sol'].lifecycle).toBe('active');
-      expect(MODEL_REGISTRY['claude-opus-4-1-20250805'].replacementModel).toBe('claude-opus-5');
+      expect(MODEL_REGISTRY['claude-opus-4-1-20250805'].replacementModel).toBe('claude-opus-4-8');
     });
 
     it('publishes Realtime voice defaults and recommendations for UI consumers', () => {
@@ -126,6 +129,8 @@ describe('Model Registry', () => {
     });
 
     it('should have Anthropic model constants', () => {
+      expect(LLM_MODELS[Vendor.Anthropic].CLAUDE_FABLE_5_1).toBe('claude-fable-5-1');
+      expect(LLM_MODELS[Vendor.Anthropic].CLAUDE_MYTHOS_5_1).toBe('claude-mythos-5-1');
       expect(LLM_MODELS[Vendor.Anthropic].CLAUDE_OPUS_4_8).toBe('claude-opus-4-8');
       expect(LLM_MODELS[Vendor.Anthropic].CLAUDE_SONNET_5).toBe('claude-sonnet-5');
       expect(LLM_MODELS[Vendor.Anthropic].CLAUDE_FABLE_5).toBe('claude-fable-5');
@@ -145,6 +150,7 @@ describe('Model Registry', () => {
     });
 
     it('should have Google model constants', () => {
+      expect(LLM_MODELS[Vendor.Google].GEMINI_3_8_FLASH).toBe('gemini-3.8-flash');
       expect(LLM_MODELS[Vendor.Google].GEMINI_3_7_FLASH).toBe('gemini-3.7-flash');
       expect(LLM_MODELS[Vendor.Google].GEMINI_3_1_PRO_PREVIEW).toBe('gemini-3.1-pro-preview');
       expect(LLM_MODELS[Vendor.Google].GEMINI_3_1_FLASH_LITE_PREVIEW).toBe('gemini-3.1-flash-lite-preview');
@@ -529,22 +535,68 @@ describe('Model Registry', () => {
       const gpt54 = getModelInfo('gpt-5.4');
       const gpt52 = getModelInfo('gpt-5.2');
       const gpt5 = getModelInfo('gpt-5');
+      const fable51 = getModelInfo('claude-fable-5-1');
       const opus48 = getModelInfo('claude-opus-4-8');
       const sonnet5 = getModelInfo('claude-sonnet-5');
       const opus47 = getModelInfo('claude-opus-4-7');
       const opus46 = getModelInfo('claude-opus-4-6');
       const sonnet46 = getModelInfo('claude-sonnet-4-6');
+      const grok43 = getModelInfo('grok-4.3');
+      const grok420 = getModelInfo('grok-4.20-0309-reasoning');
 
       expect(gpt55?.preferred).toBe(true);
       expect(gpt54?.preferred).toBeUndefined();
       expect(gpt52?.preferred).toBeUndefined();
       expect(gpt5?.preferred).toBeUndefined();
       // Current flagships are preferred; superseded models are demoted.
-      expect(opus48?.preferred).toBe(true);
+      expect(fable51?.preferred).toBe(true);
+      expect(opus48?.preferred).toBeUndefined();
       expect(sonnet5?.preferred).toBe(true);
       expect(opus47?.preferred).toBeUndefined();
       expect(opus46?.preferred).toBeUndefined();
       expect(sonnet46?.preferred).toBeUndefined();
+      expect(grok43?.preferred).toBeUndefined();
+      expect(grok420?.preferred).toBeUndefined();
+    });
+
+    it('should describe the September 2026 provider model updates', () => {
+      const fable51 = getModelInfo('claude-fable-5-1');
+      const mythos51 = getModelInfo('claude-mythos-5-1');
+      const sonnet5 = getModelInfo('claude-sonnet-5');
+      const gemini38 = getModelInfo('gemini-3.8-flash');
+      const grok46 = getModelInfo('grok-4.6');
+
+      expect(fable51).toMatchObject({
+        lifecycle: 'active',
+        availability: 'public',
+        knowledgeCutoff: '2026-06-01',
+        features: {
+          reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+          input: { tokens: 1_000_000, cpm: 10, cpmCached: 0.25 },
+          output: { tokens: 128_000, cpm: 50 },
+        },
+      });
+      expect(mythos51).toMatchObject({ availability: 'invite_only' });
+      expect(sonnet5?.features.pricing?.text).toMatchObject({
+        input: 2,
+        cachedInput: 0.2,
+        cacheWrite: 2.5,
+        output: 10,
+      });
+      expect(gemini38).toMatchObject({
+        endpoints: ['generate_content', 'interactions', 'batch'],
+        features: {
+          reasoningEfforts: ['low', 'medium', 'high'],
+          input: { tokens: 1_048_576, cpm: 0.75, cpmCached: 0.075 },
+          output: { tokens: 65_536, cpm: 3.75 },
+        },
+      });
+      expect(grok46).toMatchObject({
+        endpoints: ['responses', 'chat_completions'],
+        features: { reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] },
+      });
+      expect(getModelInfo('gemini-3.5-flash')?.aliases).toEqual(['gemini-flash-latest']);
+      expect(gemini38?.aliases).toBeUndefined();
     });
 
     it('should have correct Claude 4.6 series data', () => {

@@ -8,6 +8,7 @@ A powerful terminal-based AI assistant powered by `@everworker/oneringai`. Featu
 
 - **Multi-Vendor Support** - OpenAI, Anthropic, Google, Groq, Mistral, and more
 - **Runtime Configuration** - Switch models, vendors, and prompts without restart
+- **GPT-6 Astra** - Native reasoning controls, async tools, WebSocket steering, and safety alerts
 - **Tool System** - Built-in developer tools + custom tool support
 - **Permission System** - Granular control over tool execution
 - **Session Management** - Save and resume conversations
@@ -39,6 +40,7 @@ On first run, you'll be prompted to configure an API key.
 |---------|-------|-------------|
 | `/help` | | Show all commands |
 | `/model [name]` | `/m` | List or switch models |
+| `/astra <sub>` | `/gpt6` | Use Astra and demonstrate its Responses APIs |
 | `/vendor [name]` | | List or switch vendors |
 | `/connector <sub>` | | Manage API keys (add, edit, delete) |
 | `/prompt <sub>` | | Manage system prompts |
@@ -51,6 +53,41 @@ On first run, you'll be prompted to configure an API key.
 | `/history [n]` | `/hist` | Show conversation history |
 | `/clear` | `/cls` | Clear screen |
 | `/exit` | `/q` | Exit AMOS |
+
+## GPT-6 Astra
+
+Fresh AMOS configurations default to `gpt-6-astra`. Existing configurations
+keep their selected model; switch explicitly with:
+
+```text
+/astra use
+/config set defaults.reasoningEffort high
+```
+
+AMOS omits `temperature` automatically for Astra and supports its five reasoning
+efforts: `low`, `medium`, `high`, `xhigh`, and `max`.
+
+The `/astra` command also provides focused, connector-first demonstrations of
+the new Responses APIs:
+
+```text
+/astra ask Compare two rollout strategies
+/astra reasoning high Now find the hardest failure modes
+/astra async web_fetch Fetch https://example.com and summarize it
+/astra live Draft a detailed migration plan
+/astra steer Focus on rollback safety
+/astra alert alert_123
+```
+
+`/astra async` executes the selected tool through AMOS's normal permission and
+hook pipeline, then returns its result with the original `call_id`. `/astra live`
+uses a text-only WebSocket session so the REPL remains available for steering.
+The `ask`/`reasoning` continuation is separate from the managed chat session and
+uses `previous_response_id` to preserve the stored prompt prefix.
+
+Access to Astra is limited, and safety-alert retrieval requires the corresponding
+OpenAI project permission. If your organization cannot use Astra yet, select a
+different model with `/model gpt-5.6-terra`.
 
 ## Context Inspection
 

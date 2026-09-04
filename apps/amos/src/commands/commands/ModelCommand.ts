@@ -27,7 +27,7 @@ USAGE:
 
 EXAMPLES:
   /model                    List available models
-  /model gpt-5.6-terra      Switch to GPT-5.6 Terra
+  /model gpt-6-astra        Switch to GPT-6 Astra
   /model claude-opus-4-5    Switch to Claude Opus 4.5
   /model info               Show current model details
 
@@ -95,6 +95,8 @@ ALIASES:
       if (model.features.vision) features.push('vision');
       if (model.features.reasoning) features.push('reasoning');
       if (model.features.functionCalling) features.push('tools');
+      if (model.features.asyncToolCalling) features.push('async tools');
+      if (model.features.midTurnSteering) features.push('steering');
       const featureStr = features.length > 0 ? ` [${features.join(', ')}]` : '';
 
       lines.push(`${marker}${model.name}${featureStr}`);
@@ -125,6 +127,10 @@ ALIASES:
       features.functionCalling ? '✓ Function Calling' : '✗ Function Calling',
       features.streaming ? '✓ Streaming' : '✗ Streaming',
       features.structuredOutput ? '✓ Structured Output' : '✗ Structured Output',
+      features.asyncToolCalling ? '✓ Async Tool Calling' : '✗ Async Tool Calling',
+      features.midTurnSteering ? '✓ Mid-turn Steering' : '✗ Mid-turn Steering',
+      features.configurationUpdates ? '✓ Configuration Updates' : '✗ Configuration Updates',
+      features.misalignmentMonitoring ? '✓ Misalignment Monitoring' : '✗ Misalignment Monitoring',
     ];
 
     const info = `
@@ -141,6 +147,10 @@ Pricing (per million tokens):
 
 Features:
   ${featureFlags.join('\n  ')}
+
+Reasoning Efforts: ${features.reasoningEfforts?.join(', ') || '(not configurable)'}
+Lifecycle: ${modelInfo.lifecycle ?? 'unknown'}
+Availability: ${modelInfo.availability ?? 'standard'}
 
 Release: ${modelInfo.releaseDate || 'Unknown'}
 `;

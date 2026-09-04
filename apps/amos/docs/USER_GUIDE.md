@@ -82,7 +82,7 @@ I'm an AI assistant that can help you with a wide variety of tasks...
 | `/help` | Show all available commands |
 | `/status` | Show current agent status |
 | `/model list` | List available models |
-| `/model gpt-5.6-terra` | Switch to a specific model |
+| `/astra use` | Switch to GPT-6 Astra |
 | `/prompt list` | List available prompts |
 | `/context` | Show context usage overview |
 | `/exit` | Exit AMOS |
@@ -119,9 +119,9 @@ Most commands have short aliases:
 /model <name>           Switch to specified model
 
 Examples:
-  /model gpt-5.6-terra
+  /model gpt-6-astra
   /model claude-sonnet-5
-  /model gemini-3.7-flash
+  /model gemini-3.8-flash
 ```
 
 ### Vendor Management
@@ -134,6 +134,24 @@ Examples:
 Supported vendors:
   openai, anthropic, google, groq, together, mistral, etc.
 ```
+
+### GPT-6 Astra APIs
+
+```
+/astra status                         Show connector/model readiness
+/astra use                            Switch to gpt-6-astra
+/astra ask <prompt>                   Start a stored Responses continuation
+/astra reasoning <effort> <prompt>    Change reasoning in that continuation
+/astra async <tool> <prompt>          Demonstrate async tool calling
+/astra live <prompt>                  Start a steerable WebSocket response
+/astra steer <instruction>            Update the active response mid-turn
+/astra alert <alert_id>               Retrieve a project safety alert
+/astra close                          Close the live WebSocket
+```
+
+Astra accepts `low`, `medium`, `high`, `xhigh`, and `max` reasoning; it does not
+accept `none` or `minimal`. AMOS also omits the configured `temperature` for
+Astra because the model does not support that parameter.
 
 ### Connector Management
 
@@ -225,7 +243,7 @@ This shows all models available for your current vendor, including:
 ### Switching Models
 
 ```
-/model gpt-5.6-terra
+/model gpt-6-astra
 ```
 
 The model switch takes effect immediately. AMOS will recreate the agent with the new model.
@@ -236,9 +254,9 @@ AMOS supports multiple AI providers:
 
 | Vendor | Example Models |
 |--------|---------------|
-| OpenAI | gpt-5.6-terra, gpt-5.4-mini |
-| Anthropic | claude-sonnet-5, claude-opus-5 |
-| Google | gemini-3.7-flash, gemini-3.6-flash, gemini-3.1-pro-preview |
+| OpenAI | gpt-6-astra, gpt-5.6-terra, gpt-5.4-mini |
+| Anthropic | claude-fable-5-1, claude-opus-5, claude-sonnet-5 |
+| Google | gemini-3.8-flash, gemini-3.7-flash, gemini-3.6-flash |
 | Groq | llama-3.3-70b-versatile |
 | Together | mixtral-8x7b-instruct |
 | Mistral | mistral-large |
@@ -247,6 +265,28 @@ To switch vendors:
 ```
 /vendor anthropic
 ```
+
+### Astra protocol demonstrations
+
+The Astra command intentionally exposes the new protocol behaviors without
+bypassing OneRingAI's connector-first architecture:
+
+- `/astra ask` starts a direct stored Responses chain; `/astra reasoning` adds a
+  `configuration_update` before the next user message and continues with the
+  previous response ID. This chain is separate from the normal managed chat
+  session.
+- `/astra async` marks one enabled function as `async: true`, lets Astra produce
+  the call, executes it through the Agent permission/hook pipeline, and submits
+  the result using the original `call_id`.
+- `/astra live` opens the Responses WebSocket in the background. While it is
+  working, `/astra steer` submits additional user instructions and AMOS displays
+  the accepted, safe-boundary, and successor events. The demo is text-only and
+  permits one pending steer at a time.
+- `/astra alert` retrieves an alert from the active connector's OpenAI project.
+  The API key needs safety-alert read permission.
+
+If OpenAI stops a request for misalignment monitoring, AMOS shows the request
+and response IDs when available and does not retry the blocked request.
 
 ---
 
@@ -635,7 +675,8 @@ Shows all current settings organized by category.
 ### Setting Values
 
 ```
-/config set defaults.model gpt-4-turbo
+/config set defaults.model gpt-6-astra
+/config set defaults.reasoningEffort high
 /config set ui.showTokenUsage false
 /config set planning.enabled true
 ```
@@ -644,8 +685,9 @@ Shows all current settings organized by category.
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `defaults.model` | Default model | `gpt-5.6-terra` |
+| `defaults.model` | Default model | `gpt-6-astra` |
 | `defaults.temperature` | Temperature | `0.7` |
+| `defaults.reasoningEffort` | Reasoning depth | `medium` |
 | `ui.streamResponses` | Stream output | `true` |
 | `ui.showTokenUsage` | Show token counts | `true` |
 | `ui.showTiming` | Show response time | `true` |
@@ -791,7 +833,7 @@ interface ToolFunction {
 
 ### Model Selection
 
-- Use a current general-purpose model such as `gpt-5.6-terra`
+- Use `gpt-6-astra` for the newest reasoning and Responses protocol features
 - Use a current reasoning model for complex work
 - Use a current mini/fast model for simple, lower-cost tasks
 

@@ -61,14 +61,14 @@ describeIf(OPENAI_API_KEY)('current OpenAI API', () => {
 });
 
 describeIf(ANTHROPIC_API_KEY)('current Anthropic API', () => {
-  it('calls Claude Fable 5 with normalized metadata and disabled thinking', async () => {
+  it('calls Claude Fable 5.1 with normalized metadata and adaptive thinking', async () => {
     const provider = new AnthropicTextProvider({ apiKey: ANTHROPIC_API_KEY! });
     const response = await provider.generate({
-      model: 'claude-fable-5',
+      model: 'claude-fable-5-1',
       input: 'Reply with exactly: current',
-      max_output_tokens: 128,
+      max_output_tokens: 2_048,
       metadata: { user_id: 'oneringai-live-check', workflow: 'must-stay-local' },
-      thinking: { enabled: false, effort: 'high' },
+      thinking: { enabled: true, effort: 'high' },
     });
     expect(response.status).toBe('completed');
     expect(response.output_text?.toLowerCase()).toContain('current');
@@ -76,20 +76,20 @@ describeIf(ANTHROPIC_API_KEY)('current Anthropic API', () => {
 });
 
 describeIf(GOOGLE_API_KEY)('current Google API', () => {
-  it('calls Gemini 3.7 Flash through the Interactions API default', async () => {
+  it('calls Gemini 3.8 Flash through the Interactions API default', async () => {
     Connector.create({
       name: 'google-current-live',
       vendor: Vendor.Google,
       auth: { type: 'api_key', apiKey: GOOGLE_API_KEY! },
     });
-    await expectShortReply('google-current-live', 'gemini-3.7-flash');
+    await expectShortReply('google-current-live', 'gemini-3.8-flash');
   }, 60_000);
 
   it('streams Gemini Interactions through a terminal completed status', async () => {
     const provider = new GoogleTextProvider({ apiKey: GOOGLE_API_KEY! });
     const events = [];
     for await (const event of provider.streamGenerate({
-      model: 'gemini-3.7-flash',
+      model: 'gemini-3.8-flash',
       input: 'Reply with exactly: streamed',
       max_output_tokens: 128,
     })) events.push(event);
@@ -108,7 +108,7 @@ describeIf(GOOGLE_API_KEY)('current Google API', () => {
       vendor: Vendor.Google,
       auth: { type: 'api_key', apiKey: GOOGLE_API_KEY! },
     });
-    const agent = Agent.create({ connector, model: 'gemini-3.7-flash' });
+    const agent = Agent.create({ connector, model: 'gemini-3.8-flash' });
     try {
       const first = await agent.runDirect('Remember this exact code word: aurora. Reply with OK.');
       const second = await agent.runDirect('What exact code word did I give you?', {
@@ -139,7 +139,7 @@ describeIf(GOOGLE_API_KEY)('current Google API', () => {
   it('forces a named function through Interactions allowed_tools', async () => {
     const provider = new GoogleTextProvider({ apiKey: GOOGLE_API_KEY! });
     const response = await provider.generate({
-      model: 'gemini-3.7-flash',
+      model: 'gemini-3.8-flash',
       input: 'Call lookup_code with code current. Do not answer in prose.',
       tools: [{
         type: 'function',
@@ -163,7 +163,7 @@ describeIf(GOOGLE_API_KEY)('current Google API', () => {
   it('forces a named function through legacy generateContent allowedFunctionNames', async () => {
     const provider = new GoogleTextProvider({ apiKey: GOOGLE_API_KEY! });
     const response = await provider.generate({
-      model: 'gemini-3.7-flash',
+      model: 'gemini-3.8-flash',
       input: 'Call lookup_code with code current. Do not answer in prose.',
       tools: [
         {

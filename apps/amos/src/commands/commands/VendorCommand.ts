@@ -88,6 +88,10 @@ ALIASES:
    * Select the best default model for a vendor
    */
   private selectDefaultModel(models: ILLMDescription[]): string {
+    // Honor registry recommendations before applying vendor-name heuristics.
+    const preferred = models.find((model) => model.preferred && model.isActive);
+    if (preferred) return preferred.name;
+
     // Prefer: Opus > Pro > Sonnet > largest context > first
     const opus = models.find((m) => m.name.toLowerCase().includes('opus'));
     if (opus) return opus.name;
@@ -108,6 +112,7 @@ ALIASES:
    */
   private getShortModelName(fullName: string): string {
     // Extract key parts: GPT-5.2, Claude Opus 4.5, Gemini 3 Flash, etc.
+    if (fullName.startsWith('gpt-6')) return fullName.toUpperCase();
     if (fullName.startsWith('gpt-5')) return fullName.split('-').slice(0, 2).join('-').toUpperCase();
     if (fullName.startsWith('gpt-4')) return fullName.split('-').slice(0, 2).join('-').toUpperCase();
     if (fullName.startsWith('claude')) {

@@ -75,7 +75,7 @@ EXAMPLES:
 
     for (const cmd of commands) {
       // Categorize commands
-      if (['help', 'model', 'vendor', 'connector'].includes(cmd.name)) {
+      if (['help', 'model', 'vendor', 'connector', 'astra'].includes(cmd.name)) {
         categories['Core'].push(cmd);
       } else if (['tool', 'external', 'prompt'].includes(cmd.name)) {
         categories['Tools'].push(cmd);
@@ -128,7 +128,8 @@ EXAMPLES:
     lines.push('  Use "/external setup" to configure search/scrape providers.');
     lines.push('');
     lines.push('EXAMPLES:');
-    lines.push('  /model gpt-5.6-terra     Switch to a current OpenAI model');
+    lines.push('  /astra use                Switch to GPT-6 Astra');
+    lines.push('  /astra live <prompt>      Start a steerable Astra response');
     lines.push('  /vendor anthropic        Switch to Anthropic');
     lines.push('  /connector list          List all connectors');
     lines.push('  /tool list               List available tools');

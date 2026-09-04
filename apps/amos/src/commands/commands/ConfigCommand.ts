@@ -25,6 +25,7 @@ USAGE:
 
 CONFIGURABLE KEYS:
   defaults.temperature      LLM temperature (0-2)
+  defaults.reasoningEffort  Reasoning depth (Astra: low through max)
   planning.enabled          Enable planning mode
   planning.autoDetect       Auto-detect complex tasks
   planning.requireApproval  Require plan approval
@@ -36,6 +37,7 @@ EXAMPLES:
   /config                           View all settings
   /config get defaults.temperature  Get temperature
   /config set defaults.temperature 0.9
+  /config set defaults.reasoningEffort high
   /config set planning.enabled true
   /config reset                     Reset to defaults
 
@@ -82,6 +84,7 @@ DEFAULTS:
   Vendor: ${config.defaults.vendor}
   Model: ${config.defaults.model}
   Temperature: ${config.defaults.temperature}
+  Reasoning Effort: ${config.defaults.reasoningEffort}
 
 PLANNING:
   Enabled: ${config.planning.enabled}
@@ -179,6 +182,7 @@ Use /config set <key> <value> to change values
       'defaults.vendor',
       'defaults.model',
       'defaults.temperature',
+      'defaults.reasoningEffort',
       'planning.enabled',
       'planning.autoDetect',
       'planning.requireApproval',
@@ -208,6 +212,9 @@ Use /config set <key> <value> to change values
       'defaults.vendor': (v) => typeof v === 'string' && v.length > 0,
       'defaults.model': (v) => typeof v === 'string' && v.length > 0,
       'defaults.temperature': (v) => typeof v === 'number' && v >= 0 && v <= 2,
+      'defaults.reasoningEffort': (v) =>
+        typeof v === 'string'
+        && ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(v),
       'session.autoSaveIntervalMs': (v) => Number.isInteger(v) && (v as number) >= 1000,
       'planning.enabled': (v) => typeof v === 'boolean',
       'planning.autoDetect': (v) => typeof v === 'boolean',
@@ -223,6 +230,14 @@ Use /config set <key> <value> to change values
     const validator = typeValidations[key];
     if (validator && !validator(parsedValue)) {
       return this.error(`Invalid value for ${key}: ${value}`);
+    }
+
+    if (
+      key === 'defaults.reasoningEffort'
+      && (app.getConfig().activeModel ?? app.getConfig().defaults.model) === 'gpt-6-astra'
+      && (parsedValue === 'none' || parsedValue === 'minimal')
+    ) {
+      return this.error('GPT-6 Astra supports only: low, medium, high, xhigh, max.');
     }
 
     // Set the value
