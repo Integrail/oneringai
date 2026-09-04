@@ -4328,7 +4328,7 @@ type SimpleImageEditOptions = Omit&lt;ImageEditOptions, 'model'&gt; & { model?: 
 
 ### calculateImageCost `function`
 
-📍 [`src/domain/entities/ImageModel.ts:1433`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:1436`](src/domain/entities/ImageModel.ts)
 
 Calculate estimated cost for image generation
 
@@ -4395,7 +4395,7 @@ export function createMessageWithImages(
 
 ### getImageModelsWithFeature `function`
 
-📍 [`src/domain/entities/ImageModel.ts:1422`](src/domain/entities/ImageModel.ts)
+📍 [`src/domain/entities/ImageModel.ts:1425`](src/domain/entities/ImageModel.ts)
 
 Get image models that support a specific feature
 
@@ -4436,7 +4436,7 @@ export async function readClipboardImage(): Promise&lt;ClipboardImageResult&gt;
 📍 [`src/domain/entities/ImageModel.ts:170`](src/domain/entities/ImageModel.ts)
 
 Complete image model registry
-Last full audit: August 2026
+Last full audit: September 2026
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -5511,18 +5511,21 @@ Last full audit: August 2026
     name: 'grok-imagine-image-quality',
     displayName: 'Grok Imagine Image Quality',
     provider: Vendor.Grok,
-    description: 'Higher-fidelity xAI image generation and multi-image editing with 1K and 2K output',
+    description: 'Deprecated higher-fidelity xAI image model; migrate to Grok Imagine Image 2.0 low quality before retirement',
     isActive: true,
-    lifecycle: 'active',
+    lifecycle: 'deprecated',
     availability: 'public',
     aliases: ['grok-imagine-image-quality-latest', 'grok-imagine-image-pro'],
     snapshots: ['grok-imagine-image-quality-20260403'],
     endpoints: ['image_generation', 'image_edit'],
     releaseDate: '2026-04-03',
+    deprecationDate: '2026-09-02',
+    retirementDate: '2026-11-02',
+    replacementModel: 'grok-imagine-image-2.0',
     sources: {
       documentation: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
       pricing: 'https://docs.x.ai/developers/models/grok-imagine-image-quality',
-      lastVerified: '2026-08-30',
+      lastVerified: '2026-09-04',
     },
     capabilities: {
       sizes: ['1024x1024', '2048x2048', 'auto'],
@@ -28837,7 +28840,7 @@ type ProcessingMode = | 'interactive'
 
 ### calculateCost `function`
 
-📍 [`src/domain/entities/Model.ts:3991`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:4082`](src/domain/entities/Model.ts)
 
 Calculate the cost for a given model and token usage
 
@@ -28888,7 +28891,7 @@ export function calculateEmbeddingCost(
 
 ### getActiveModels `function`
 
-📍 [`src/domain/entities/Model.ts:3972`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:4063`](src/domain/entities/Model.ts)
 
 Get all currently active models
 
@@ -28900,7 +28903,7 @@ export function getActiveModels(): ILLMDescription[]
 
 ### getDeprecatedModels `function`
 
-📍 [`src/domain/entities/Model.ts:3977`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:4068`](src/domain/entities/Model.ts)
 
 Get callable models carrying an explicit vendor deprecation notice.
 
@@ -28926,7 +28929,7 @@ export function getEmbeddingModelsWithFeature(
 
 ### getModelInfo `function`
 
-📍 [`src/domain/entities/Model.ts:3949`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:4040`](src/domain/entities/Model.ts)
 
 Get model information by name
 
@@ -28938,7 +28941,7 @@ export function getModelInfo(modelName: string): ILLMDescription | undefined
 
 ### getModelsByVendor `function`
 
-📍 [`src/domain/entities/Model.ts:3964`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:4055`](src/domain/entities/Model.ts)
 
 Get all models for a specific vendor
 
@@ -28978,7 +28981,7 @@ export function resolveModelCapabilities(
 
 ### resolveModelName `function`
 
-📍 [`src/domain/entities/Model.ts:3955`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:4046`](src/domain/entities/Model.ts)
 
 Resolve a direct model ID or floating alias to the registry's canonical ID.
 
@@ -29457,7 +29460,7 @@ Last full audit: August 2026
 
 ### MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/Model.ts:373`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:376`](src/domain/entities/Model.ts)
 
 Complete model registry with all model metadata
 Registry schema v2. Last OpenAI model update: 2026-09-04.
@@ -31297,6 +31300,57 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
       },
     },
   }` | - |
+| `'claude-fable-5-1'` | `{
+    name: 'claude-fable-5-1',
+    provider: Vendor.Anthropic,
+    description: 'Anthropic\'s most capable public model for demanding reasoning and long-horizon agentic work; adaptive thinking is always on',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
+    preferred: true,
+    endpoints: ['messages', 'batch'],
+    releaseDate: '2026-09-01',
+    knowledgeCutoff: '2026-06-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/fable-5-1/overview', pricing: 'https://platform.claude.com/docs/en/models/fable-5-1/overview', lastVerified: '2026-09-04' },
+    features: {
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, topK: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1_000_000, text: true, image: true, cpm: 10, cpmCached: 0.25 },
+      output: { tokens: 128_000, text: true, cpm: 50 },
+      pricing: {
+        text: { input: 10, cachedInput: 0.25, cacheWrite: 12.5, output: 50 },
+        processingMultipliers: { batch: 0.5 },
+      },
+    },
+  }` | - |
+| `'claude-mythos-5-1'` | `{
+    name: 'claude-mythos-5-1',
+    provider: Vendor.Anthropic,
+    description: 'Invite-only Project Glasswing counterpart to Claude Fable 5.1 with the same specifications, capabilities, and pricing',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'invite_only',
+    endpoints: ['messages', 'batch'],
+    releaseDate: '2026-09-01',
+    knowledgeCutoff: '2026-06-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/mythos-5-1/overview', pricing: 'https://platform.claude.com/docs/en/models/mythos-5-1/overview', lastVerified: '2026-09-04' },
+    features: {
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: false, topP: false, topK: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 1_000_000, text: true, image: true, cpm: 10, cpmCached: 0.25 },
+      output: { tokens: 128_000, text: true, cpm: 50 },
+      pricing: {
+        text: { input: 10, cachedInput: 0.25, cacheWrite: 12.5, output: 50 },
+        processingMultipliers: { batch: 0.5 },
+      },
+    },
+  }` | - |
 | `'claude-opus-5'` | `{
     name: 'claude-opus-5',
     provider: Vendor.Anthropic,
@@ -31306,11 +31360,12 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
     availability: 'public',
     preferred: true,
     endpoints: ['messages', 'batch'],
-    releaseDate: '2026-07-01',
+    releaseDate: '2026-07-24',
     knowledgeCutoff: '2026-05-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/opus-5/overview', pricing: 'https://platform.claude.com/docs/en/models/opus-5/overview', lastVerified: '2026-09-04' },
     features: {
-      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
       audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
       parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
@@ -31327,14 +31382,16 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
     provider: Vendor.Anthropic,
     description: 'Limited-release counterpart to Claude Fable 5 without its safety classifiers; always-on adaptive thinking',
     isActive: true,
-    lifecycle: 'active',
+    lifecycle: 'legacy',
     availability: 'invite_only',
+    replacementModel: 'claude-mythos-5-1',
     endpoints: ['messages', 'batch'],
     releaseDate: '2026-06-09',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/mythos-5/overview', pricing: 'https://platform.claude.com/docs/en/models/mythos-5/overview', lastVerified: '2026-09-04' },
     features: {
-      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
       audio: false, video: false, extendedThinking: true, batchAPI: true, promptCaching: true,
       parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
@@ -31349,12 +31406,11 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
 | `'claude-opus-4-8'` | `{
     name: 'claude-opus-4-8',
     provider: Vendor.Anthropic,
-    description: 'Most capable Opus-tier model — highly autonomous, state-of-the-art long-horizon agentic work, knowledge work, and memory. 1M context, 128K output, adaptive thinking (low/medium/high/xhigh/max effort), high-resolution vision. Does not accept `temperature`.',
+    description: 'Previous-generation active Opus model for autonomous long-horizon agentic work, knowledge work, and memory. 1M context, 128K output, adaptive thinking (low/medium/high/xhigh/max effort), high-resolution vision. Does not accept `temperature`.',
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
     endpoints: ['messages', 'batch'],
-    preferred: true,
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-01-01',
     features: {
@@ -31397,10 +31453,12 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
     availability: 'public',
     endpoints: ['messages', 'batch'],
     preferred: true,
-    releaseDate: '2026-05-01',
+    releaseDate: '2026-06-30',
     knowledgeCutoff: '2026-01-01',
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/sonnet-5/overview', pricing: 'https://platform.claude.com/docs/en/models/sonnet-5/overview', lastVerified: '2026-09-04' },
     features: {
       reasoning: true,
+      reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -31420,29 +31478,35 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
         tokens: 1000000,
         text: true,
         image: true,
-        cpm: 3,
-        cpmCached: 0.3,
+        cpm: 2,
+        cpmCached: 0.2,
       },
       output: {
         tokens: 128000,
         text: true,
-        cpm: 15,
+        cpm: 10,
+      },
+      pricing: {
+        text: { input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 10 },
+        processingMultipliers: { batch: 0.5 },
       },
     },
   }` | - |
 | `'claude-fable-5'` | `{
     name: 'claude-fable-5',
     provider: Vendor.Anthropic,
-    description: 'Anthropic\'s most capable widely released model, for the most demanding reasoning and long-horizon agentic work. 1M context, 128K output, thinking always on (raw chain of thought never returned). Does not accept `temperature`. Requires 30-day data retention.',
+    description: 'Legacy Fable model for demanding reasoning and long-horizon agentic work. 1M context, 128K output, thinking always on (raw chain of thought never returned). Does not accept `temperature`. Requires 30-day data retention.',
     isActive: true,
-    lifecycle: 'active',
+    lifecycle: 'legacy',
     availability: 'public',
+    replacementModel: 'claude-fable-5-1',
     endpoints: ['messages', 'batch'],
     releaseDate: '2026-06-09',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://platform.claude.com/docs/en/about-claude/models/overview', pricing: 'https://platform.claude.com/docs/en/about-claude/pricing', lastVerified: '2026-08-30' },
+    sources: { documentation: 'https://platform.claude.com/docs/en/models/fable-5/overview', pricing: 'https://platform.claude.com/docs/en/models/fable-5/overview', lastVerified: '2026-09-04' },
     features: {
       reasoning: true,
+      reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -31692,7 +31756,7 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
     isActive: false,
     lifecycle: 'retired',
     retirementDate: '2026-08-05',
-    replacementModel: 'claude-opus-5',
+    replacementModel: 'claude-opus-4-8',
     releaseDate: '2025-08-05',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -31730,7 +31794,7 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
     isActive: false,
     lifecycle: 'retired',
     retirementDate: '2026-06-15',
-    replacementModel: 'claude-opus-5',
+    replacementModel: 'claude-opus-4-8',
     releaseDate: '2025-05-14',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -31768,7 +31832,7 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
     isActive: false,
     lifecycle: 'retired',
     retirementDate: '2026-06-15',
-    replacementModel: 'claude-sonnet-5',
+    replacementModel: 'claude-sonnet-4-6',
     releaseDate: '2025-05-14',
     knowledgeCutoff: '2025-01-01',
     features: {
@@ -31806,7 +31870,7 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
     isActive: false,
     lifecycle: 'retired',
     retirementDate: '2026-02-19',
-    replacementModel: 'claude-sonnet-5',
+    replacementModel: 'claude-sonnet-4-6',
     releaseDate: '2025-02-19',
     knowledgeCutoff: '2024-10-01',
     features: {
@@ -31837,19 +31901,43 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
       },
     },
   }` | - |
-| `'gemini-3.7-flash'` | `{
-    name: 'gemini-3.7-flash',
+| `'gemini-3.8-flash'` | `{
+    name: 'gemini-3.8-flash',
     provider: Vendor.Google,
-    description: 'Latest production Gemini Flash model for agentic workflows and multimodal reasoning',
+    description: 'Google\'s most intelligent Flash model for long-horizon software engineering, autonomous agents, and complex enterprise workflows',
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    aliases: ['gemini-flash-latest'],
+    endpoints: ['generate_content', 'interactions', 'batch'],
+    releaseDate: '2026-09-02',
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-09-04' },
+    features: {
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high'],
+      streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: true, video: true, batchAPI: true, promptCaching: true,
+      parameters: { temperature: true, topP: true, topK: true, frequencyPenalty: false, presencePenalty: false },
+      deprecatedParameters: ['temperature', 'topP', 'topK'],
+      input: { tokens: 1_048_576, text: true, image: true, audio: true, video: true, cpm: 0.75, cpmCached: 0.075 },
+      output: { tokens: 65_536, text: true, cpm: 3.75 },
+      pricing: {
+        text: { input: 0.75, cachedInput: 0.075, output: 3.75 },
+        processingMultipliers: { batch: 0.5, flex: 0.5, priority: 1.8 },
+      },
+    },
+  }` | - |
+| `'gemini-3.7-flash'` | `{
+    name: 'gemini-3.7-flash',
+    provider: Vendor.Google,
+    description: 'Previous-generation production Gemini Flash model for agentic workflows and multimodal reasoning',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'public',
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-08-13',
     knowledgeCutoff: '2026-01-01',
-    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-08-30' },
+    sources: { documentation: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash', pricing: 'https://ai.google.dev/gemini-api/docs/pricing', lastVerified: '2026-09-04' },
     features: {
       reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
@@ -31896,6 +31984,7 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
+    aliases: ['gemini-flash-latest'],
     endpoints: ['generate_content', 'interactions', 'batch'],
     releaseDate: '2026-05-01',
     knowledgeCutoff: '2026-01-01',
@@ -32340,12 +32429,13 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
     lifecycle: 'active',
     availability: 'public',
     preferred: true,
-    endpoints: ['responses', 'chat_completions', 'messages', 'completions'],
+    endpoints: ['responses', 'chat_completions'],
     releaseDate: '2026-08-12',
     knowledgeCutoff: '2026-02-01',
-    sources: { documentation: 'https://docs.x.ai/developers/models/grok-4.6', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-08-30' },
+    sources: { documentation: 'https://docs.x.ai/developers/grok-4-6', pricing: 'https://docs.x.ai/developers/pricing', lastVerified: '2026-09-04' },
     features: {
-      reasoning: true, streaming: true, structuredOutput: true, functionCalling: true,
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+      streaming: true, structuredOutput: true, functionCalling: true,
       fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
       audio: false, video: false, batchAPI: false, promptCaching: true,
       parameters: { temperature: true, topP: true, frequencyPenalty: true, presencePenalty: true },
@@ -32392,7 +32482,6 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
     isActive: true,
     lifecycle: 'active',
     availability: 'public',
-    preferred: true,
     endpoints: ['responses', 'chat_completions', 'messages'],
     releaseDate: '2026-05-15',
     knowledgeCutoff: '2026-02-01',
@@ -32506,7 +32595,6 @@ Registry schema v2. Last OpenAI model update: 2026-09-04.
     provider: Vendor.Grok,
     description: 'Grok 4.20 reasoning model with a 1M-token context window and vision support',
     isActive: true,
-    preferred: true,
     releaseDate: '2026-03-09',
     knowledgeCutoff: '2024-11-01',
     features: {
