@@ -50,6 +50,8 @@ const TEST_PROMPT = 'Hi! Say hello back in one short sentence.';
  * `isTextChatTestable` below — this set is for one-off overrides only.
  */
 const SKIP_MODELS: Set<string> = new Set([
+  // Limited rollout; accessibility is checked explicitly with the current org.
+  'gpt-6-astra',
   // Image generation models - don't support text-only requests
   'gemini-3-pro-image-preview',
   'gemini-2.5-flash-image',
@@ -67,6 +69,7 @@ const SKIP_MODELS: Set<string> = new Set([
  * longer timeout because of thinking/reasoning time.
  */
 const REASONING_MODELS: Set<string> = new Set([
+  'gpt-6-astra',
   'gpt-5.2',
   'gpt-5.2-pro',
   'gpt-5.2-chat-latest',

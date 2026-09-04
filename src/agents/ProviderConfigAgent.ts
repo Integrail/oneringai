@@ -64,8 +64,7 @@ export class ProviderConfigAgent {
 
     // Store assistant response in history
     this.conversationHistory.push(...response.output.filter(
-      (item): item is InputItem =>
-        item.type === 'message' || item.type === 'compaction'
+      (item) => item.type === 'message' || item.type === 'compaction'
     ));
 
     const responseText = response.output_text || '';
@@ -103,8 +102,7 @@ export class ProviderConfigAgent {
 
     // Store assistant response in history
     this.conversationHistory.push(...response.output.filter(
-      (item): item is InputItem =>
-        item.type === 'message' || item.type === 'compaction'
+      (item) => item.type === 'message' || item.type === 'compaction'
     ));
 
     const responseText = response.output_text || '';

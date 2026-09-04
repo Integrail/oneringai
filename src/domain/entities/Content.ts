@@ -9,6 +9,8 @@ export enum ContentType {
   OUTPUT_TEXT = 'output_text',
   TOOL_USE = 'tool_use',
   TOOL_RESULT = 'tool_result',
+  CUSTOM_TOOL_USE = 'custom_tool_use',
+  CUSTOM_TOOL_RESULT = 'custom_tool_result',
   THINKING = 'thinking',
 }
 
@@ -47,8 +49,26 @@ export interface ToolUseContent extends BaseContent {
   id: string;
   name: string;
   arguments: string; // JSON string
+  /** Whether the provider marked this as an async protocol call. */
+  async?: boolean;
   /** Google Gemini 3+ opaque thought signature for round-tripping function calls */
   thoughtSignature?: string;
+}
+
+export interface CustomToolUseContent extends BaseContent {
+  type: ContentType.CUSTOM_TOOL_USE;
+  id: string;
+  name: string;
+  input: string;
+  /** Whether the provider marked this as an async protocol call. */
+  async?: boolean;
+}
+
+export interface CustomToolResultContent extends BaseContent {
+  type: ContentType.CUSTOM_TOOL_RESULT;
+  tool_use_id: string;
+  content: string | any;
+  error?: string;
 }
 
 export interface ToolResultContent extends BaseContent {
@@ -85,4 +105,6 @@ export type Content =
   | OutputTextContent
   | ToolUseContent
   | ToolResultContent
+  | CustomToolUseContent
+  | CustomToolResultContent
   | ThinkingContent;

@@ -23,6 +23,7 @@ export enum StreamEventType {
   ITERATION_COMPLETE = 'response.iteration.complete',
   REASONING_DELTA = 'response.reasoning.delta',
   REASONING_DONE = 'response.reasoning.done',
+  COMPACTION = 'response.compaction',
   RESPONSE_COMPLETE = 'response.complete',
   RETRY = 'response.retry',
   ERROR = 'response.error',
@@ -87,6 +88,10 @@ export interface ToolCallStartEvent extends BaseStreamEvent {
   item_id: string;
   tool_call_id: string;
   tool_name: string;
+  /** Provider tool kind. Omitted for legacy converters. */
+  tool_type?: 'function' | 'custom';
+  /** Whether the provider allows the model to continue while the host runs the tool. */
+  async?: boolean;
   /** Google Gemini 3+ thought signature for round-tripping function calls */
   thought_signature?: string;
 }
@@ -111,6 +116,8 @@ export interface ToolCallArgumentsDoneEvent extends BaseStreamEvent {
   tool_call_id: string;
   tool_name: string;
   arguments: string; // Complete JSON string
+  tool_type?: 'function' | 'custom';
+  async?: boolean;
   incomplete?: boolean; // True if truncated by max_tokens
 }
 
@@ -198,6 +205,18 @@ export interface ReasoningDoneEvent extends BaseStreamEvent {
 }
 
 /**
+ * Encrypted compaction state emitted by the provider. Preserve this item for
+ * stateless continuation replay; the content is intentionally opaque.
+ */
+export interface CompactionEvent extends BaseStreamEvent {
+  type: StreamEventType.COMPACTION;
+  item_id: string;
+  output_index: number;
+  encrypted_content: string;
+  sequence_number: number;
+}
+
+/**
  * Error event
  */
 export interface ErrorEvent extends BaseStreamEvent {
@@ -266,6 +285,7 @@ export type StreamEvent =
   | OutputTextDoneEvent
   | ReasoningDeltaEvent
   | ReasoningDoneEvent
+  | CompactionEvent
   | ToolCallStartEvent
   | ToolCallArgumentsDeltaEvent
   | ToolCallArgumentsDoneEvent
@@ -318,6 +338,10 @@ export function isReasoningDelta(event: StreamEvent): event is ReasoningDeltaEve
 
 export function isReasoningDone(event: StreamEvent): event is ReasoningDoneEvent {
   return event.type === StreamEventType.REASONING_DONE;
+}
+
+export function isCompaction(event: StreamEvent): event is CompactionEvent {
+  return event.type === StreamEventType.COMPACTION;
 }
 
 export function isResponseComplete(event: StreamEvent): event is ResponseCompleteEvent {

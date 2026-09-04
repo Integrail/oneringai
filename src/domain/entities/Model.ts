@@ -69,6 +69,9 @@ export interface ILLMDescription {
     /** Supports extended reasoning/thinking */
     reasoning?: boolean;
 
+    /** Verified reasoning-effort values accepted by this model. */
+    reasoningEfforts?: readonly ('none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max')[];
+
     /** Supports streaming responses */
     streaming: boolean;
 
@@ -104,6 +107,18 @@ export interface ILLMDescription {
 
     /** Supports prompt caching */
     promptCaching?: boolean;
+
+    /** Supports Responses async function/custom tool calls. */
+    asyncToolCalling?: boolean;
+
+    /** Supports Responses WebSocket mid-turn steering. */
+    midTurnSteering?: boolean;
+
+    /** Supports conversation-scoped `configuration_update` input items. */
+    configurationUpdates?: boolean;
+
+    /** Participates in OpenAI's asynchronous misalignment monitoring. */
+    misalignmentMonitoring?: boolean;
 
     /** Modality-specific prices. Token prices are USD per million tokens. */
     pricing?: {
@@ -210,16 +225,18 @@ export interface TokenPricing {
 
 /**
  * Model name constants organized by vendor
- * Updated: August 2026 - Includes current, preview, and migration-relevant models
+ * Updated: September 2026 - Includes current, preview, and migration-relevant models
  */
 export const LLM_MODELS = {
   [Vendor.OpenAI]: {
-    // GPT-5.6 Series (Current Flagship)
+    // GPT-6 Series (Current Flagship)
+    GPT_6_ASTRA: 'gpt-6-astra',
+    // GPT-5.6 Series
     GPT_5_6: 'gpt-5.6',
     GPT_5_6_SOL: 'gpt-5.6-sol',
     GPT_5_6_TERRA: 'gpt-5.6-terra',
     GPT_5_6_LUNA: 'gpt-5.6-luna',
-    // GPT-5.5 Series (Current Flagship)
+    // GPT-5.5 Series
     GPT_5_5: 'gpt-5.5',
     GPT_5_5_PRO: 'gpt-5.5-pro',
     // GPT-5.4 Series
@@ -351,14 +368,47 @@ export const LLM_MODELS = {
 
 /**
  * Complete model registry with all model metadata
- * Registry schema v2. Last full first-party documentation audit: 2026-08-30.
+ * Registry schema v2. Last OpenAI model update: 2026-09-04.
  */
 export const MODEL_REGISTRY: Record<string, ILLMDescription> = {
   // ============================================================================
-  // OpenAI Models (Verified from developers.openai.com - August 2026)
+  // OpenAI Models (Verified from developers.openai.com - September 2026)
   // ============================================================================
 
-  // GPT-5.6 Series (current frontier family - July 2026)
+  // GPT-6 Series (current flagship - September 2026)
+  'gpt-6-astra': {
+    name: 'gpt-6-astra',
+    provider: Vendor.OpenAI,
+    description: 'OpenAI\'s most capable model for complex reasoning, coding, computer use, research, and document creation',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'limited',
+    preferred: true,
+    endpoints: ['responses', 'chat_completions', 'batch'],
+    releaseDate: '2026-09-04',
+    knowledgeCutoff: '2026-04-30',
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-6-astra', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-09-04' },
+    features: {
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      asyncToolCalling: true, midTurnSteering: true, configurationUpdates: true,
+      misalignmentMonitoring: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 922000, text: true, image: true, cpm: 10, cpmCached: 1 },
+      output: { tokens: 128000, text: true, cpm: 50 },
+      pricing: {
+        text: {
+          input: 10, cachedInput: 1, cacheWrite: 12.5, output: 50,
+          longContext: { thresholdTokens: 272000, input: 20, cachedInput: 2, cacheWrite: 25, output: 75 },
+        },
+        processingMultipliers: { batch: 0.5, flex: 0.5, fast: 2 },
+      },
+    },
+  },
+
+  // GPT-5.6 Series (frontier family - July 2026)
   'gpt-5.6-sol': {
     name: 'gpt-5.6-sol',
     provider: Vendor.OpenAI,

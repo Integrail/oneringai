@@ -6,6 +6,7 @@
 import {
   AIError,
   ProviderAuthError,
+  ProviderMisalignmentError,
   ProviderRateLimitError,
   ProviderContextLengthError,
   ProviderError,
@@ -40,6 +41,20 @@ export class ProviderErrorMapper {
     const status = error.status || error.statusCode || error.code;
     const message = error.message || String(error);
     const messageLower = message.toLowerCase();
+    const providerCode = this.extractProviderCode(error);
+
+    // OpenAI uses HTTP 403 for both auth failures and safety monitor stops.
+    // Match the stable response code first; these requests must not be retried.
+    if (providerCode === 'misalignment_policy_violation') {
+      return new ProviderMisalignmentError(
+        providerName,
+        message,
+        this.extractRequestId(error),
+        this.extractResponseId(error),
+        error.error ?? error,
+        error,
+      );
+    }
 
     // Auth errors (401, 403, or message indicators)
     if (
@@ -130,6 +145,32 @@ export class ProviderErrorMapper {
     }
 
     return undefined;
+  }
+
+  private static extractProviderCode(error: any): string | undefined {
+    const candidates = [
+      error?.code,
+      error?.error?.code,
+      error?.error?.error?.code,
+      error?.body?.error?.code,
+    ];
+    return candidates.find((value): value is string => typeof value === 'string');
+  }
+
+  private static extractRequestId(error: any): string | undefined {
+    const value = error?.request_id
+      ?? error?.requestId
+      ?? error?.headers?.['x-request-id']
+      ?? error?.headers?.get?.('x-request-id');
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private static extractResponseId(error: any): string | undefined {
+    const value = error?.response_id
+      ?? error?.responseId
+      ?? error?.error?.response_id
+      ?? error?.error?.responseId;
+    return typeof value === 'string' ? value : undefined;
   }
 
   /**

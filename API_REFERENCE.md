@@ -1,6 +1,6 @@
 # @everworker/oneringai - API Reference
 
-**Generated:** 2026-08-31
+**Generated:** 2026-09-04
 **Mode:** public
 
 This document provides a complete reference for the public API of `@everworker/oneringai`.
@@ -19,17 +19,17 @@ For usage examples and tutorials, see the [User Guide](./USER_GUIDE.md).
 - [Agent Runtime](#agent-runtime) (70 items)
 - [Task Agents](#task-agents) (115 items)
 - [Context Management](#context-management) (14 items)
-- [Session Management](#session-management) (64 items)
-- [Tools & Function Calling](#tools-function-calling) (200 items)
-- [Streaming](#streaming) (30 items)
+- [Session Management](#session-management) (71 items)
+- [Tools & Function Calling](#tools-function-calling) (205 items)
+- [Streaming](#streaming) (32 items)
 - [Model Registry](#model-registry) (29 items)
 - [OAuth & External APIs](#oauth-external-apis) (41 items)
 - [Resilience & Observability](#resilience-observability) (33 items)
-- [Errors](#errors) (40 items)
+- [Errors](#errors) (41 items)
 - [Utilities](#utilities) (10 items)
 - [Interfaces](#interfaces) (78 items)
 - [Base Classes](#base-classes) (3 items)
-- [Other](#other) (745 items)
+- [Other](#other) (750 items)
 
 ## Core
 
@@ -37,7 +37,7 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:375`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:382`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
 
@@ -4260,7 +4260,7 @@ Image model pricing
 
 ### InputImageContent `interface`
 
-📍 [`src/domain/entities/Content.ts:26`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:28`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7165,7 +7165,7 @@ async destroy(): Promise&lt;void&gt;
 
 ### OneRingAIDriver `class`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:83`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:84`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -7894,7 +7894,7 @@ cancelActiveRun(reason?: string): Promise&lt;void&gt;;
 
 ### LocalAgentFactoryContext `interface`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:49`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:50`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7929,7 +7929,7 @@ cancelActiveRun(reason?: string): Promise&lt;void&gt;;
 
 ### OneRingAgentBinding `interface`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:56`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:57`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7945,7 +7945,7 @@ cancelActiveRun(reason?: string): Promise&lt;void&gt;;
 
 ### OneRingAIDriverOptions `interface`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:70`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:71`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7965,7 +7965,7 @@ PermissionPolicyManager already enforce the runtime policy. |
 
 ### OneRingModelReasoningControls `interface`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:61`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:62`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8353,7 +8353,7 @@ type JsonValue = | null
 
 ### OneRingAgentSource `type`
 
-📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:44`](src/agent-runtime/drivers/OneRingAIDriver.ts)
+📍 [`src/agent-runtime/drivers/OneRingAIDriver.ts:45`](src/agent-runtime/drivers/OneRingAIDriver.ts)
 
 ```typescript
 type OneRingAgentSource = | { type: 'stored-definition'; agentId: string }
@@ -12652,7 +12652,7 @@ async shutdown(): Promise&lt;void&gt;
 
 ### ParallelTasksError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:299`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:322`](src/domain/errors/AIErrors.ts)
 
 Error thrown when multiple tasks fail in parallel execution (fail-all mode)
 
@@ -12824,7 +12824,7 @@ finalizePlanning(): void
 
 ### TaskTimeoutError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:252`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:275`](src/domain/errors/AIErrors.ts)
 
 Error thrown when a task execution times out
 
@@ -12852,7 +12852,7 @@ constructor(
 
 ### TaskValidationError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:271`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:294`](src/domain/errors/AIErrors.ts)
 
 Error thrown when task completion validation fails
 
@@ -15550,7 +15550,7 @@ Set to false to skip re-check for performance if you know condition won't change
 
 ### TaskFailure `interface`
 
-📍 [`src/domain/errors/AIErrors.ts:290`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:313`](src/domain/errors/AIErrors.ts)
 
 Task failure info for parallel execution
 
@@ -19321,6 +19321,123 @@ on&lt;K extends keyof OpenAIRealtimeSessionEvents&gt;(event: K, handler: OpenAIR
 
 ---
 
+### OpenAIResponsesWebSocketSession `class`
+
+📍 [`src/capabilities/openai/OpenAIResponsesWebSocketSession.ts:82`](src/capabilities/openai/OpenAIResponsesWebSocketSession.ts)
+
+Connector-first Responses WebSocket session with GPT-6 Astra steering support.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(options: OpenAIResponsesWebSocketSessionOptions)
+```
+
+**Parameters:**
+- `options`: `OpenAIResponsesWebSocketSessionOptions`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `connect()`
+
+```typescript
+async connect(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `createResponse()`
+
+```typescript
+createResponse(options: OpenAIResponsesCreateEventOptions): void
+```
+
+**Parameters:**
+- `options`: `OpenAIResponsesCreateEventOptions`
+
+**Returns:** `void`
+
+#### `steer()`
+
+Queue additional user input for an active Astra response.
+
+```typescript
+steer(previousResponseId: string, input: ResponseSteerInput): void
+```
+
+**Parameters:**
+- `previousResponseId`: `string`
+- `input`: `ResponseSteerInput`
+
+**Returns:** `void`
+
+#### `send()`
+
+Send an advanced SDK-typed Responses WebSocket event.
+
+```typescript
+send(event: ResponsesAPI.ResponsesClientEvent): void
+```
+
+**Parameters:**
+- `event`: `ResponsesClientEvent`
+
+**Returns:** `void`
+
+#### `events()`
+
+```typescript
+events(): AsyncIterableIterator&lt;ResponsesStreamMessage&gt;
+```
+
+**Returns:** `AsyncIterableIterator&lt;ResponsesStreamMessage&gt;`
+
+#### `close()`
+
+```typescript
+close(code = 1000, reason = 'OK'): void
+```
+
+**Parameters:**
+- `code`: `number` *(optional)* (default: `1000`)
+- `reason`: `string` *(optional)* (default: `'OK'`)
+
+**Returns:** `void`
+
+#### `on()`
+
+```typescript
+override on&lt;K extends keyof OpenAIResponsesWebSocketSessionEvents&gt;(
+    event: K,
+    listener: OpenAIResponsesWebSocketSessionEvents[K],
+  ): this
+```
+
+**Parameters:**
+- `event`: `K`
+- `listener`: `OpenAIResponsesWebSocketSessionEvents[K]`
+
+**Returns:** `this`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: Connector` | - |
+
+</details>
+
+---
+
 ### SessionIngestorPluginNextGen `class`
 
 📍 [`src/core/context-nextgen/plugins/SessionIngestorPluginNextGen.ts:136`](src/core/context-nextgen/plugins/SessionIngestorPluginNextGen.ts)
@@ -20459,6 +20576,133 @@ Translation configuration accepted when minting a WebRTC client secret.
 
 ---
 
+### OpenAIResponseSteerMessage `interface`
+
+📍 [`src/capabilities/openai/OpenAIResponsesWebSocketSession.ts:59`](src/capabilities/openai/OpenAIResponsesWebSocketSession.ts)
+
+One user message accepted by the Responses mid-turn steering protocol.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type?` | `type?: 'message';` | - |
+| `role` | `role: 'user';` | - |
+| `content` | `content: string | ResponsesAPI.ResponseSteerInputContent[];` | - |
+
+</details>
+
+---
+
+### OpenAIResponsesWebSocketSessionEvents `interface`
+
+📍 [`src/capabilities/openai/OpenAIResponsesWebSocketSession.ts:73`](src/capabilities/openai/OpenAIResponsesWebSocketSession.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `event` | `event: (event: ResponsesAPI.ResponsesServerEvent) =&gt; void;` | - |
+| `error` | `error: (error: Error) =&gt; void;` | - |
+| `close` | `close: (code: number, reason: string, unsent: ResponsesUnsentMessage[]) =&gt; void;` | - |
+| `reconnecting` | `reconnecting: (event: ResponsesReconnectingEvent) =&gt; void;` | - |
+| `reconnected` | `reconnected: () =&gt; void;` | - |
+
+</details>
+
+---
+
+### OpenAIResponsesWebSocketSessionOptions `interface`
+
+📍 [`src/capabilities/openai/OpenAIResponsesWebSocketSession.ts:32`](src/capabilities/openai/OpenAIResponsesWebSocketSession.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: string | Connector;` | - |
+| `headers?` | `headers?: Record&lt;string, string&gt;;` | - |
+| `connectTimeoutMs?` | `connectTimeoutMs?: number;` | - |
+| `reconnect?` | `reconnect?: ResponsesWSReconnectOptions | null;` | - |
+| `maxQueueSize?` | `maxQueueSize?: number;` | - |
+| `transportFactory?` | `transportFactory?: (
+    client: OpenAI,
+    options: {
+      headers?: Record&lt;string, string&gt;;
+      reconnect?: ResponsesWSReconnectOptions | null;
+      maxQueueSize?: number;
+    },
+  ) =&gt; OpenAIResponsesWebSocketTransport;` | Test/custom-runtime hook. Normal Node callers should leave this unset. |
+
+</details>
+
+---
+
+### OpenAIResponsesWebSocketTransport `interface`
+
+📍 [`src/capabilities/openai/OpenAIResponsesWebSocketSession.ts:24`](src/capabilities/openai/OpenAIResponsesWebSocketSession.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `on()`
+
+```typescript
+on(event: string, listener: (...args: any[]) =&gt; void): unknown;
+```
+
+**Parameters:**
+- `event`: `string`
+- `listener`: `(...args: any[]) =&gt; void`
+
+**Returns:** `unknown`
+
+#### `send()`
+
+```typescript
+send(event: ResponsesAPI.ResponsesClientEvent): void;
+```
+
+**Parameters:**
+- `event`: `ResponsesClientEvent`
+
+**Returns:** `void`
+
+#### `stream()`
+
+```typescript
+stream(): AsyncIterableIterator&lt;ResponsesStreamMessage&gt;;
+```
+
+**Returns:** `AsyncIterableIterator&lt;ResponsesStreamMessage&gt;`
+
+#### `close()`
+
+```typescript
+close(props?: { code: number; reason: string }): void;
+```
+
+**Parameters:**
+- `props`: `{ code: number; reason: string; } | undefined` *(optional)*
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `socket` | `readonly socket: WebSocketLike;` | - |
+
+</details>
+
+---
+
 ### SessionIngestorPluginConfig `interface`
 
 📍 [`src/core/context-nextgen/plugins/SessionIngestorPluginNextGen.ts:51`](src/core/context-nextgen/plugins/SessionIngestorPluginNextGen.ts)
@@ -20627,6 +20871,37 @@ Exposed to lifecycle hooks and event handlers.
 | `metadata` | `metadata: Record&lt;string, unknown&gt;;` | Adapter-specific metadata (e.g., Twilio AccountSid, geographic info) |
 
 </details>
+
+---
+
+### OpenAIResponsesCreateEventOptions `type`
+
+📍 [`src/capabilities/openai/OpenAIResponsesWebSocketSession.ts:49`](src/capabilities/openai/OpenAIResponsesWebSocketSession.ts)
+
+```typescript
+type OpenAIResponsesCreateEventOptions = Omit&lt;
+  ResponsesAPI.ResponsesClientEvent.ResponseCreate,
+  'type' | 'model' | 'input' | 'tools' | 'stream' | 'background'
+&gt; & {
+  model: string;
+  input: string | InputItem[];
+  tools?: Tool[];
+}
+```
+
+---
+
+### ResponseSteerInput `type`
+
+📍 [`src/capabilities/openai/OpenAIResponsesWebSocketSession.ts:69`](src/capabilities/openai/OpenAIResponsesWebSocketSession.ts)
+
+Mid-turn steering accepts a string or a non-empty list of user messages.
+Tool results and general Responses input items are intentionally excluded.
+
+```typescript
+type ResponseSteerInput = | string
+  | [OpenAIResponseSteerMessage, ...OpenAIResponseSteerMessage[]]
+```
 
 ---
 
@@ -21060,7 +21335,7 @@ static forIdentities(
 
 ### InvalidToolArgumentsError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:192`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:215`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -21753,7 +22028,7 @@ static reset(): void
 
 ### ToolExecutionError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:73`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:96`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -22641,7 +22916,7 @@ loadState(state: SerializedToolState): void
 
 ### ToolNotFoundError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:105`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:128`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -23184,7 +23459,7 @@ static isConnectorTool(entry: ToolRegistryEntry | ConnectorToolEntry): entry is 
 
 ### ToolTimeoutError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:90`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:113`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -23247,7 +23522,7 @@ constructor(
 
 ### AsyncToolConfig `interface`
 
-📍 [`src/domain/entities/Tool.ts:82`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:111`](src/domain/entities/Tool.ts)
 
 Configuration for async (non-blocking) tool behavior
 
@@ -23290,7 +23565,7 @@ within this window, it's treated as a timeout error. |
 
 ### BuiltInTool `interface`
 
-📍 [`src/domain/entities/Tool.ts:30`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:57`](src/domain/entities/Tool.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -23459,6 +23734,25 @@ Must be unique among all registered tools. |
 
 ---
 
+### CustomToolCallOutputItem `interface`
+
+📍 [`src/domain/entities/Message.ts:60`](src/domain/entities/Message.ts)
+
+Top-level custom-tool result item for Responses continuations.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'custom_tool_call_output';` | - |
+| `call_id` | `call_id: string;` | - |
+| `output` | `output: string | ToolCallOutputContent[];` | - |
+
+</details>
+
+---
+
 ### CustomToolDefinition `interface`
 
 📍 [`src/domain/entities/CustomToolDefinition.ts:54`](src/domain/entities/CustomToolDefinition.ts)
@@ -23544,6 +23838,24 @@ Metadata for a custom tool
 
 ---
 
+### CustomToolResultContent `interface`
+
+📍 [`src/domain/entities/Content.ts:67`](src/domain/entities/Content.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: ContentType.CUSTOM_TOOL_RESULT;` | - |
+| `tool_use_id` | `tool_use_id: string;` | - |
+| `content` | `content: string | any;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
 ### CustomToolSummary `interface`
 
 📍 [`src/domain/entities/CustomToolDefinition.ts:80`](src/domain/entities/CustomToolDefinition.ts)
@@ -23582,6 +23894,25 @@ Test case for a custom tool
 | `expectedOutput?` | `expectedOutput?: unknown;` | Expected output (for validation) |
 | `lastResult?` | `lastResult?: unknown;` | Result from last test run |
 | `lastError?` | `lastError?: string;` | Error from last test run |
+
+</details>
+
+---
+
+### CustomToolUseContent `interface`
+
+📍 [`src/domain/entities/Content.ts:58`](src/domain/entities/Content.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: ContentType.CUSTOM_TOOL_USE;` | - |
+| `id` | `id: string;` | - |
+| `name` | `name: string;` | - |
+| `input` | `input: string;` | - |
+| `async?` | `async?: boolean;` | Whether the provider marked this as an async protocol call. |
 
 </details>
 
@@ -23641,6 +23972,29 @@ When set, read_file will automatically convert binary document formats to markdo
 
 ---
 
+### FreeformToolDefinition `interface`
+
+📍 [`src/domain/entities/Tool.ts:46`](src/domain/entities/Tool.ts)
+
+Free-form custom tool definition used by providers that accept text input.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'custom';` | - |
+| `name` | `name: string;` | - |
+| `description?` | `description?: string;` | - |
+| `format?` | `format?: Record&lt;string, unknown&gt;;` | - |
+| `async?` | `async?: boolean;` | OpenAI Responses async tool calling protocol flag. |
+| `allowedCallers?` | `allowedCallers?: Array&lt;'direct' | 'programmatic'&gt;;` | - |
+| `deferLoading?` | `deferLoading?: boolean;` | - |
+
+</details>
+
+---
+
 ### FunctionToolDefinition `interface`
 
 📍 [`src/domain/entities/Tool.ts:18`](src/domain/entities/Tool.ts)
@@ -23657,6 +24011,15 @@ When set, read_file will automatically convert binary document formats to markdo
     parameters?: JSONSchema;
     strict?: boolean; // Enforce schema strictly
   };` | - |
+| `async?` | `async?: boolean;` | OpenAI Responses async tool calling. When true, a compatible model may
+continue its turn while the host executes this function. The eventual
+result must be returned with the original call ID.
+
+This is a provider protocol flag and is distinct from `blocking: false`,
+which controls OneRingAI's managed agent execution loop. |
+| `allowedCallers?` | `allowedCallers?: Array&lt;'direct' | 'programmatic'&gt;;` | OpenAI tool invocation contexts. |
+| `deferLoading?` | `deferLoading?: boolean;` | Defer this tool for provider tool-search discovery. |
+| `outputSchema?` | `outputSchema?: JSONSchema;` | Schema for the JSON value encoded in the function output string. |
 | `blocking?` | `blocking?: boolean;` | - |
 | `timeout?` | `timeout?: number;` | - |
 
@@ -24321,7 +24684,7 @@ Parsed connector category: connector name + optional account alias.
 
 ### PendingAsyncTool `interface`
 
-📍 [`src/domain/entities/Tool.ts:115`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:144`](src/domain/entities/Tool.ts)
 
 Tracks a single async tool execution in flight
 
@@ -24574,7 +24937,7 @@ Default: true |
 
 ### ToolCall `interface`
 
-📍 [`src/domain/entities/Tool.ts:45`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:72`](src/domain/entities/Tool.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -24587,6 +24950,7 @@ Default: true |
     name: string;
     arguments: string; // JSON string
   };` | - |
+| `async?` | `async?: boolean;` | Whether the provider marked this as an async protocol call. |
 | `blocking` | `blocking: boolean;` | - |
 | `state` | `state: ToolCallState;` | - |
 | `startTime?` | `startTime?: Date;` | - |
@@ -24599,7 +24963,7 @@ Default: true |
 
 ### ToolCallArgumentsDeltaEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:97`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:102`](src/domain/entities/StreamEvent.ts)
 
 Tool call arguments delta - incremental JSON
 
@@ -24621,7 +24985,7 @@ Tool call arguments delta - incremental JSON
 
 ### ToolCallArgumentsDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:109`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:114`](src/domain/entities/StreamEvent.ts)
 
 Tool call arguments complete
 
@@ -24634,6 +24998,8 @@ Tool call arguments complete
 | `tool_call_id` | `tool_call_id: string;` | - |
 | `tool_name` | `tool_name: string;` | - |
 | `arguments` | `arguments: string;` | - |
+| `tool_type?` | `tool_type?: 'function' | 'custom';` | - |
+| `async?` | `async?: boolean;` | - |
 | `incomplete?` | `incomplete?: boolean;` | - |
 
 </details>
@@ -24642,7 +25008,7 @@ Tool call arguments complete
 
 ### ToolCallStartEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:85`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:86`](src/domain/entities/StreamEvent.ts)
 
 Tool call detected and starting
 
@@ -24655,6 +25021,8 @@ Tool call detected and starting
 | `item_id` | `item_id: string;` | - |
 | `tool_call_id` | `tool_call_id: string;` | - |
 | `tool_name` | `tool_name: string;` | - |
+| `tool_type?` | `tool_type?: 'function' | 'custom';` | Provider tool kind. Omitted for legacy converters. |
+| `async?` | `async?: boolean;` | Whether the provider allows the model to continue while the host runs the tool. |
 | `thought_signature?` | `thought_signature?: string;` | Google Gemini 3+ thought signature for round-tripping function calls |
 
 </details>
@@ -24760,7 +25128,7 @@ Resolution order in connector tools:
 
 ### ToolExecutionContext `interface`
 
-📍 [`src/domain/entities/Tool.ts:72`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:101`](src/domain/entities/Tool.ts)
 
 Tool execution context - tracks all tool calls in a generation
 
@@ -24780,7 +25148,7 @@ Tool execution context - tracks all tool calls in a generation
 
 ### ToolExecutionDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:130`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:137`](src/domain/entities/StreamEvent.ts)
 
 Tool execution complete
 
@@ -24821,7 +25189,7 @@ Default: true (if crypto.randomUUID is available) |
 
 ### ToolExecutionStartEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:120`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:127`](src/domain/entities/StreamEvent.ts)
 
 Tool execution starting
 
@@ -24841,7 +25209,7 @@ Tool execution starting
 
 ### ToolFunction `interface`
 
-📍 [`src/domain/entities/Tool.ts:201`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:230`](src/domain/entities/Tool.ts)
 
 User-provided tool function
 
@@ -25000,7 +25368,7 @@ If set, session approvals expire after this duration. |
 
 ### ToolPermissionConfig `interface`
 
-📍 [`src/domain/entities/Tool.ts:165`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:194`](src/domain/entities/Tool.ts)
 
 Permission configuration for a tool
 
@@ -25103,7 +25471,7 @@ Metadata for a tool in the registry
 
 ### ToolResult `interface`
 
-📍 [`src/domain/entities/Tool.ts:59`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:88`](src/domain/entities/Tool.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -25124,7 +25492,7 @@ Metadata for a tool in the registry
 
 ### ToolResultContent `interface`
 
-📍 [`src/domain/entities/Content.ts:54`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:74`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -25165,7 +25533,7 @@ Provider converters read this field to inject native multimodal image blocks. |
 
 ### ToolUseContent `interface`
 
-📍 [`src/domain/entities/Content.ts:45`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:47`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -25176,6 +25544,7 @@ Provider converters read this field to inject native multimodal image blocks. |
 | `id` | `id: string;` | - |
 | `name` | `name: string;` | - |
 | `arguments` | `arguments: string;` | - |
+| `async?` | `async?: boolean;` | Whether the provider marked this as an async protocol call. |
 | `thoughtSignature?` | `thoughtSignature?: string;` | Google Gemini 3+ opaque thought signature for round-tripping function calls |
 
 </details>
@@ -25184,7 +25553,7 @@ Provider converters read this field to inject native multimodal image blocks. |
 
 ### ToolCallState `enum`
 
-📍 [`src/domain/entities/Tool.ts:37`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:64`](src/domain/entities/Tool.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -25275,7 +25644,7 @@ type OpenAIRealtimeTool = OpenAIRealtimeFunctionTool | OpenAIRealtimeMCPTool
 
 ### PendingAsyncToolStatus `type`
 
-📍 [`src/domain/entities/Tool.ts:110`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:139`](src/domain/entities/Tool.ts)
 
 Status of a pending async tool execution
 
@@ -25369,10 +25738,22 @@ type ServiceToolFactory = (
 
 ### Tool `type`
 
-📍 [`src/domain/entities/Tool.ts:35`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:62`](src/domain/entities/Tool.ts)
 
 ```typescript
-type Tool = FunctionToolDefinition | BuiltInTool
+type Tool = FunctionToolDefinition | FreeformToolDefinition | BuiltInTool
+```
+
+---
+
+### ToolCallOutputContent `type`
+
+📍 [`src/domain/entities/Message.ts:51`](src/domain/entities/Message.ts)
+
+Top-level function result item for Responses continuations.
+
+```typescript
+type ToolCallOutputContent = InputTextContent | InputImageContent | InputFileContent
 ```
 
 ---
@@ -26422,7 +26803,7 @@ export function createWriteFileTool(config: FilesystemToolConfig = {}): ToolFunc
 
 ### defaultDescribeCall `function`
 
-📍 [`src/domain/entities/Tool.ts:277`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:306`](src/domain/entities/Tool.ts)
 
 Default implementation for describeCall.
 Shows the first meaningful argument value.
@@ -26500,7 +26881,7 @@ export function getToolByName(name: string): ToolRegistryEntry | undefined
 
 ### getToolCallDescription `function`
 
-📍 [`src/domain/entities/Tool.ts:329`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:358`](src/domain/entities/Tool.ts)
 
 Get a human-readable description of a tool call.
 Uses the tool's describeCall method if available, otherwise falls back to default.
@@ -26585,7 +26966,7 @@ export function hydrateCustomTool(
 
 ### isToolCallArgumentsDelta `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:303`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:323`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallArgumentsDelta(
@@ -26597,7 +26978,7 @@ export function isToolCallArgumentsDelta(
 
 ### isToolCallArgumentsDone `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:309`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:329`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallArgumentsDone(
@@ -26609,7 +26990,7 @@ export function isToolCallArgumentsDone(
 
 ### isToolCallStart `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:299`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:319`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent
@@ -27374,7 +27755,7 @@ destroy(): void
 
 ### AudioChunkErrorEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:241`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:260`](src/domain/entities/StreamEvent.ts)
 
 Audio chunk error - TTS synthesis failed for a text chunk
 
@@ -27394,7 +27775,7 @@ Audio chunk error - TTS synthesis failed for a text chunk
 
 ### AudioChunkReadyEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:220`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:239`](src/domain/entities/StreamEvent.ts)
 
 Audio chunk ready - TTS synthesis complete for a text chunk
 
@@ -27418,7 +27799,7 @@ Audio chunk ready - TTS synthesis complete for a text chunk
 
 ### AudioStreamCompleteEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:251`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:270`](src/domain/entities/StreamEvent.ts)
 
 Audio stream complete - all TTS chunks have been processed
 
@@ -27436,9 +27817,31 @@ Audio stream complete - all TTS chunks have been processed
 
 ---
 
+### CompactionEvent `interface`
+
+📍 [`src/domain/entities/StreamEvent.ts:211`](src/domain/entities/StreamEvent.ts)
+
+Encrypted compaction state emitted by the provider. Preserve this item for
+stateless continuation replay; the content is intentionally opaque.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: StreamEventType.COMPACTION;` | - |
+| `item_id` | `item_id: string;` | - |
+| `output_index` | `output_index: number;` | - |
+| `encrypted_content` | `encrypted_content: string;` | - |
+| `sequence_number` | `sequence_number: number;` | - |
+
+</details>
+
+---
+
 ### ErrorEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:203`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:222`](src/domain/entities/StreamEvent.ts)
 
 Error event
 
@@ -27533,7 +27936,7 @@ synthesizeStream(options: TTSOptions): AsyncIterableIterator&lt;TTSStreamChunk&g
 
 ### IterationCompleteEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:142`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:149`](src/domain/entities/StreamEvent.ts)
 
 Iteration complete - end of agentic loop iteration
 
@@ -27553,7 +27956,7 @@ Iteration complete - end of agentic loop iteration
 
 ### OutputTextDeltaEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:63`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:64`](src/domain/entities/StreamEvent.ts)
 
 Text delta - incremental text output
 
@@ -27575,7 +27978,7 @@ Text delta - incremental text output
 
 ### OutputTextDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:75`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:76`](src/domain/entities/StreamEvent.ts)
 
 Text output complete for this item
 
@@ -27595,7 +27998,7 @@ Text output complete for this item
 
 ### ReasoningDeltaEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:184`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:191`](src/domain/entities/StreamEvent.ts)
 
 Reasoning/thinking delta - incremental reasoning output
 
@@ -27615,7 +28018,7 @@ Reasoning/thinking delta - incremental reasoning output
 
 ### ReasoningDoneEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:194`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:201`](src/domain/entities/StreamEvent.ts)
 
 Reasoning/thinking complete for this item
 
@@ -27634,7 +28037,7 @@ Reasoning/thinking complete for this item
 
 ### ResponseCompleteEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:152`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:159`](src/domain/entities/StreamEvent.ts)
 
 Response complete - final event
 
@@ -27661,7 +28064,7 @@ is diagnosable rather than an opaque empty response. |
 
 ### ResponseCreatedEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:47`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:48`](src/domain/entities/StreamEvent.ts)
 
 Response created - first event in stream
 
@@ -27680,7 +28083,7 @@ Response created - first event in stream
 
 ### ResponseInProgressEvent `interface`
 
-📍 [`src/domain/entities/StreamEvent.ts:56`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:57`](src/domain/entities/StreamEvent.ts)
 
 Response in progress
 
@@ -27769,6 +28172,7 @@ Stream event type enum
 | `ITERATION_COMPLETE` | `response.iteration.complete` | - |
 | `REASONING_DELTA` | `response.reasoning.delta` | - |
 | `REASONING_DONE` | `response.reasoning.done` | - |
+| `COMPACTION` | `response.compaction` | - |
 | `RESPONSE_COMPLETE` | `response.complete` | - |
 | `RETRY` | `response.retry` | - |
 | `ERROR` | `response.error` | - |
@@ -27782,7 +28186,7 @@ Stream event type enum
 
 ### StreamEvent `type`
 
-📍 [`src/domain/entities/StreamEvent.ts:262`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:281`](src/domain/entities/StreamEvent.ts)
 
 Union type of all stream events
 Discriminated by 'type' field for type narrowing
@@ -27794,6 +28198,7 @@ type StreamEvent = | ResponseCreatedEvent
   | OutputTextDoneEvent
   | ReasoningDeltaEvent
   | ReasoningDoneEvent
+  | CompactionEvent
   | ToolCallStartEvent
   | ToolCallArgumentsDeltaEvent
   | ToolCallArgumentsDoneEvent
@@ -27812,7 +28217,7 @@ type StreamEvent = | ResponseCreatedEvent
 
 ### isAudioChunkError `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:335`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:359`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isAudioChunkError(event: StreamEvent): event is AudioChunkErrorEvent
@@ -27822,7 +28227,7 @@ export function isAudioChunkError(event: StreamEvent): event is AudioChunkErrorE
 
 ### isAudioChunkReady `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:331`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:355`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isAudioChunkReady(event: StreamEvent): event is AudioChunkReadyEvent
@@ -27832,7 +28237,7 @@ export function isAudioChunkReady(event: StreamEvent): event is AudioChunkReadyE
 
 ### isAudioStreamComplete `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:339`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:363`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isAudioStreamComplete(event: StreamEvent): event is AudioStreamCompleteEvent
@@ -27840,9 +28245,19 @@ export function isAudioStreamComplete(event: StreamEvent): event is AudioStreamC
 
 ---
 
+### isCompaction `function`
+
+📍 [`src/domain/entities/StreamEvent.ts:343`](src/domain/entities/StreamEvent.ts)
+
+```typescript
+export function isCompaction(event: StreamEvent): event is CompactionEvent
+```
+
+---
+
 ### isErrorEvent `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:327`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:351`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isErrorEvent(event: StreamEvent): event is ErrorEvent
@@ -27852,7 +28267,7 @@ export function isErrorEvent(event: StreamEvent): event is ErrorEvent
 
 ### isOutputTextDelta `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:295`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:315`](src/domain/entities/StreamEvent.ts)
 
 Type guards for specific events
 
@@ -27864,7 +28279,7 @@ export function isOutputTextDelta(event: StreamEvent): event is OutputTextDeltaE
 
 ### isReasoningDelta `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:315`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:335`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isReasoningDelta(event: StreamEvent): event is ReasoningDeltaEvent
@@ -27874,7 +28289,7 @@ export function isReasoningDelta(event: StreamEvent): event is ReasoningDeltaEve
 
 ### isReasoningDone `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:319`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:339`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isReasoningDone(event: StreamEvent): event is ReasoningDoneEvent
@@ -27884,7 +28299,7 @@ export function isReasoningDone(event: StreamEvent): event is ReasoningDoneEvent
 
 ### isResponseComplete `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:323`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:347`](src/domain/entities/StreamEvent.ts)
 
 ```typescript
 export function isResponseComplete(event: StreamEvent): event is ResponseCompleteEvent
@@ -27894,7 +28309,7 @@ export function isResponseComplete(event: StreamEvent): event is ResponseComplet
 
 ### isStreamEvent `function`
 
-📍 [`src/domain/entities/StreamEvent.ts:285`](src/domain/entities/StreamEvent.ts)
+📍 [`src/domain/entities/StreamEvent.ts:305`](src/domain/entities/StreamEvent.ts)
 
 Type guard to check if event is a specific type
 
@@ -27913,7 +28328,7 @@ Model metadata, pricing, and capabilities
 
 ### ModelNotSupportedError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:137`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:160`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -28100,6 +28515,9 @@ Complete description of an LLM model including capabilities, pricing, and featur
     /** Supports extended reasoning/thinking */
     reasoning?: boolean;
 
+    /** Verified reasoning-effort values accepted by this model. */
+    reasoningEfforts?: readonly ('none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max')[];
+
     /** Supports streaming responses */
     streaming: boolean;
 
@@ -28135,6 +28553,18 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
     /** Supports prompt caching */
     promptCaching?: boolean;
+
+    /** Supports Responses async function/custom tool calls. */
+    asyncToolCalling?: boolean;
+
+    /** Supports Responses WebSocket mid-turn steering. */
+    midTurnSteering?: boolean;
+
+    /** Supports conversation-scoped `configuration_update` input items. */
+    configurationUpdates?: boolean;
+
+    /** Participates in OpenAI's asynchronous misalignment monitoring. */
+    misalignmentMonitoring?: boolean;
 
     /** Modality-specific prices. Token prices are USD per million tokens. */
     pricing?: {
@@ -28215,7 +28645,7 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
 ### LongContextTokenPricing `interface`
 
-📍 [`src/domain/entities/Model.ts:191`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:206`](src/domain/entities/Model.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28295,7 +28725,7 @@ emitted only when the primitive actually called a connector.
 
 ### TokenPricing `interface`
 
-📍 [`src/domain/entities/Model.ts:200`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:215`](src/domain/entities/Model.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -28391,7 +28821,7 @@ type OpenAIRealtimeModel = | 'gpt-realtime-2.1'
 
 ### ProcessingMode `type`
 
-📍 [`src/domain/entities/Model.ts:182`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:197`](src/domain/entities/Model.ts)
 
 ```typescript
 type ProcessingMode = | 'interactive'
@@ -28407,7 +28837,7 @@ type ProcessingMode = | 'interactive'
 
 ### calculateCost `function`
 
-📍 [`src/domain/entities/Model.ts:3941`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3991`](src/domain/entities/Model.ts)
 
 Calculate the cost for a given model and token usage
 
@@ -28458,7 +28888,7 @@ export function calculateEmbeddingCost(
 
 ### getActiveModels `function`
 
-📍 [`src/domain/entities/Model.ts:3922`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3972`](src/domain/entities/Model.ts)
 
 Get all currently active models
 
@@ -28470,7 +28900,7 @@ export function getActiveModels(): ILLMDescription[]
 
 ### getDeprecatedModels `function`
 
-📍 [`src/domain/entities/Model.ts:3927`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3977`](src/domain/entities/Model.ts)
 
 Get callable models carrying an explicit vendor deprecation notice.
 
@@ -28496,7 +28926,7 @@ export function getEmbeddingModelsWithFeature(
 
 ### getModelInfo `function`
 
-📍 [`src/domain/entities/Model.ts:3899`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3949`](src/domain/entities/Model.ts)
 
 Get model information by name
 
@@ -28508,7 +28938,7 @@ export function getModelInfo(modelName: string): ILLMDescription | undefined
 
 ### getModelsByVendor `function`
 
-📍 [`src/domain/entities/Model.ts:3914`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3964`](src/domain/entities/Model.ts)
 
 Get all models for a specific vendor
 
@@ -28548,7 +28978,7 @@ export function resolveModelCapabilities(
 
 ### resolveModelName `function`
 
-📍 [`src/domain/entities/Model.ts:3905`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:3955`](src/domain/entities/Model.ts)
 
 Resolve a direct model ID or floating alias to the registry's canonical ID.
 
@@ -29027,16 +29457,47 @@ Last full audit: August 2026
 
 ### MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/Model.ts:356`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:373`](src/domain/entities/Model.ts)
 
 Complete model registry with all model metadata
-Registry schema v2. Last full first-party documentation audit: 2026-08-30.
+Registry schema v2. Last OpenAI model update: 2026-09-04.
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
+| `'gpt-6-astra'` | `{
+    name: 'gpt-6-astra',
+    provider: Vendor.OpenAI,
+    description: 'OpenAI\'s most capable model for complex reasoning, coding, computer use, research, and document creation',
+    isActive: true,
+    lifecycle: 'active',
+    availability: 'limited',
+    preferred: true,
+    endpoints: ['responses', 'chat_completions', 'batch'],
+    releaseDate: '2026-09-04',
+    knowledgeCutoff: '2026-04-30',
+    sources: { documentation: 'https://developers.openai.com/api/docs/models/gpt-6-astra', pricing: 'https://developers.openai.com/api/docs/pricing', lastVerified: '2026-09-04' },
+    features: {
+      reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      streaming: true, structuredOutput: true, functionCalling: true,
+      fineTuning: false, predictedOutputs: false, realtime: false, vision: true,
+      audio: false, video: false, batchAPI: true, promptCaching: true,
+      asyncToolCalling: true, midTurnSteering: true, configurationUpdates: true,
+      misalignmentMonitoring: true,
+      parameters: { temperature: false, topP: false, frequencyPenalty: false, presencePenalty: false },
+      input: { tokens: 922000, text: true, image: true, cpm: 10, cpmCached: 1 },
+      output: { tokens: 128000, text: true, cpm: 50 },
+      pricing: {
+        text: {
+          input: 10, cachedInput: 1, cacheWrite: 12.5, output: 50,
+          longContext: { thresholdTokens: 272000, input: 20, cachedInput: 2, cacheWrite: 25, output: 75 },
+        },
+        processingMultipliers: { batch: 0.5, flex: 0.5, fast: 2 },
+      },
+    },
+  }` | - |
 | `'gpt-5.6-sol'` | `{
     name: 'gpt-5.6-sol',
     provider: Vendor.OpenAI,
@@ -34642,7 +35103,7 @@ constructor(
 
 ### ContextOverflowError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:386`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:409`](src/domain/errors/AIErrors.ts)
 
 Error thrown when context cannot be reduced to fit within limits
 after all graceful degradation levels have been exhausted.
@@ -34698,7 +35159,7 @@ getTopConsumers(count = 5): Array&lt;{ component: string; tokens: number }&gt;
 
 ### DependencyCycleError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:232`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:255`](src/domain/errors/AIErrors.ts)
 
 Error thrown when a dependency cycle is detected in a plan
 
@@ -34930,7 +35391,7 @@ constructor(factId: FactId, supersededBy: FactId)
 
 ### InvalidConfigError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:184`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:207`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -35233,7 +35694,7 @@ constructor()
 
 ### ProviderAmbiguousOperationError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:166`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:189`](src/domain/errors/AIErrors.ts)
 
 A paid/external submission may have succeeded even though no handle was received.
 
@@ -35284,7 +35745,7 @@ constructor(providerName: string, message: string = 'Authentication failed')
 
 ### ProviderCapabilityNotSupportedError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:149`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:172`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -35310,7 +35771,7 @@ constructor(
 
 ### ProviderContextLengthError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:57`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:80`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -35336,7 +35797,7 @@ constructor(
 
 ### ProviderError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:209`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:232`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -35364,7 +35825,7 @@ constructor(
 
 ### ProviderErrorMapper `class`
 
-📍 [`src/infrastructure/providers/base/ProviderErrorMapper.ts:24`](src/infrastructure/providers/base/ProviderErrorMapper.ts)
+📍 [`src/infrastructure/providers/base/ProviderErrorMapper.ts:25`](src/infrastructure/providers/base/ProviderErrorMapper.ts)
 
 Maps provider-specific errors to our unified error types
 
@@ -35403,6 +35864,49 @@ static extractErrorDetails(error: any): Record&lt;string, unknown&gt;
 
 ---
 
+### ProviderMisalignmentError `class`
+
+📍 [`src/domain/errors/AIErrors.ts:43`](src/domain/errors/AIErrors.ts)
+
+OpenAI safety monitor stopped a request for a potential misalignment policy violation.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    public readonly providerName: string,
+    message: string,
+    public readonly requestId?: string,
+    public readonly responseId?: string,
+    public readonly details?: unknown,
+    originalError?: Error,
+  )
+```
+
+**Parameters:**
+- `providerName`: `string`
+- `message`: `string`
+- `requestId`: `string | undefined` *(optional)*
+- `responseId`: `string | undefined` *(optional)*
+- `details`: `unknown` *(optional)*
+- `originalError`: `Error | undefined` *(optional)*
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `providerCode` | `providerCode: "misalignment_policy_violation"` | - |
+
+</details>
+
+---
+
 ### ProviderNotFoundError `class`
 
 📍 [`src/domain/errors/AIErrors.ts:18`](src/domain/errors/AIErrors.ts)
@@ -35425,7 +35929,7 @@ constructor(providerName: string)
 
 ### ProviderRateLimitError `class`
 
-📍 [`src/domain/errors/AIErrors.ts:42`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:65`](src/domain/errors/AIErrors.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -35641,7 +36145,7 @@ constructor(message: string)
 
 ### ContextOverflowBudget `interface`
 
-📍 [`src/domain/errors/AIErrors.ts:374`](src/domain/errors/AIErrors.ts)
+📍 [`src/domain/errors/AIErrors.ts:397`](src/domain/errors/AIErrors.ts)
 
 Detailed budget information for context overflow diagnosis
 
@@ -36091,6 +36595,12 @@ TypeScript interfaces for extensibility
     /** Whether the adapter can surface and resume a host-managed MCP approval. */
     remoteMcpApproval: boolean;
   };` | - |
+| `responsesExtensions?` | `responsesExtensions?: {
+    asyncToolCalling: boolean;
+    midTurnSteering: boolean;
+    configurationUpdates: boolean;
+    misalignmentMonitoring: boolean;
+  };` | Responses-protocol extensions exposed through this provider/library integration. |
 | `dataHandling` | `dataHandling: {
     promptCaching: 'none' | 'provider_managed';
     batch: 'none' | 'provider_retained';
@@ -36165,7 +36675,7 @@ Agent definition summary for listing
 
 ### BatchHandle `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:133`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:140`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -36194,7 +36704,7 @@ Agent definition summary for listing
 
 ### BatchSubmitOptions `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:127`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:134`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -36211,7 +36721,7 @@ Agent definition summary for listing
 
 ### BatchTextRequest `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:121`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:128`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -36227,7 +36737,7 @@ Agent definition summary for listing
 
 ### BatchTextResult `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:151`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:158`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -36703,7 +37213,7 @@ destroy(): Promise&lt;void&gt;;
 
 ### IAsyncTextBatchProvider `interface`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:164`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:171`](src/domain/interfaces/IAdvancedInference.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -39238,7 +39748,7 @@ Word-level timestamp
 
 ### BatchProcessingState `type`
 
-📍 [`src/domain/interfaces/IAdvancedInference.ts:112`](src/domain/interfaces/IAdvancedInference.ts)
+📍 [`src/domain/interfaces/IAdvancedInference.ts:119`](src/domain/interfaces/IAdvancedInference.ts)
 
 ```typescript
 type BatchProcessingState = | 'queued'
@@ -39652,7 +40162,7 @@ protected getMaxRetries(): number
 
 ### BaseTextProvider `class`
 
-📍 [`src/infrastructure/providers/base/BaseTextProvider.ts:22`](src/infrastructure/providers/base/BaseTextProvider.ts)
+📍 [`src/infrastructure/providers/base/BaseTextProvider.ts:26`](src/infrastructure/providers/base/BaseTextProvider.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -43286,6 +43796,53 @@ close(code = 1000, reason = 'Client closed'): void
 | Property | Type | Description |
 |----------|------|-------------|
 | `emitsOutputAudioFromEvents` | `emitsOutputAudioFromEvents: false` | - |
+
+</details>
+
+---
+
+### OpenAISafetyAPI `class`
+
+📍 [`src/capabilities/openai/OpenAISafetyAPI.ts:7`](src/capabilities/openai/OpenAISafetyAPI.ts)
+
+Connector-first access to OpenAI safety-alert records.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(connector: string | Connector)
+```
+
+**Parameters:**
+- `connector`: `string | Connector`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `retrieveAlert()`
+
+```typescript
+async retrieveAlert(id: string): Promise&lt;SafetyAlert&gt;
+```
+
+**Parameters:**
+- `id`: `string`
+
+**Returns:** `Promise&lt;SafetyAlert&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: Connector` | - |
 
 </details>
 
@@ -47732,7 +48289,7 @@ estimateTokens(item: InputItem): number;
 
 ### CompactionItem `interface`
 
-📍 [`src/domain/entities/Message.ts:21`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:22`](src/domain/entities/Message.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -47762,6 +48319,23 @@ Result of compact() operation.
 | `messagesRemoved` | `messagesRemoved: number;` | Number of messages removed from conversation |
 | `pluginsCompacted` | `pluginsCompacted: string[];` | Names of plugins that were compacted |
 | `log` | `log: string[];` | Log of actions taken during compaction |
+
+</details>
+
+---
+
+### CompactionTriggerItem `interface`
+
+📍 [`src/domain/entities/Message.ts:46`](src/domain/entities/Message.ts)
+
+Explicit in-band compaction request. Must be the final input item.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'compaction_trigger';` | - |
 
 </details>
 
@@ -47835,6 +48409,27 @@ resolveDisplayNames(ids: EntityId[]): Promise&lt;Array&lt;string | null&gt;&gt;;
 - `ids`: `string[]`
 
 **Returns:** `Promise&lt;(string | null)[]&gt;`
+
+</details>
+
+---
+
+### ConfigurationUpdateItem `interface`
+
+📍 [`src/domain/entities/Message.ts:37`](src/domain/entities/Message.ts)
+
+GPT-6 Astra conversation-scoped reasoning-effort update.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'configuration_update';` | - |
+| `id?` | `id?: string;` | - |
+| `reasoning` | `reasoning: {
+    effort: Exclude&lt;ReasoningEffort, 'none' | 'minimal'&gt;;
+  };` | - |
 
 </details>
 
@@ -48917,6 +49512,10 @@ Options for direct LLM calls (bypassing AgentContext).
 |----------|------|-------------|
 | `instructions?` | `instructions?: string;` | System instructions (optional) |
 | `includeTools?` | `includeTools?: boolean;` | Include registered tools in the call. Default: false |
+| `tools?` | `tools?: Tool[];` | Explicit provider tool definitions for this direct call. This is useful for
+protocol-managed function/custom tools whose outputs the caller will return
+manually. When set, it takes precedence over `includeTools`. |
+| `toolChoice?` | `toolChoice?: TextGenerateOptions['tool_choice'];` | Tool selection for explicit direct-call tools. |
 | `temperature?` | `temperature?: number;` | Temperature for generation |
 | `maxOutputTokens?` | `maxOutputTokens?: number;` | Maximum output tokens |
 | `previousResponseId?` | `previousResponseId?: string;` | Continue a provider-stored response/interaction without resending its history. |
@@ -49600,7 +50199,7 @@ as object OR in contextIds, ranked by confidence × recency × predicateWeight
 
 ### ExecuteRoutineOptions `interface`
 
-📍 [`src/core/routineRunner.ts:87`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:94`](src/core/routineRunner.ts)
 
 Options for executing a routine.
 
@@ -50383,6 +50982,23 @@ Options for fetch operations
 | `family` | `family: DocumentFamily;` | - |
 | `mimeType` | `mimeType: string;` | - |
 | `confidence` | `confidence: 'high' | 'medium' | 'low';` | - |
+
+</details>
+
+---
+
+### FunctionCallOutputItem `interface`
+
+📍 [`src/domain/entities/Message.ts:53`](src/domain/entities/Message.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'function_call_output';` | - |
+| `call_id` | `call_id: string;` | - |
+| `output` | `output: string | ToolCallOutputContent[];` | - |
 
 </details>
 
@@ -52236,7 +52852,7 @@ resolver falls back to legacy behavior. |
 
 ### InputTextContent `interface`
 
-📍 [`src/domain/entities/Content.ts:21`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:23`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -53731,7 +54347,7 @@ Identical to MeetingSlotSuggestion in both google and microsoft types.
 
 ### Message `interface`
 
-📍 [`src/domain/entities/Message.ts:14`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:15`](src/domain/entities/Message.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -54373,7 +54989,7 @@ Configuration for initiating an outbound call.
 
 ### OutputTextContent `interface`
 
-📍 [`src/domain/entities/Content.ts:39`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:41`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -55574,7 +56190,7 @@ when this callback is omitted. |
 
 ### ReasoningItem `interface`
 
-📍 [`src/domain/entities/Message.ts:27`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:28`](src/domain/entities/Message.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -57997,7 +58613,7 @@ Text pipeline configuration — STT → Agent → TTS
 
 ### ThinkingContent `interface`
 
-📍 [`src/domain/entities/Content.ts:67`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:87`](src/domain/entities/Content.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -58470,7 +59086,7 @@ If empty/omitted, rule applies to ALL calls of this tool (blanket rule). |
 
 ### ValidationContext `interface`
 
-📍 [`src/core/routineRunner.ts:184`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:191`](src/core/routineRunner.ts)
 
 Context snapshot passed to the validation prompt builder.
 Contains everything the validator needs to evaluate task completion
@@ -58666,6 +59282,8 @@ Content types based on OpenAI Responses API format
 | `OUTPUT_TEXT` | `output_text` | - |
 | `TOOL_USE` | `tool_use` | - |
 | `TOOL_RESULT` | `tool_result` | - |
+| `CUSTOM_TOOL_USE` | `custom_tool_use` | - |
+| `CUSTOM_TOOL_RESULT` | `custom_tool_result` | - |
 | `THINKING` | `thinking` | - |
 
 </details>
@@ -58674,7 +59292,7 @@ Content types based on OpenAI Responses API format
 
 ### MessageRole `enum`
 
-📍 [`src/domain/entities/Message.ts:8`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:9`](src/domain/entities/Message.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -58995,7 +59613,7 @@ type ConnectorAuth = | OAuthConnectorAuth
 
 ### Content `type`
 
-📍 [`src/domain/entities/Content.ts:81`](src/domain/entities/Content.ts)
+📍 [`src/domain/entities/Content.ts:101`](src/domain/entities/Content.ts)
 
 ```typescript
 type Content = | InputTextContent
@@ -59004,6 +59622,8 @@ type Content = | InputTextContent
   | OutputTextContent
   | ToolUseContent
   | ToolResultContent
+  | CustomToolUseContent
+  | CustomToolResultContent
   | ThinkingContent
 ```
 
@@ -59354,10 +59974,15 @@ type InContextPriority = 'low' | 'normal' | 'high' | 'critical'
 
 ### InputItem `type`
 
-📍 [`src/domain/entities/Message.ts:35`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:66`](src/domain/entities/Message.ts)
 
 ```typescript
-type InputItem = Message | CompactionItem
+type InputItem = | Message
+  | CompactionItem
+  | ConfigurationUpdateItem
+  | CompactionTriggerItem
+  | FunctionCallOutputItem
+  | CustomToolCallOutputItem
 ```
 
 ---
@@ -59569,6 +60194,16 @@ type OpenAIRealtimeVoice = | 'alloy'
 
 ---
 
+### OpenAISafetyAlert `type`
+
+📍 [`src/capabilities/openai/OpenAISafetyAPI.ts:31`](src/capabilities/openai/OpenAISafetyAPI.ts)
+
+```typescript
+type OpenAISafetyAlert = SafetyAlert
+```
+
+---
+
 ### OutputFormat `type`
 
 📍 [`src/domain/types/SharedTypes.ts:68`](src/domain/types/SharedTypes.ts)
@@ -59583,7 +60218,7 @@ type OutputFormat = 'url' | 'base64' | 'buffer'
 
 ### OutputItem `type`
 
-📍 [`src/domain/entities/Message.ts:36`](src/domain/entities/Message.ts)
+📍 [`src/domain/entities/Message.ts:73`](src/domain/entities/Message.ts)
 
 ```typescript
 type OutputItem = Message | CompactionItem | ReasoningItem
@@ -60804,7 +61439,7 @@ export async function excelToMarkdownKV(
 
 ### executeRoutine `function`
 
-📍 [`src/core/routineRunner.ts:875`](src/core/routineRunner.ts)
+📍 [`src/core/routineRunner.ts:883`](src/core/routineRunner.ts)
 
 Execute a routine definition.
 

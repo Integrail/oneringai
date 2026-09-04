@@ -351,6 +351,13 @@ function formatRolloverSource(input: ContextRolloverSummaryInput): string {
             `[tool result id=${content.tool_use_id}${content.error ? ` error=${content.error}` : ''}] `
               + stringifyRolloverValue(content.content),
           ];
+        case ContentType.CUSTOM_TOOL_USE:
+          return [`[custom tool call ${content.name} id=${content.id}] ${content.input}`];
+        case ContentType.CUSTOM_TOOL_RESULT:
+          return [
+            `[custom tool result id=${content.tool_use_id}${content.error ? ` error=${content.error}` : ''}] `
+              + stringifyRolloverValue(content.content),
+          ];
         case ContentType.THINKING:
           return [];
       }
@@ -1795,7 +1802,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
    * Build tool calls array from accumulated map
    */
   private _buildToolCallsFromMap(
-    toolCallsMap: Map<string, { name: string; args: string; thoughtSignature?: string }>
+    toolCallsMap: Map<string, { name: string; args: string; thoughtSignature?: string; async?: boolean }>
   ): ToolCall[] {
     const toolCalls: ToolCall[] = [];
     const toolDefinitions = this.getEnabledToolDefinitions();
@@ -1807,7 +1814,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     }
     for (const [toolCallId, buffer] of toolCallsMap) {
       const toolDef = toolDefMap.get(buffer.name);
-      const isBlocking = toolDef?.blocking !== false;
+      const isBlocking = toolDef?.type !== 'function' || toolDef.blocking !== false;
       toolCalls.push({
         id: toolCallId,
         type: 'function',
@@ -1815,6 +1822,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
           name: buffer.name,
           arguments: buffer.args,
         },
+        ...(buffer.async !== undefined ? { async: buffer.async } : {}),
         blocking: isBlocking,
         state: ToolCallState.PENDING,
       });
@@ -1828,7 +1836,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
   private _addStreamingAssistantMessage(
     streamState: StreamState,
     toolCalls: ToolCall[],
-    toolCallsMap?: Map<string, { name: string; args: string; thoughtSignature?: string }>,
+    toolCallsMap?: Map<string, { name: string; args: string; thoughtSignature?: string; async?: boolean }>,
   ): void {
     const assistantText = streamState.getAllText();
     const assistantContent: Content[] = [];
@@ -2017,7 +2025,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
         // Stream LLM response and accumulate state (per-iteration state)
         const iterationStreamState = new StreamState(executionId, this.model);
-        const toolCallsMap = new Map<string, { name: string; args: string; thoughtSignature?: string }>();
+        const toolCallsMap = new Map<string, { name: string; args: string; thoughtSignature?: string; async?: boolean }>();
 
         // Stream from provider with hooks
         yield* this.streamGenerateWithHooks(
@@ -2572,7 +2580,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     iteration: number,
     executionId: string,
     streamState: StreamState,
-    toolCallsMap: Map<string, { name: string; args: string; thoughtSignature?: string }>
+    toolCallsMap: Map<string, { name: string; args: string; thoughtSignature?: string; async?: boolean }>
   ): AsyncIterableIterator<StreamEvent> {
     const llmStartTime = Date.now();
 
@@ -2628,7 +2636,12 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
           streamState.accumulateTextDelta(event.item_id, event.delta);
         } else if (event.type === StreamEventType.TOOL_CALL_START) {
           streamState.startToolCall(event.tool_call_id, event.tool_name);
-          toolCallsMap.set(event.tool_call_id, { name: event.tool_name, args: '', thoughtSignature: event.thought_signature });
+          toolCallsMap.set(event.tool_call_id, {
+            name: event.tool_name,
+            args: '',
+            thoughtSignature: event.thought_signature,
+            async: event.async,
+          });
         } else if (event.type === StreamEventType.TOOL_CALL_ARGUMENTS_DELTA) {
           streamState.accumulateToolArguments(event.tool_call_id, event.delta);
           const buffer = toolCallsMap.get(event.tool_call_id);
@@ -2735,7 +2748,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         for (const content of item.content) {
           if (content.type === ContentType.TOOL_USE) {
             const toolDef = toolMap.get(content.name);
-            const isBlocking = toolDef?.blocking !== false;
+            const isBlocking = toolDef?.type !== 'function' || toolDef.blocking !== false;
 
             const toolCall: ToolCall = {
               id: content.id,
@@ -2744,6 +2757,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
                 name: content.name,
                 arguments: content.arguments,
               },
+              ...(content.async !== undefined ? { async: content.async } : {}),
               blocking: isBlocking,
               state: ToolCallState.PENDING,
             };

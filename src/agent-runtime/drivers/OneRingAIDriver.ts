@@ -35,6 +35,7 @@ const ONERING_REASONING_EFFORTS = new Set<RuntimeReasoningEffort>([
   'max',
 ]);
 const DEFAULT_MODEL_REASONING_CONTROLS: Readonly<Record<string, NormalizedReasoningControls>> = {
+  'gpt-6-astra': reasoningControls(['low', 'medium', 'high', 'xhigh', 'max']),
   'gpt-5.6-sol': reasoningControls(['low', 'medium', 'high', 'xhigh', 'max']),
   'gpt-5.6-terra': reasoningControls(['low', 'medium', 'high', 'xhigh', 'max']),
   'gpt-5.6-luna': reasoningControls(['low', 'medium', 'high', 'xhigh', 'max']),

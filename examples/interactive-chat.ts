@@ -571,8 +571,7 @@ Example endpoints:
       conversationHistory.push(...newItems);
       conversationHistory.push(
         ...response.output.filter(
-          (item): item is InputItem =>
-            item.type === 'message' || item.type === 'compaction'
+          (item) => item.type === 'message' || item.type === 'compaction'
         )
       );
 

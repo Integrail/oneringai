@@ -135,6 +135,8 @@ export type {
   OutputTextContent,
   ToolUseContent,
   ToolResultContent,
+  CustomToolUseContent,
+  CustomToolResultContent,
   ThinkingContent,
 } from '../domain/entities/Content.js';
 
@@ -146,6 +148,11 @@ export type {
   OutputItem,
   CompactionItem,
   ReasoningItem,
+  ConfigurationUpdateItem,
+  CompactionTriggerItem,
+  FunctionCallOutputItem,
+  CustomToolCallOutputItem,
+  ToolCallOutputContent,
 } from '../domain/entities/Message.js';
 
 // Tools
@@ -153,6 +160,7 @@ export { ToolCallState, defaultDescribeCall, getToolCallDescription } from '../d
 export type {
   Tool,
   FunctionToolDefinition,
+  FreeformToolDefinition,
   BuiltInTool,
   ToolFunction,
   ToolCall,
@@ -406,6 +414,7 @@ export type {
   OutputTextDoneEvent,
   ReasoningDeltaEvent,
   ReasoningDoneEvent,
+  CompactionEvent,
   ToolCallStartEvent,
   ToolCallArgumentsDeltaEvent,
   ToolCallArgumentsDoneEvent,
@@ -423,6 +432,7 @@ export {
   isOutputTextDelta,
   isReasoningDelta,
   isReasoningDone,
+  isCompaction,
   isToolCallStart,
   isToolCallArgumentsDelta,
   isToolCallArgumentsDone,
@@ -452,6 +462,7 @@ export {
   AIError,
   ProviderNotFoundError,
   ProviderAuthError,
+  ProviderMisalignmentError,
   ProviderRateLimitError,
   ProviderContextLengthError,
   ToolExecutionError,

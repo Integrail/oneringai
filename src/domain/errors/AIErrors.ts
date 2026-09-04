@@ -39,6 +39,29 @@ export class ProviderAuthError extends AIError {
   }
 }
 
+/** OpenAI safety monitor stopped a request for a potential misalignment policy violation. */
+export class ProviderMisalignmentError extends AIError {
+  readonly providerCode = 'misalignment_policy_violation';
+
+  constructor(
+    public readonly providerName: string,
+    message: string,
+    public readonly requestId?: string,
+    public readonly responseId?: string,
+    public readonly details?: unknown,
+    originalError?: Error,
+  ) {
+    super(
+      `${providerName}: ${message}`,
+      'PROVIDER_MISALIGNMENT_POLICY_VIOLATION',
+      403,
+      originalError,
+    );
+    this.name = 'ProviderMisalignmentError';
+    Object.setPrototypeOf(this, ProviderMisalignmentError.prototype);
+  }
+}
+
 export class ProviderRateLimitError extends AIError {
   constructor(
     providerName: string,

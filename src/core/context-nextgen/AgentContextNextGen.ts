@@ -2743,6 +2743,15 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
         continue;
       }
 
+      if (item.type !== 'message') {
+        components.push({
+          name: `Provider Input: ${item.type}`,
+          content: JSON.stringify(item),
+          tokenEstimate: 0,
+        });
+        continue;
+      }
+
       // item.type === 'message'
       const msg = item;
       const roleName = msg.role === MessageRole.DEVELOPER

@@ -102,6 +102,13 @@ export interface AdvancedTextCapabilities {
     /** Whether the adapter can surface and resume a host-managed MCP approval. */
     remoteMcpApproval: boolean;
   };
+  /** Responses-protocol extensions exposed through this provider/library integration. */
+  responsesExtensions?: {
+    asyncToolCalling: boolean;
+    midTurnSteering: boolean;
+    configurationUpdates: boolean;
+    misalignmentMonitoring: boolean;
+  };
   dataHandling: {
     promptCaching: 'none' | 'provider_managed';
     batch: 'none' | 'provider_retained';

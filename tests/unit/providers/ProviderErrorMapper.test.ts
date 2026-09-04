@@ -10,6 +10,7 @@ import {
   ProviderAuthError,
   ProviderRateLimitError,
   ProviderContextLengthError,
+  ProviderMisalignmentError,
   ProviderError,
 } from '@/domain/errors/AIErrors.js';
 
@@ -43,6 +44,24 @@ describe('ProviderErrorMapper', () => {
   });
 
   describe('mapError - Authentication errors', () => {
+    it('maps nested OpenAI misalignment violations before generic 403 auth handling', () => {
+      const result = ProviderErrorMapper.mapError({
+        status: 403,
+        message: 'Request stopped by safety monitor',
+        request_id: 'req_123',
+        error: { code: 'misalignment_policy_violation', response_id: 'resp_123' },
+      }, context);
+
+      expect(result).toBeInstanceOf(ProviderMisalignmentError);
+      expect(result).toMatchObject({
+        code: 'PROVIDER_MISALIGNMENT_POLICY_VIOLATION',
+        providerCode: 'misalignment_policy_violation',
+        requestId: 'req_123',
+        responseId: 'resp_123',
+        statusCode: 403,
+      });
+    });
+
     it('should map 401 status to ProviderAuthError', () => {
       const error = { status: 401, message: 'Unauthorized' };
       const result = ProviderErrorMapper.mapError(error, context);

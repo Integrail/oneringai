@@ -30,11 +30,18 @@ import {
 } from '../domain/entities/Routine.js';
 import { ContentType } from '../domain/entities/Content.js';
 import type { Content } from '../domain/entities/Content.js';
-import type { Message, OutputItem } from '../domain/entities/Message.js';
+import type { InputItem, Message } from '../domain/entities/Message.js';
 import type { HookConfig } from '../capabilities/agents/types/HookTypes.js';
 import { extractJSON } from '../utils/jsonExtractor.js';
 import { logger } from '../infrastructure/observability/Logger.js';
-import { ProviderAuthError, ProviderContextLengthError, ProviderNotFoundError, ModelNotSupportedError, InvalidConfigError } from '../domain/errors/AIErrors.js';
+import {
+  InvalidConfigError,
+  ModelNotSupportedError,
+  ProviderAuthError,
+  ProviderContextLengthError,
+  ProviderMisalignmentError,
+  ProviderNotFoundError,
+} from '../domain/errors/AIErrors.js';
 import {
   validateAndResolveInputs,
   resolveTaskTemplates,
@@ -381,7 +388,7 @@ function defaultValidationPrompt(task: Task, context: ValidationContext): string
  * Extract a formatted tool call log from the conversation history.
  * Shows every tool_use → tool_result pair so the validator can see what actually happened.
  */
-function formatToolCallLog(conversation: ReadonlyArray<OutputItem>): string {
+function formatToolCallLog(conversation: ReadonlyArray<InputItem>): string {
   const calls: string[] = [];
 
   for (const item of conversation) {
@@ -448,6 +455,7 @@ function isTransientError(error: unknown): boolean {
   if (error instanceof ProviderAuthError) return false;
   if (error instanceof ProviderContextLengthError) return false;
   if (error instanceof ProviderNotFoundError) return false;
+  if (error instanceof ProviderMisalignmentError) return false;
   if (error instanceof ModelNotSupportedError) return false;
   if (error instanceof InvalidConfigError) return false;
   // Everything else (rate limits, timeouts, network errors, etc.) — retry

@@ -1,12 +1,30 @@
-# Model Registry and Provider API Audit — 2026-08-30
+# Model Registry and Provider API Audit — 2026-09-04
 
-**Release:** 1.1.3 registry refresh
+**Status:** current registry audit
 
 This audit covers every vendor represented in OneRingAI's model registries:
 OpenAI, Anthropic, Google, xAI, DeepSeek, Groq, Mistral, and Ollama. It includes
 text, realtime voice, TTS/STT, image, video, and embeddings. Official vendor
 documentation was treated as the source of truth; floating aliases and preview
 lifecycle notices were checked against release notes as well as model pages.
+
+## 2026-09-04 OpenAI update
+
+- Added GPT-6 Astra as the current limited-rollout flagship with Responses,
+  Chat Completions, and Batch support; `low` through `max` reasoning; text and
+  image input; a 1,050,000-token total context window, 922,000 maximum input,
+  and 128,000 maximum output. The registry's `features.input.tokens` therefore
+  records 922,000.
+- Recorded standard, cached-input, cache-write, output, long-context, Batch,
+  Flex, and Fast pricing from the official model page.
+- Enabled Astra in OneRingAI runtime reasoning controls, OpenAI hosted-tool
+  discovery, and GPT-5.6-or-later explicit prompt-cache handling.
+- Added end-to-end Responses support for async function/custom tools,
+  `configuration_update`, explicit `compaction_trigger`, and WebSocket
+  `response.steer`, backed by OpenAI SDK 7.10 types.
+- Added dedicated misalignment-policy error mapping and connector-first safety
+  alert retrieval. Explicit Astra Fast/priority requests are rejected against
+  the EU data-residency endpoint.
 
 ## 2026-08-30 refresh
 
@@ -61,7 +79,8 @@ notice.
 Provider implementation now covers:
 
 - OpenAI Responses options for current reasoning, service tiers, cache options,
-  GPT-5.6 long-context accounting, GPT Image 2, current transcription, Sora 2,
+  GPT-6 Astra and GPT-5.6 long-context accounting, GPT Image 2, current
+  transcription, Sora 2,
   GA Realtime WebSocket/WebRTC credentials, transcription/translation, SIP
   controls, tools, VAD, and telephony bridging.
 - Anthropic adaptive thinking and effort, current structured output, service
@@ -94,13 +113,13 @@ compatibility change.
 
 ## Current registry snapshot
 
-The text/realtime registry contains 95 records: OpenAI 48, Anthropic 15,
+The text/realtime registry contains 96 records: OpenAI 49, Anthropic 15,
 Google 15, xAI 12, and DeepSeek 5. Dedicated registries contain 20 image, 10
 video, 7 TTS, 14 STT, and 15 embedding records.
 
 Notable preferred/current families are:
 
-- OpenAI: GPT-5.6 Sol/Terra/Luna, GPT-5.5 Pro, GPT Image 2,
+- OpenAI: GPT-6 Astra, GPT-5.6 Sol/Terra/Luna, GPT-5.5 Pro, GPT Image 2,
   GPT Realtime 2.1, and GPT Transcribe/Live Transcribe. Sora 2/2 Pro remain
   callable but have published deprecation and retirement metadata.
 - Anthropic: Claude Opus 5, Mythos 5, Fable 5, Opus 4.8, and Sonnet 5.

@@ -331,13 +331,13 @@ describe('OneRingAIDriver', () => {
       driverConfig: { source: { type: 'binding', name: 'observable' } },
     }).openSession({ context: {}, policy: policy() });
     const run = await session.run('work', {
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-astra',
       reasoning: { effort: 'high' },
     });
     const result = await run.result;
     const events = await collect(run.events());
 
-    expect(result.configuration).toEqual({ model: 'gpt-5.6-sol', reasoning: { effort: 'high' } });
+    expect(result.configuration).toEqual({ model: 'gpt-6-astra', reasoning: { effort: 'high' } });
     expect(events.map((event) => event.type)).toEqual(expect.arrayContaining([
       'reasoning.delta',
       'reasoning.completed',

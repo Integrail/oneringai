@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] — 2026-09-04
+
+### Added
+
+- **GPT-6 Astra.** Added the limited-rollout flagship to the model registry,
+  Agent Runtime reasoning controls, hosted-tool discovery, pricing metadata,
+  and integration coverage.
+- **Astra Responses extensions.** Added typed async function/custom tools and
+  result continuations, persistent `configuration_update` input items,
+  `compaction_trigger`, a connector-first Responses WebSocket session with
+  mid-turn steering, and connector-first safety-alert retrieval.
+
+### Changed
+
+- **OpenAI SDK 7.10.** Updated the SDK baseline for Responses WebSocket,
+  steering, configuration-update, async-tool, and safety-alert types. Astra
+  requests now reject unsupported reasoning/sampling options and explicit
+  Fast mode through the EU data-residency endpoint before inference.
+
+### Fixed
+
+- **Misalignment error classification.** OpenAI
+  `misalignment_policy_violation` failures now map to a dedicated non-retryable
+  error with request/response correlation instead of generic 403 auth failure;
+  routine retries and provider circuit-breaker failures also stop for this error.
+- **Astra continuation fidelity.** OpenAI compaction items now remain in direct
+  response output order and direct streams emit normalized compaction events.
+  Async continuations in the guide now resend their tools and instructions.
+- **Astra request and steering validation.** Unknown Astra snapshots use the
+  family capability fallback, configuration updates validate effort and
+  single-agent constraints, incompatible async/programmatic/parallel requests
+  fail before inference, and steering accepts only non-empty user input.
+
 ## [1.1.5] — 2026-08-31
 
 ### Fixed

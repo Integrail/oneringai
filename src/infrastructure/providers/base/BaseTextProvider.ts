@@ -6,13 +6,17 @@ import { BaseProvider } from './BaseProvider.js';
 import { ITextProvider, ModelCapabilities, TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
-import { CircuitBreaker, DEFAULT_CIRCUIT_BREAKER_CONFIG } from '../../resilience/CircuitBreaker.js';
+import { CircuitBreaker } from '../../resilience/CircuitBreaker.js';
+import type { CircuitBreakerConfig } from '../../resilience/CircuitBreaker.js';
 import { logger, FrameworkLogger } from '../../observability/Logger.js';
 import { metrics } from '../../observability/Metrics.js';
 import type { IDisposable } from '../../../domain/interfaces/IDisposable.js';
 import { enforceContextLimit } from '../shared/enforceContextLimit.js';
 import type { AdvancedTextCapabilities } from '../../../domain/interfaces/IAdvancedInference.js';
-import { ProviderCapabilityNotSupportedError } from '../../../domain/errors/AIErrors.js';
+import {
+  ProviderCapabilityNotSupportedError,
+  ProviderMisalignmentError,
+} from '../../../domain/errors/AIErrors.js';
 import { Connector } from '../../../core/Connector.js';
 import {
   buildStructuredInstructionSuffix,
@@ -52,7 +56,18 @@ export abstract class BaseTextProvider extends BaseProvider implements ITextProv
     const providerName = this.name || 'unknown';
 
     // Create circuit breaker with provider name
-    const cbConfig = (this.config as any).circuitBreaker || DEFAULT_CIRCUIT_BREAKER_CONFIG;
+    const configuredCircuitBreaker = (this.config as {
+      circuitBreaker?: Partial<CircuitBreakerConfig>;
+    }).circuitBreaker;
+    const configuredFailureClassifier = configuredCircuitBreaker?.isRetryable;
+    const cbConfig: Partial<CircuitBreakerConfig> = {
+      ...configuredCircuitBreaker,
+      // A misalignment block is scoped to the affected conversation and must
+      // stop immediately. It must not count as provider instability or open a
+      // shared provider circuit.
+      isRetryable: (error) => !(error instanceof ProviderMisalignmentError)
+        && (configuredFailureClassifier?.(error) ?? true),
+    };
     this.circuitBreaker = new CircuitBreaker(
       `provider:${providerName}`,
       cbConfig

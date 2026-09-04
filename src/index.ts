@@ -220,6 +220,26 @@ export type { EmbeddingsCreateOptions } from './capabilities/embeddings/index.js
 export { createEmbeddingProvider } from './core/createEmbeddingProvider.js';
 export type { IEmbeddingProvider, EmbeddingContentPart, EmbeddingOptions, EmbeddingResponse } from './domain/interfaces/IEmbeddingProvider.js';
 
+// OpenAI Responses protocol extensions (Astra+)
+export {
+  OpenAIResponsesWebSocketSession,
+  OpenAISafetyAPI,
+} from './capabilities/openai/index.js';
+export type {
+  OpenAIResponsesCreateEventOptions,
+  OpenAIResponseSteerMessage,
+  OpenAIResponsesWebSocketSessionEvents,
+  OpenAIResponsesWebSocketSessionOptions,
+  OpenAIResponsesWebSocketTransport,
+  OpenAISafetyAlert,
+  ResponseSteerAcceptedEvent,
+  ResponseSteerFailedEvent,
+  ResponseSteerInput,
+  ResponseSteerPendingEvent,
+  ResponsesClientEvent,
+  ResponsesServerEvent,
+} from './capabilities/openai/index.js';
+
 // Speech Capabilities (Voice pseudo-streaming)
 export { VoiceStream, SentenceChunkingStrategy, AudioPlaybackQueue } from './capabilities/speech/index.js';
 export type {
@@ -730,6 +750,8 @@ export type {
   OutputTextContent,
   ToolUseContent,
   ToolResultContent,
+  CustomToolUseContent,
+  CustomToolResultContent,
   ThinkingContent,
 } from './domain/entities/Content.js';
 
@@ -741,6 +763,11 @@ export type {
   OutputItem,
   CompactionItem,
   ReasoningItem,
+  ConfigurationUpdateItem,
+  CompactionTriggerItem,
+  FunctionCallOutputItem,
+  CustomToolCallOutputItem,
+  ToolCallOutputContent,
 } from './domain/entities/Message.js';
 
 // Tools
@@ -752,6 +779,7 @@ export {
 export type {
   Tool,
   FunctionToolDefinition,
+  FreeformToolDefinition,
   BuiltInTool,
   ToolFunction,
   ToolCall,
@@ -875,6 +903,7 @@ export type {
   OutputTextDoneEvent,
   ReasoningDeltaEvent,
   ReasoningDoneEvent,
+  CompactionEvent,
   ToolCallStartEvent,
   ToolCallArgumentsDeltaEvent,
   ToolCallArgumentsDoneEvent,
@@ -892,6 +921,7 @@ export {
   isOutputTextDelta,
   isReasoningDelta,
   isReasoningDone,
+  isCompaction,
   isToolCallStart,
   isToolCallArgumentsDelta,
   isToolCallArgumentsDone,
@@ -934,6 +964,7 @@ export {
   AIError,
   ProviderNotFoundError,
   ProviderAuthError,
+  ProviderMisalignmentError,
   ProviderRateLimitError,
   ProviderContextLengthError,
   ToolExecutionError,

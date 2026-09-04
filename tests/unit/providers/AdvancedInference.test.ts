@@ -351,6 +351,14 @@ describe('advanced inference provider contracts', () => {
     const google = new GoogleTextProvider({ apiKey: 'test' });
     expect(anthropic.getAdvancedCapabilities('claude-opus-4-6').batch.supported).toBe(true);
     expect(anthropic.getAdvancedCapabilities('claude-3-7-sonnet-20250219').structuredOutput.jsonSchema).toBe('prompt');
+    expect(openai.getAdvancedCapabilities('gpt-6-astra').nativeTools).toContain('remote_mcp');
+    expect(openai.getAdvancedCapabilities('gpt-6-astra').responsesExtensions).toEqual({
+      asyncToolCalling: true,
+      midTurnSteering: true,
+      configurationUpdates: true,
+      misalignmentMonitoring: true,
+    });
+    expect(openai.getAdvancedCapabilities('gpt-5.4').responsesExtensions?.asyncToolCalling).toBe(false);
     expect(openai.getAdvancedCapabilities('gpt-5.4').nativeTools).toContain('remote_mcp');
     expect(openai.getAdvancedCapabilities('gpt-5.4').nativeToolOptions.remoteMcpApproval).toBe(false);
     expect(google.getAdvancedCapabilities('gemini-2.5-pro').nativeTools).toContain('web_search');
@@ -414,6 +422,10 @@ describe('advanced inference provider contracts', () => {
       mode: 'auto',
       breakpointMode: 'explicit',
     }));
+    const astra = (provider as any).buildBatchBody(normalize('gpt-6-astra', {
+      mode: 'auto',
+      breakpointMode: 'explicit',
+    }));
     const implicitWithMarkedContent = (provider as any).buildBatchBody(normalize('gpt-5.6-luna', {
       mode: 'auto',
       breakpointMode: 'implicit',
@@ -422,6 +434,7 @@ describe('advanced inference provider contracts', () => {
     expect(unsupported.input[0].content[0]).not.toHaveProperty('prompt_cache_breakpoint');
     expect(preBreakpoints.input[0].content[0]).not.toHaveProperty('prompt_cache_breakpoint');
     expect(enabled.input[0].content[0].prompt_cache_breakpoint).toEqual({ mode: 'explicit' });
+    expect(astra.input[0].content[0].prompt_cache_breakpoint).toEqual({ mode: 'explicit' });
     expect(implicitWithMarkedContent.input[0].content[0].prompt_cache_breakpoint)
       .toEqual({ mode: 'explicit' });
   });

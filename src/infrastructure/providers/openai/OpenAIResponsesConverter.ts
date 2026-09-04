@@ -13,9 +13,11 @@
  */
 
 import { InputItem, MessageRole } from '../../../domain/entities/Message.js';
+import type { OutputItem } from '../../../domain/entities/Message.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { Tool } from '../../../domain/entities/Tool.js';
 import { ContentType } from '../../../domain/entities/Content.js';
+import { InvalidConfigError } from '../../../domain/errors/AIErrors.js';
 import * as ResponsesAPI from 'openai/resources/responses/responses.js';
 
 type ResponsesAPIInputItem = ResponsesAPI.ResponseInputItem;
@@ -40,6 +42,8 @@ export class OpenAIResponsesConverter {
 
     // Convert InputItem[] to Responses API Items
     const items: ResponsesAPIInputItem[] = [];
+
+    this.validateInputItems(input);
 
     for (const item of input) {
       if (item.type === 'message') {
@@ -98,6 +102,7 @@ export class OpenAIResponsesConverter {
                 call_id: content.id,
                 name: content.name,
                 arguments: content.arguments,
+                ...(content.async !== undefined ? { async: content.async } : {}),
               } as ResponsesAPI.ResponseFunctionToolCall);
               break;
 
@@ -150,6 +155,26 @@ export class OpenAIResponsesConverter {
               }
               break;
             }
+
+            case 'custom_tool_use':
+              items.push({
+                type: 'custom_tool_call',
+                call_id: content.id,
+                name: content.name,
+                input: content.input,
+                ...(content.async !== undefined ? { async: content.async } : {}),
+              } as ResponsesAPI.ResponseCustomToolCall);
+              break;
+
+            case 'custom_tool_result':
+              items.push({
+                type: 'custom_tool_call_output',
+                call_id: content.tool_use_id,
+                output: typeof content.content === 'string'
+                  ? content.content
+                  : JSON.stringify(content.content),
+              } as ResponsesAPI.ResponseCustomToolCallOutput);
+              break;
           }
         }
 
@@ -172,6 +197,26 @@ export class OpenAIResponsesConverter {
           id: item.id,
           encrypted_content: item.encrypted_content,
         } as ResponsesAPI.ResponseCompactionItemParam);
+      } else if (item.type === 'configuration_update') {
+        items.push({
+          type: 'configuration_update',
+          ...(item.id ? { id: item.id } : {}),
+          reasoning: { effort: item.reasoning.effort },
+        } as ResponsesAPI.ResponseConfigurationUpdateItemParam);
+      } else if (item.type === 'compaction_trigger') {
+        items.push({ type: 'compaction_trigger' } as ResponsesAPI.ResponseInputItem.CompactionTrigger);
+      } else if (item.type === 'function_call_output') {
+        items.push({
+          type: 'function_call_output',
+          call_id: item.call_id,
+          output: this.convertToolCallOutput(item.output),
+        } as ResponsesAPI.ResponseInputItem.FunctionCallOutput);
+      } else if (item.type === 'custom_tool_call_output') {
+        items.push({
+          type: 'custom_tool_call_output',
+          call_id: item.call_id,
+          output: this.convertToolCallOutput(item.output),
+        } as ResponsesAPI.ResponseCustomToolCallOutput);
       }
     }
 
@@ -185,11 +230,28 @@ export class OpenAIResponsesConverter {
    * Convert Responses API response to our LLMResponse format
    */
   convertResponse(response: ResponsesAPIResponse): LLMResponse {
-    const content: any[] = [];
+    const output: OutputItem[] = [];
+    let content: any[] = [];
+    const allContent: any[] = [];
     let outputText = '';
     let messageId: string | undefined;
     const nativeToolCalls: Record<string, number> = {};
     const nativeToolEvents: NonNullable<LLMResponse['native_tool_events']> = [];
+    const appendContent = (part: any): void => {
+      content.push(part);
+      allContent.push(part);
+    };
+    const flushContent = (): void => {
+      if (content.length === 0) return;
+      output.push({
+        type: 'message',
+        id: messageId || response.id,
+        role: MessageRole.ASSISTANT,
+        content,
+      });
+      content = [];
+      messageId = undefined;
+    };
 
     // Process all output items
     for (const item of response.output || []) {
@@ -197,15 +259,19 @@ export class OpenAIResponsesConverter {
         // Extract message content
         const messageItem = item as ResponsesAPI.ResponseOutputMessage;
 
-        // Extract message ID (first message item wins)
-        if (!messageId && messageItem.id) {
+        // Keep separate provider messages separate while allowing preceding
+        // reasoning/tool items to remain attached to the following message.
+        if (messageId && messageItem.id && messageId !== messageItem.id) {
+          flushContent();
+        }
+        if (messageItem.id) {
           messageId = messageItem.id;
         }
 
         for (const contentItem of messageItem.content || []) {
           if (contentItem.type === 'output_text') {
             const textContent = contentItem as ResponsesAPI.ResponseOutputText;
-            content.push({
+            appendContent({
               type: 'output_text',
               text: textContent.text,
               annotations: textContent.annotations || [],
@@ -213,14 +279,35 @@ export class OpenAIResponsesConverter {
             outputText += textContent.text;
           }
         }
+      } else if (item.type === 'compaction') {
+        // Compaction items are canonical continuation state. Preserve their
+        // position relative to normalized message/tool content so stateless
+        // callers can replay response.output without losing context.
+        flushContent();
+        const compaction = item as ResponsesAPI.ResponseCompactionItem;
+        output.push({
+          type: 'compaction',
+          id: compaction.id,
+          encrypted_content: compaction.encrypted_content,
+        });
       } else if (item.type === 'function_call') {
         // Convert function_call to tool_use
         const functionCall = item as ResponsesAPI.ResponseFunctionToolCall;
-        content.push({
+        appendContent({
           type: 'tool_use',
           id: functionCall.call_id,
           name: functionCall.name,
           arguments: functionCall.arguments,
+          ...(functionCall.async !== undefined ? { async: functionCall.async } : {}),
+        });
+      } else if (item.type === 'custom_tool_call') {
+        const customCall = item as ResponsesAPI.ResponseCustomToolCall;
+        appendContent({
+          type: ContentType.CUSTOM_TOOL_USE,
+          id: customCall.call_id,
+          name: customCall.name,
+          input: customCall.input,
+          ...(customCall.async !== undefined ? { async: customCall.async } : {}),
         });
       } else if (item.type === 'reasoning') {
         // Extract reasoning summary as ThinkingContent (unified thinking API)
@@ -238,7 +325,7 @@ export class OpenAIResponsesConverter {
             summaryText = '';
           }
           if (summaryText) {
-            content.push({
+            appendContent({
               type: ContentType.THINKING,
               thinking: summaryText,
               persistInHistory: false,
@@ -259,16 +346,24 @@ export class OpenAIResponsesConverter {
         nativeToolEvents.push(this.toNativeToolEvent('remote_mcp', item));
       }
     }
+    flushContent();
+
+    // Keep the historical empty assistant message fallback for providers that
+    // return no normalized output at all. A compaction-only response is already
+    // complete continuation state and must remain compaction-only.
+    if (output.length === 0) {
+      output.push({
+        type: 'message',
+        id: response.id,
+        role: MessageRole.ASSISTANT,
+        content: [],
+      });
+    }
 
     // Use output_text helper from SDK
     if (!outputText) {
       outputText = response.output_text || '';
     }
-
-    // IMPORTANT: Use the actual message ID from output items, not the response ID
-    // Response IDs start with "resp_" but OpenAI expects message IDs starting with "msg_"
-    // when we send them back in subsequent requests
-    const finalMessageId = messageId || response.id;
 
     return {
       id: response.id,
@@ -276,18 +371,11 @@ export class OpenAIResponsesConverter {
       created_at: response.created_at,
       status: response.status || 'completed',
       model: response.model,
-      output: [
-        {
-          type: 'message',
-          id: finalMessageId,
-          role: MessageRole.ASSISTANT,
-          content,
-        },
-      ],
+      output,
       output_text: outputText,
       // Extract thinking text from content for convenience field
       ...((() => {
-        const thinkingTexts = content
+        const thinkingTexts = allContent
           .filter((c: any) => c.type === ContentType.THINKING)
           .map((c: any) => c.thinking as string)
           .filter(Boolean);
@@ -308,9 +396,52 @@ export class OpenAIResponsesConverter {
         ...(Object.keys(nativeToolCalls).length > 0 && {
           native_tool_calls: nativeToolCalls,
         }),
+        ...(response.service_tier ? { service_tier: response.service_tier } : {}),
       },
       ...(nativeToolEvents.length > 0 && { native_tool_events: nativeToolEvents }),
+      ...(response.error
+        ? { error: { type: response.error.code, message: response.error.message } }
+        : {}),
+      ...((response as ResponsesAPI.Response & { incomplete_details?: { reason?: string | null } })
+        .incomplete_details?.reason
+        ? { stop_reason: (response as ResponsesAPI.Response & { incomplete_details?: { reason?: string } }).incomplete_details!.reason }
+        : {}),
     };
+  }
+
+  private validateInputItems(input: InputItem[]): void {
+    for (let index = 0; index < input.length; index++) {
+      const item = input[index]!;
+      if (item.type === 'configuration_update' && input[index - 1]?.type === 'configuration_update') {
+        throw new InvalidConfigError(
+          'OpenAI Responses rejects adjacent configuration_update input items',
+        );
+      }
+      if (item.type === 'compaction_trigger' && index !== input.length - 1) {
+        throw new InvalidConfigError(
+          'OpenAI Responses requires compaction_trigger to be the final input item',
+        );
+      }
+    }
+  }
+
+  private convertToolCallOutput(
+    output: Extract<InputItem, { type: 'function_call_output' }>['output'],
+  ): string | Array<ResponsesAPI.ResponseInputText | ResponsesAPI.ResponseInputImage | ResponsesAPI.ResponseInputFile> {
+    if (typeof output === 'string') return output;
+    return output.map((content) => {
+      if (content.type === ContentType.INPUT_TEXT) {
+        return { type: 'input_text', text: content.text } as ResponsesAPI.ResponseInputText;
+      }
+      if (content.type === ContentType.INPUT_IMAGE_URL) {
+        return {
+          type: 'input_image',
+          image_url: content.image_url.url,
+          ...(content.image_url.detail ? { detail: content.image_url.detail } : {}),
+        } as ResponsesAPI.ResponseInputImage;
+      }
+      return { type: 'input_file', file_id: content.file_id } as ResponsesAPI.ResponseInputFile;
+    });
   }
 
   private toNativeToolEvent(
@@ -364,7 +495,23 @@ export class OpenAIResponsesConverter {
           description: funcDef.description || '',
           parameters: funcDef.parameters || null,
           strict: useStrict,
+          ...(tool.async !== undefined ? { async: tool.async } : {}),
+          ...(tool.allowedCallers ? { allowed_callers: tool.allowedCallers } : {}),
+          ...(tool.deferLoading !== undefined ? { defer_loading: tool.deferLoading } : {}),
+          ...(tool.outputSchema ? { output_schema: tool.outputSchema } : {}),
         } as ResponsesAPI.FunctionTool;
+      }
+
+      if (tool.type === 'custom') {
+        return {
+          type: 'custom',
+          name: tool.name,
+          ...(tool.description ? { description: tool.description } : {}),
+          ...(tool.format ? { format: tool.format } : {}),
+          ...(tool.async !== undefined ? { async: tool.async } : {}),
+          ...(tool.allowedCallers ? { allowed_callers: tool.allowedCallers } : {}),
+          ...(tool.deferLoading !== undefined ? { defer_loading: tool.deferLoading } : {}),
+        } as ResponsesAPI.CustomTool;
       }
 
       // Built-in tools (web_search, file_search, etc.)

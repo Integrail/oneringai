@@ -6,34 +6,25 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22.13%2B%20%7C%2024%2B-green.svg)](https://nodejs.org/)
 
-## What's new in v1.1.3
+## What's new in v1.1.6
 
-Version 1.1.3 refreshes OneRingAI's vendor-neutral model catalog against the
-official OpenAI, Anthropic, Google, xAI, DeepSeek, Groq, Mistral, and Ollama
-documentation as of August 30, 2026.
+Version 1.1.6 adds first-class GPT-6 Astra support across the model registry,
+direct Responses calls, streaming, and Agent Runtime reasoning controls.
 
-| Area | 1.1.3 outcome |
-|------|---------------|
-| Text models | Adds current Gemini 3.7, Grok 4.6, and DeepSeek V4 variants; refreshes pricing, context limits, endpoint support, preferred models, and lifecycle metadata |
-| Images and video | Adds Gemini Omni 1.1 Flash and Grok Imagine Image 2.0; updates Google and xAI defaults and retires elapsed image models |
-| Speech and embeddings | Adds Gemini 3.5 Transcribe/Live, Groq Whisper Turbo, Codestral Embed, EmbeddingGemma, and All MiniLM |
-| OpenAI migrations | Retired aliases no longer drive runtime defaults; Sora 2 and Sora 2 Pro remain callable but deprecated until the Videos API shutdown on September 24, 2026 |
-| Auditability | Every registry records verified official sources, and the release includes a consolidated model-registry audit |
+- **Async tools:** Mark function or custom tools with `async: true`, then return
+  results with the original `call_id` through a direct continuation.
+- **Mid-turn steering:** Use the connector-first
+  `OpenAIResponsesWebSocketSession` to steer active Astra responses.
+- **Reasoning and compaction:** Send `configuration_update` and
+  `compaction_trigger` items; compacted state is preserved in direct and
+  streaming output.
+- **Safety monitoring:** Handle `ProviderMisalignmentError` without automatic
+  retries and retrieve correlated alerts with `OpenAISafetyAPI`.
 
-### Upgrade notes
-
-- Existing connector-first `Agent`, Agent Runtime, and multimodal integrations
-  remain source-compatible.
-- Applications selecting models by registry metadata automatically avoid
-  retired entries. Explicitly configured deprecated models remain available
-  only while their vendors continue serving them.
-- Migrate Sora workloads before September 24, 2026; OpenAI has not announced a
-  direct replacement for the Videos API.
-
-Read the [complete 1.1.3 release notes](./CHANGELOG.md#113--2026-08-30) and the
-[model registry audit](./docs/MODEL_REGISTRY_AUDIT.md).
-The preview [Agent Runtime guide](./USER_GUIDE.md#agent-runtime-preview)
-continues to cover complete OneRingAI and Codex SDK agent runtimes.
+OpenAI controls Astra availability by organization. Read the
+[complete 1.1.6 release notes](./CHANGELOG.md#116--2026-09-04), the
+[OneRingAI Astra guide](./USER_GUIDE.md#gpt-6-astra-responses-extensions), and
+the [official OpenAI model guide](https://developers.openai.com/api/docs/guides/latest-model).
 
 ## Built for coding agents
 
@@ -200,8 +191,7 @@ plugin lifecycle, stores, compaction, persistence, and custom plugins.
 
 ## Table of Contents
 
-- [What's new in v1.1.3](#whats-new-in-v113)
-- [Upgrade notes](#upgrade-notes)
+- [What's new in v1.1.6](#whats-new-in-v116)
 - [Built for coding agents](#built-for-coding-agents)
 - [Agent Runtime: run complete agents through one API](#agent-runtime-run-complete-agents-through-one-api)
 - [Meet AMOS: a terminal agent built with OneRingAI](#meet-amos-a-terminal-agent-built-with-oneringai)
@@ -299,9 +289,10 @@ Showcasing another amazing "built with oneringai": ["no saas" agentic business t
 - ✨ **Unified API** - One interface for 12 AI providers (OpenAI, Anthropic, Google, Vertex, Groq, Together, Perplexity, Grok, DeepSeek, Mistral, Ollama, Custom)
 - 🧩 **[Agent Runtime preview](./USER_GUIDE.md#agent-runtime-preview)** - Plug-compatible OneRingAI/Codex agent drivers with model and thinking selection, live reasoning/activity events, and capability-gated future interaction
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
-- 📊 **Model Registry v2** - Lifecycle, aliases, endpoints, official sources, and modality-aware pricing for 95 text/realtime models plus dedicated image, video, voice, STT, and embedding registries
+- 📊 **Model Registry v2** - Lifecycle, aliases, endpoints, official sources, and modality-aware pricing for 96 text/realtime models plus dedicated image, video, voice, STT, and embedding registries
 - 🎤 **Audio Capabilities** - Text-to-Speech and Speech-to-Text with OpenAI, Google, and xAI, including xAI WebSocket streaming
 - ☎️ **[OpenAI Realtime API](./USER_GUIDE.md#openai-realtime-api)** - GA voice agents, live transcription, and speech translation over WebSocket/WebRTC, plus SIP call control, tools, VAD, and Twilio bridging
+- 🧭 **[GPT-6 Astra Responses extensions](./USER_GUIDE.md#gpt-6-astra-responses-extensions)** - Async function/custom tools, WebSocket steering, persistent reasoning updates, safety-alert retrieval, and EU Fast-mode validation
 - 📞 **[xAI Voice Agent API](./USER_GUIDE.md#xai-realtime-voice-agent-api)** - JSON or binary audio, browser credentials, conversation resumption, reasoning controls, and SIP refer/hangup
 - 🖼️ **Image Generation** - GPT Image 2, Gemini 3.1 native image models, Imagen, and Grok Imagine generation/editing
 - 🎬 **Video Generation** - Callable OpenAI Sora 2 (with published retirement metadata), Google Veo/Omni, and Grok Imagine Video 1.5
@@ -2224,7 +2215,7 @@ console.log(ollamaModels.map(m => `${m.name} (${m.capabilities.defaultDimensions
 
 ### 14. Model Registry
 
-Schema-v2 metadata for 95 text/realtime models, with lifecycle, aliases,
+Schema-v2 metadata for 96 text/realtime models, with lifecycle, aliases,
 snapshots, endpoints, replacement models, pricing modes, context windows, and
 feature flags:
 
@@ -2232,9 +2223,9 @@ feature flags:
 import { getModelInfo, calculateCost, LLM_MODELS, MODEL_REGISTRY_SCHEMA_VERSION, Vendor } from '@everworker/oneringai';
 
 // Get model information
-const model = getModelInfo('gpt-5.6'); // alias resolves to gpt-5.6-sol
+const model = getModelInfo('gpt-6-astra');
 console.log(MODEL_REGISTRY_SCHEMA_VERSION); // 2
-console.log(model?.features.input.tokens);  // 1050000
+console.log(model?.features.input.tokens);  // 922000 maximum input (1,050,000 total context)
 console.log(model?.lifecycle);              // 'active'
 
 // Calculate costs
@@ -2250,13 +2241,14 @@ console.log(`Optimized: $${cachedCost}`); // $0.0035
 ```
 
 **Available text/realtime models:**
-- **OpenAI (48)**: GPT-5.6 Sol/Terra/Luna, GPT-5.5 Pro and earlier GPT/o-series, Deep Research, audio, Realtime 2.1/2/Translate, and open-weight models
+- **OpenAI (49)**: GPT-6 Astra, GPT-5.6 Sol/Terra/Luna, GPT-5.5 Pro and earlier GPT/o-series, Deep Research, audio, Realtime 2.1/2/Translate, and open-weight models
 - **Anthropic (15)**: Claude Opus 5, Mythos 5, Fable 5, Opus 4.8/4.7/4.6, Sonnet 5/4.6, and maintained legacy entries
-- **Google (14)**: Gemini 3.6 Flash, 3.5/3.1 families, live/image variants, and maintained Gemini 2.5 entries
-- **xAI (11)**: Grok 4.5, 4.3, Build 0.1, 4.20/4.1 families, and Grok Voice Think Fast 2.0/1.0
+- **Google (15)**: Gemini 3.7/3.6 Flash, 3.5/3.1 families, live/image variants, and maintained Gemini 2.5 entries
+- **xAI (12)**: Grok 4.6, 4.5, 4.3, Build 0.1, 4.20/4.1 families, and Grok Voice Think Fast 2.0/1.0
+- **DeepSeek (5)**: V4 Flash, V4 Pro, V4 Flash Vision Experimental, and retired compatibility records
 
 See the [complete Model Registry guide](./USER_GUIDE.md#model-registry) and
-[2026-08-08 vendor audit](./docs/MODEL_REGISTRY_AUDIT.md) for migration details,
+[2026-09-04 registry audit](./docs/MODEL_REGISTRY_AUDIT.md) for migration details,
 media registries, API-path changes, and official source links.
 
 ### 15. Streaming
@@ -3481,7 +3473,7 @@ Check your `.env` file and ensure the key is correct for that vendor.
 Each vendor has different model names. Check the [User Guide](./USER_GUIDE.md) for supported models.
 
 ### Vision not working
-Use a current vision-capable model: `gpt-5.6-terra`, `claude-fable-5`, or
+Use a current vision-capable model: `gpt-6-astra`, `claude-fable-5`, or
 `gemini-3.7-flash`.
 
 ## Contributing
@@ -3494,4 +3486,4 @@ MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-**Version:** 1.1.3 | **Last Updated:** 2026-08-30 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**
+**Version:** 1.1.6 | **Last Updated:** 2026-09-04 | **[User Guide](./USER_GUIDE.md)** | **[API Reference](./API_REFERENCE.md)** | **[Changelog](./CHANGELOG.md)**

@@ -12,6 +12,7 @@ import { OpenAIConfig } from '../../../domain/types/ProviderConfig.js';
 import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
 import { OpenAIResponsesConverter } from './OpenAIResponsesConverter.js';
 import { OpenAIResponsesStreamConverter } from './OpenAIResponsesStreamConverter.js';
+import { validateOpenAIResponsesRequest } from './OpenAIRequestValidator.js';
 import * as ResponsesAPI from 'openai/resources/responses/responses.js';
 import { getModelInfo } from '../../../domain/entities/Model.js';
 import { resolveModelCapabilities } from '../base/ModelCapabilityResolver.js';
@@ -30,9 +31,9 @@ import {
   ProviderCapabilityNotSupportedError,
 } from '../../../domain/errors/AIErrors.js';
 
-const OPENAI_EXTENDED_PROMPT_CACHE_MODELS = /^gpt-5\.(?:4|5|6)(?:-|$)/;
-const OPENAI_EXPLICIT_PROMPT_CACHE_MODELS = /^gpt-5\.(?:6|[7-9]|\d{2,})(?:-|$)/;
-const OPENAI_RESPONSES_TOOL_MODELS = /^(?:gpt-(?:4\.1|4o|5(?:\.|-|$))|o[134](?:-|$))/;
+const OPENAI_EXTENDED_PROMPT_CACHE_MODELS = /^gpt-(?:5\.(?:4|5|6)|(?:[6-9]|\d{2,})(?:\.\d+)?)(?:-|$)/;
+const OPENAI_EXPLICIT_PROMPT_CACHE_MODELS = /^gpt-(?:5\.(?:6|[7-9]|\d{2,})|(?:[6-9]|\d{2,})(?:\.\d+)?)(?:-|$)/;
+const OPENAI_RESPONSES_TOOL_MODELS = /^(?:gpt-(?:4\.1|4o|(?:[5-9]|\d{2,})(?:\.\d+)?)(?:-|$)|o[134](?:-|$))/;
 
 function getOpenAINativeTools(model: string): AdvancedTextCapabilities['nativeTools'] {
   if (!OPENAI_RESPONSES_TOOL_MODELS.test(model)) return [];
@@ -62,6 +63,7 @@ export class OpenAITextProvider extends BaseTextProvider {
         : this.getApiKey(),
       baseURL: this.getBaseURL(),
       organization: config.organization,
+      project: config.project,
       timeout: this.getTimeout(),
       maxRetries: this.getMaxRetries(),
     });
@@ -135,6 +137,7 @@ export class OpenAITextProvider extends BaseTextProvider {
 
         // Add reasoning config from unified thinking option
         this.applyReasoningConfig(params, options);
+        validateOpenAIResponsesRequest(options, params, this.getBaseURL());
 
         this.logger.debug(
           { model: options.model, toolCount: (params.tools as unknown[])?.length ?? 0 },
@@ -148,6 +151,15 @@ export class OpenAITextProvider extends BaseTextProvider {
           { model: options.model, duration: Date.now() - genStartTime },
           'generate: response received',
         );
+
+        if (response.error?.code === 'misalignment_policy_violation') {
+          throw Object.assign(new Error(response.error.message), {
+            code: response.error.code,
+            status: 403,
+            response_id: response.id,
+            error: response.error,
+          });
+        }
 
         // Convert response to our format
         return this.converter.convertResponse(response);
@@ -212,6 +224,7 @@ export class OpenAITextProvider extends BaseTextProvider {
 
       // Add reasoning config from unified thinking option
       this.applyReasoningConfig(params, options);
+      validateOpenAIResponsesRequest(options, params, this.getBaseURL());
 
       this.logger.debug(
         { model: options.model, toolCount: (params.tools as unknown[])?.length ?? 0 },
@@ -301,6 +314,12 @@ export class OpenAITextProvider extends BaseTextProvider {
         nativeWithTools: supportsStructuredOutput,
       },
       nativeTools,
+      responsesExtensions: {
+        asyncToolCalling: info?.features.asyncToolCalling === true,
+        midTurnSteering: info?.features.midTurnSteering === true,
+        configurationUpdates: info?.features.configurationUpdates === true,
+        misalignmentMonitoring: info?.features.misalignmentMonitoring === true,
+      },
       // The Responses API can request host approval, but OneRingAI does not yet
       // expose the mcp_approval_response continuation item. Only the normalized
       // no-approval execution path is currently executable end-to-end.
@@ -484,6 +503,7 @@ export class OpenAITextProvider extends BaseTextProvider {
     }
     this.applyPromptCacheConfig(body, options);
     this.applyReasoningConfig(body, options);
+    validateOpenAIResponsesRequest(options, body, this.getBaseURL());
     return body;
   }
 

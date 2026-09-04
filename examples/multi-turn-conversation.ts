@@ -55,7 +55,7 @@ async function main() {
 
   // Add assistant response to history
   conversationHistory.push(
-    ...response1.output.filter((item): item is InputItem => item.type === 'message' || item.type === 'compaction')
+    ...response1.output.filter((item) => item.type === 'message' || item.type === 'compaction')
   );
   totalTokens += response1.usage?.total_tokens || 0;
 
@@ -79,7 +79,7 @@ async function main() {
 
   // Add assistant response to history
   conversationHistory.push(
-    ...response2.output.filter((item): item is InputItem => item.type === 'message' || item.type === 'compaction')
+    ...response2.output.filter((item) => item.type === 'message' || item.type === 'compaction')
   );
   totalTokens += response2.usage?.total_tokens || 0;
 
@@ -101,7 +101,7 @@ async function main() {
   console.log('🤖 Assistant:', response3.output_text);
   totalTokens += response3.usage?.total_tokens || 0;
   conversationHistory.push(
-    ...response3.output.filter((item): item is InputItem => item.type === 'message' || item.type === 'compaction')
+    ...response3.output.filter((item) => item.type === 'message' || item.type === 'compaction')
   );
 
   console.log('\n\n📊 Conversation Summary');

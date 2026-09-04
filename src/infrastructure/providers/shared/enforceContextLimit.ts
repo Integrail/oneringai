@@ -35,6 +35,9 @@ function estimateInputItemTokens(item: InputItem): number {
   if (item.type === 'compaction') {
     return estimateTokens(item.encrypted_content ?? '');
   }
+  if (item.type !== 'message') {
+    return estimateDataTokens(item);
+  }
   // Message — sum text from all content entries
   let chars = 0;
   for (const c of item.content) {
@@ -123,6 +126,10 @@ function trimSingleItem(item: InputItem, maxTokens: number): InputItem {
       ...item,
       encrypted_content: item.encrypted_content.slice(0, maxChars),
     };
+  }
+
+  if (item.type !== 'message') {
+    return item;
   }
 
   // Message — truncate text content from the beginning

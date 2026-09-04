@@ -15,7 +15,8 @@ describe('Model Registry', () => {
   describe('MODEL_REGISTRY', () => {
     it('should include the complete audited model set', () => {
       const modelCount = Object.keys(MODEL_REGISTRY).length;
-      expect(modelCount).toBeGreaterThanOrEqual(95);
+      expect(modelCount).toBeGreaterThanOrEqual(96);
+      expect(MODEL_REGISTRY['gpt-6-astra']).toBeDefined();
       expect(MODEL_REGISTRY['gpt-5.6-sol']).toBeDefined();
       expect(MODEL_REGISTRY['claude-opus-5']).toBeDefined();
       expect(MODEL_REGISTRY['gemini-3.7-flash']).toBeDefined();
@@ -28,7 +29,7 @@ describe('Model Registry', () => {
       const openAIModels = Object.values(MODEL_REGISTRY).filter(
         (model) => model.provider === Vendor.OpenAI
       );
-      expect(openAIModels.length).toBeGreaterThanOrEqual(48);
+      expect(openAIModels.length).toBeGreaterThanOrEqual(49);
     });
 
     it('should include the audited Anthropic models', () => {
@@ -105,6 +106,7 @@ describe('Model Registry', () => {
 
   describe('LLM_MODELS constants', () => {
     it('should have OpenAI model constants', () => {
+      expect(LLM_MODELS[Vendor.OpenAI].GPT_6_ASTRA).toBe('gpt-6-astra');
       expect(LLM_MODELS[Vendor.OpenAI].GPT_5_2).toBe('gpt-5.2');
       expect(LLM_MODELS[Vendor.OpenAI].GPT_5_2_PRO).toBe('gpt-5.2-pro');
       expect(LLM_MODELS[Vendor.OpenAI].GPT_5_2_CODEX).toBe('gpt-5.2-codex');
@@ -269,6 +271,7 @@ describe('Model Registry', () => {
       const models = getModelsByVendor(Vendor.OpenAI);
       const modelNames = models.map((m) => m.name);
 
+      expect(modelNames).toContain('gpt-6-astra');
       expect(modelNames).toContain('gpt-5.3-codex');
       expect(modelNames).toContain('gpt-5.3-chat-latest');
       expect(modelNames).toContain('gpt-5.2');
@@ -403,6 +406,52 @@ describe('Model Registry', () => {
   });
 
   describe('Model data accuracy', () => {
+    it('should have correct GPT-6 Astra capabilities and pricing', () => {
+      const astra = getModelInfo('gpt-6-astra');
+
+      expect(astra).toMatchObject({
+        provider: Vendor.OpenAI,
+        lifecycle: 'active',
+        availability: 'limited',
+        preferred: true,
+        knowledgeCutoff: '2026-04-30',
+        endpoints: ['responses', 'chat_completions', 'batch'],
+        features: {
+          reasoning: true,
+          streaming: true,
+          structuredOutput: true,
+          functionCalling: true,
+          fineTuning: false,
+          vision: true,
+          reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+          asyncToolCalling: true,
+          midTurnSteering: true,
+          configurationUpdates: true,
+          misalignmentMonitoring: true,
+          input: { tokens: 922_000, cpm: 10, cpmCached: 1 },
+          output: { tokens: 128_000, cpm: 50 },
+        },
+      });
+      expect(astra?.features.pricing?.text).toMatchObject({
+        input: 10,
+        cachedInput: 1,
+        cacheWrite: 12.5,
+        output: 50,
+        longContext: {
+          thresholdTokens: 272_000,
+          input: 20,
+          cachedInput: 2,
+          cacheWrite: 25,
+          output: 75,
+        },
+      });
+      expect(astra?.features.pricing?.processingMultipliers).toEqual({
+        batch: 0.5,
+        flex: 0.5,
+        fast: 2,
+      });
+    });
+
     it('should have correct GPT-5.2 series pricing', () => {
       const gpt52 = getModelInfo('gpt-5.2');
       const pro = getModelInfo('gpt-5.2-pro');

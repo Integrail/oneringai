@@ -20,7 +20,7 @@ import type { ToolOptions } from './ToolManager.js';
 import { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
 import { PermissionPolicyManager } from './permissions/PermissionPolicyManager.js';
 import type { AgentPermissionsConfig, AgentPolicyConfig } from './permissions/types.js';
-import type { ToolFunction } from '../domain/entities/Tool.js';
+import type { Tool, ToolFunction } from '../domain/entities/Tool.js';
 import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
 import { AgentContextNextGen } from './context-nextgen/AgentContextNextGen.js';
 import type { AgentContextNextGenConfig, AuthIdentity, SerializedContextState } from './context-nextgen/types.js';
@@ -280,6 +280,16 @@ export interface DirectCallOptions {
 
   /** Include registered tools in the call. Default: false */
   includeTools?: boolean;
+
+  /**
+   * Explicit provider tool definitions for this direct call. This is useful for
+   * protocol-managed function/custom tools whose outputs the caller will return
+   * manually. When set, it takes precedence over `includeTools`.
+   */
+  tools?: Tool[];
+
+  /** Tool selection for explicit direct-call tools. */
+  toolChoice?: TextGenerateOptions['tool_choice'];
 
   /** Temperature for generation */
   temperature?: number;
@@ -1046,7 +1056,8 @@ export abstract class BaseAgent<
       model: this.model,
       input,
       instructions: options.instructions,
-      tools: options.includeTools ? this.getEnabledToolDefinitions() : undefined,
+      tools: options.tools ?? (options.includeTools ? this.getEnabledToolDefinitions() : undefined),
+      tool_choice: options.toolChoice,
       temperature: options.temperature,
       max_output_tokens: options.maxOutputTokens,
       previous_response_id: options.previousResponseId,
@@ -1130,7 +1141,8 @@ export abstract class BaseAgent<
       model: this.model,
       input,
       instructions: options.instructions,
-      tools: options.includeTools ? this.getEnabledToolDefinitions() : undefined,
+      tools: options.tools ?? (options.includeTools ? this.getEnabledToolDefinitions() : undefined),
+      tool_choice: options.toolChoice,
       temperature: options.temperature,
       max_output_tokens: options.maxOutputTokens,
       previous_response_id: options.previousResponseId,

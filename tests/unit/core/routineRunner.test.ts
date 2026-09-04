@@ -14,6 +14,7 @@ import { ContentType } from '@/domain/entities/Content.js';
 import type { RoutineDefinition } from '@/domain/entities/Routine.js';
 import { createRoutineDefinition } from '@/domain/entities/Routine.js';
 import type { ToolFunction } from '@/domain/entities/Tool.js';
+import { ProviderMisalignmentError } from '@/domain/errors/AIErrors.js';
 
 // ============================================================================
 // Mock Provider
@@ -569,6 +570,26 @@ describe('executeRoutine', () => {
 
       expect(execution.status).toBe('completed');
       expect(execution.plan.tasks[0]!.attempts).toBe(2);
+    });
+
+    it('does not retry a misalignment policy violation', async () => {
+      const routine = createRoutineDefinition({
+        name: 'Safety Stop',
+        description: 'Test',
+        tasks: [{ name: 'Blocked Task', description: 'Stops once', maxAttempts: 3 }],
+      });
+      mockGenerate.mockRejectedValue(new ProviderMisalignmentError(
+        'openai',
+        'The safety monitor stopped this response',
+        'req_1',
+        'resp_1',
+      ));
+
+      const execution = await executeRoutine(defaultOptions(routine));
+
+      expect(execution.status).toBe('failed');
+      expect(execution.plan.tasks[0]!.attempts).toBe(1);
+      expect(mockGenerate).toHaveBeenCalledOnce();
     });
 
     it('should fail after all retries with errors', async () => {

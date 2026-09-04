@@ -23,8 +23,35 @@ export interface FunctionToolDefinition {
     parameters?: JSONSchema;
     strict?: boolean; // Enforce schema strictly
   };
+  /**
+   * OpenAI Responses async tool calling. When true, a compatible model may
+   * continue its turn while the host executes this function. The eventual
+   * result must be returned with the original call ID.
+   *
+   * This is a provider protocol flag and is distinct from `blocking: false`,
+   * which controls OneRingAI's managed agent execution loop.
+   */
+  async?: boolean;
+  /** OpenAI tool invocation contexts. */
+  allowedCallers?: Array<'direct' | 'programmatic'>;
+  /** Defer this tool for provider tool-search discovery. */
+  deferLoading?: boolean;
+  /** Schema for the JSON value encoded in the function output string. */
+  outputSchema?: JSONSchema;
   blocking?: boolean; // Default: true (wait for result before continuing)
   timeout?: number; // Timeout in ms (default: 30000)
+}
+
+/** Free-form custom tool definition used by providers that accept text input. */
+export interface FreeformToolDefinition {
+  type: 'custom';
+  name: string;
+  description?: string;
+  format?: Record<string, unknown>;
+  /** OpenAI Responses async tool calling protocol flag. */
+  async?: boolean;
+  allowedCallers?: Array<'direct' | 'programmatic'>;
+  deferLoading?: boolean;
 }
 
 export interface BuiltInTool {
@@ -32,7 +59,7 @@ export interface BuiltInTool {
   blocking?: boolean;
 }
 
-export type Tool = FunctionToolDefinition | BuiltInTool;
+export type Tool = FunctionToolDefinition | FreeformToolDefinition | BuiltInTool;
 
 export enum ToolCallState {
   PENDING = 'pending', // Tool call identified, not yet executed
@@ -49,6 +76,8 @@ export interface ToolCall {
     name: string;
     arguments: string; // JSON string
   };
+  /** Whether the provider marked this as an async protocol call. */
+  async?: boolean;
   blocking: boolean; // Copied from tool definition
   state: ToolCallState;
   startTime?: Date;

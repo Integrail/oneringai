@@ -1,7 +1,7 @@
 # @everworker/oneringai - Complete User Guide
 
-**Version:** 1.1.3
-**Last Updated:** 2026-08-30
+**Version:** 1.1.6
+**Last Updated:** 2026-09-04
 
 A comprehensive guide to using all features of the @everworker/oneringai library.
 
@@ -20,6 +20,7 @@ A comprehensive guide to using all features of the @everworker/oneringai library
 3. [Basic Text Generation](#basic-text-generation)
    - [Structured Output (JSON)](#structured-output-json) — vendor-agnostic `responseFormat`, native or prompt fallback
 4. [Advanced Inference](#advanced-inference) — prompt caching, async batches, provider-hosted tools, telemetry, and data policy
+   - [GPT-6 Astra Responses extensions](#gpt-6-astra-responses-extensions) — async tools, steering, configuration updates, and safety monitoring
 5. [Connectors & Authentication](#connectors--authentication)
 6. [Agent Features](#agent-features)
    - [Instruction Templates](#instruction-templates) — `{{DATE}}`, `{{AGENT_ID}}`, custom `{{COMMAND:arg}}` with extensible registry
@@ -550,7 +551,7 @@ Recommended starting points in 1.0.0 are:
 
 | Workload | Recommended model/API |
 |----------|-----------------------|
-| Highest-capability OpenAI text/agents | `gpt-5.6-sol` (`gpt-5.6` alias) |
+| Highest-capability OpenAI text/agents | `gpt-6-astra` |
 | Balanced OpenAI production agents | `gpt-5.6-terra` |
 | Economical OpenAI high-throughput work | `gpt-5.6-luna` |
 | Anthropic frontier work | `claude-opus-5`; use `claude-sonnet-5` for a balanced general path |
@@ -907,6 +908,12 @@ interface AdvancedTextCapabilities {
     'web_search' | 'web_fetch' | 'code_execution' | 'file_search' | 'remote_mcp'
   >;
   nativeToolOptions: { remoteMcpApproval: boolean };
+  responsesExtensions?: {
+    asyncToolCalling: boolean;
+    midTurnSteering: boolean;
+    configurationUpdates: boolean;
+    misalignmentMonitoring: boolean;
+  };
   dataHandling: {
     promptCaching: 'none' | 'provider_managed';
     batch: 'none' | 'provider_retained';
@@ -934,6 +941,183 @@ wire mapping and usage/result conversion for that model family.
 
 This matrix is explanatory and can become stale as vendors change. Runtime code should branch on
 the capability object, never the table.
+
+### GPT-6 Astra Responses extensions
+
+GPT-6 Astra adds Responses protocol features that are not ordinary sampling
+options. OneRingAI supports them through direct Responses calls and a
+connector-first WebSocket session. Check
+`agent.getAdvancedCapabilities().responsesExtensions` before exposing the
+features for a selected model.
+
+#### Async function and custom tools
+
+Set top-level `async: true` on a function or free-form custom tool definition.
+The model may continue reasoning or answer independent parts while your
+application runs the tool. When the work finishes, continue from the latest
+response and return the result with the original `call_id`:
+
+```typescript
+import { Agent, ContentType, MessageRole, type Tool } from '@everworker/oneringai';
+
+const agent = Agent.create({ connector: 'openai-main', model: 'gpt-6-astra' });
+const astraInstructions = 'Produce a concise, sourced report.';
+const astraAsyncTools = [{
+  type: 'function',
+  function: {
+    name: 'slow_lookup',
+    description: 'Run a long database lookup',
+    parameters: {
+      type: 'object',
+      properties: { query: { type: 'string' } },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  async: true,
+}] satisfies Tool[];
+
+const first = await agent.runDirect('Start the report and run the slow lookup.', {
+  instructions: astraInstructions,
+  tools: astraAsyncTools,
+});
+
+const call = first.output
+  .flatMap((item) => item.type === 'message' ? item.content : [])
+  .find((content) => content.type === ContentType.TOOL_USE);
+
+if (call?.type === ContentType.TOOL_USE && call.async) {
+  const result = await runSlowLookup(JSON.parse(call.arguments));
+  const continued = await agent.runDirect([{
+    type: 'function_call_output',
+    call_id: call.id,
+    output: JSON.stringify(result),
+  }], {
+    previousResponseId: first.id,
+    instructions: astraInstructions,
+    tools: astraAsyncTools,
+  });
+  console.log(continued.output_text);
+}
+```
+
+Use `custom_tool_call_output` for a custom tool. Async calling is supported for
+application-executed function/custom tools, not provider-hosted tools or
+programmatic tool calling. Multi-agent requests with async tools must set
+`parallel_tool_calls: false`. This protocol flag is separate from OneRingAI's
+`blocking: false`: the latter controls the managed `Agent.run()` tool loop;
+protocol async calls use `runDirect()` / `streamDirect()` and host-managed
+continuations.
+
+#### Change reasoning effort without breaking the cached prefix
+
+Add a `configuration_update` input item before the next user message. Its
+reasoning effort persists for later continuations until replaced:
+
+```typescript
+const next = await agent.runDirect([
+  { type: 'configuration_update', reasoning: { effort: 'high' } },
+  {
+    type: 'message',
+    role: MessageRole.USER,
+    content: [{ type: 'input_text', text: 'Now prove the difficult part.' }],
+  },
+], {
+  previousResponseId: first.id,
+  instructions: astraInstructions,
+  tools: astraAsyncTools,
+});
+```
+
+Only Astra supports this item, and only in standard single-agent responses.
+Consecutive updates are rejected. It is
+incompatible with automatic context management and `truncation: 'auto'`;
+when explicit in-band compaction is needed, place one `compaction_trigger` as
+the final input item, then send a fresh configuration update after compaction.
+Direct responses retain encrypted compaction items in `response.output` in
+provider order, and direct streams emit `StreamEventType.COMPACTION`, so
+stateless applications can replay the canonical compacted state.
+Astra accepts `low`, `medium`, `high`, `xhigh`, and `max`—not `none` or
+`minimal`. OneRingAI also rejects Astra requests containing `temperature`,
+`top_p`, `top_logprobs`, or `include: ['message.output_text.logprobs']`.
+
+#### Mid-turn steering over WebSocket
+
+Steering is Astra-only and requires the Responses WebSocket transport:
+
+```typescript
+import { OpenAIResponsesWebSocketSession } from '@everworker/oneringai';
+
+const session = new OpenAIResponsesWebSocketSession({ connector: 'openai-main' });
+session.on('error', console.error);
+session.on('event', (event) => {
+  if (event.type === 'response.created') console.log(event.response.id);
+  if (event.type === 'response.steer.pending') {
+    // Supply the required tool outputs once; never rerun already-started tools.
+  }
+});
+
+await session.connect();
+session.createResponse({
+  model: 'gpt-6-astra',
+  input: 'Draft the migration plan.',
+  stream_id: 'planning',
+});
+session.steer('resp_active', 'Prioritize the zero-downtime path.');
+```
+
+Listen for `response.steer.accepted`, `.pending`, and `.failed`. Steering may
+end the active response as `incomplete` with stop reason `steered`, followed by
+an automatic successor. If `.pending` supplies required tool-result stubs,
+fill them from saved results and send one explicit `response.create` for that
+parent. The session deliberately exposes raw typed server events because the
+application owns pending tools, approvals, lanes, and reconnect ambiguity.
+
+#### Misalignment monitoring and safety alerts
+
+Pre-stream and streamed `misalignment_policy_violation` failures map to
+`ProviderMisalignmentError`, ahead of generic 403 authentication handling.
+Stop consequential actions, preserve request/tool records, and do not retry
+automatically. A `safety.alert.created` webhook can be correlated and retrieved
+with a project API key that has `api.safety.alerts.read`:
+
+```typescript
+import {
+  OpenAISafetyAPI,
+  ProviderMisalignmentError,
+} from '@everworker/oneringai';
+
+try {
+  await agent.runDirect('Continue the workflow');
+} catch (error) {
+  if (error instanceof ProviderMisalignmentError) {
+    console.error(error.requestId, error.responseId);
+  }
+}
+
+// After your webhook handler verifies safety.alert.created:
+const alert = await new OpenAISafetyAPI('openai-main').retrieveAlert(alertId);
+```
+
+There is no generic resume operation after an alert; decide the next action in
+trusted host code.
+
+#### Fast mode and EU data residency
+
+Request Fast mode with `vendorOptions: { serviceTier: 'fast' }` and inspect
+`response.usage.service_tier` for the provider-reported tier. Astra Fast mode
+is unavailable through the EU data residency endpoint. OneRingAI rejects
+explicit `fast`/`priority` requests when the connector uses
+`https://eu.api.openai.com/v1`; a project-level default is
+still ultimately enforced by OpenAI because it is not visible in the request.
+
+Official references: [latest model](https://developers.openai.com/api/docs/guides/latest-model),
+[async tool calling](https://developers.openai.com/api/docs/guides/async-tool-calling),
+[mid-turn steering](https://developers.openai.com/api/docs/guides/steering),
+[reasoning configuration updates](https://developers.openai.com/api/docs/guides/reasoning#change-reasoning-mid-conversation),
+[misalignment monitoring](https://developers.openai.com/api/docs/guides/safety-checks/misalignment-monitoring),
+and [Fast mode](https://developers.openai.com/api/docs/guides/fast-mode).
 
 ### Prompt caching
 
@@ -4953,6 +5137,12 @@ interface DirectCallOptions {
 
   /** Include registered tools (default: false) */
   includeTools?: boolean;
+
+  /** Explicit per-call definitions (used instead of registered tools) */
+  tools?: Tool[];
+
+  /** Tool-selection policy for explicit or included tools */
+  toolChoice?: 'auto' | 'required' | { type: 'function'; function: { name: string } };
 
   /** Temperature for generation */
   temperature?: number;
@@ -16357,7 +16547,7 @@ await agent.run('Show me my recent emails');
 
 ## Model Registry
 
-The library includes registry schema v2 metadata for 95 text/realtime models,
+The library includes registry schema v2 metadata for 96 text/realtime models,
 plus separate TTS, STT, image, video, and embedding registries.
 
 ### Using the Model Registry
@@ -16375,10 +16565,10 @@ import {
 } from '@everworker/oneringai';
 
 // Get model information
-const model = getModelInfo('gpt-5.6'); // alias -> gpt-5.6-sol
+const model = getModelInfo('gpt-6-astra');
 console.log(model.provider);                   // 'openai'
 console.log(MODEL_REGISTRY_SCHEMA_VERSION);   // 2
-console.log(model.features.input.tokens);     // 1050000
+console.log(model.features.input.tokens);     // 922000 maximum input (1,050,000 total context)
 console.log(model.features.output.tokens);    // 128000
 console.log(model.features.reasoning);        // true
 console.log(model.features.vision);           // true
@@ -16399,14 +16589,14 @@ console.log(`Optimized: $${cachedCost}`); // $0.0035
 // Get all models for a vendor
 const openaiModels = getModelsByVendor(Vendor.OpenAI);
 console.log(openaiModels.map(m => m.name));
-// ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', ...]
+// ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', ...]
 
 // Get all active models
 const activeModels = getActiveModels();
 console.log(activeModels.length); // lifecycle-aware active records only
 
 // Use model constants
-const flagship = LLM_MODELS[Vendor.OpenAI].GPT_5_6_SOL;
+const flagship = LLM_MODELS[Vendor.OpenAI].GPT_6_ASTRA;
 const efficient = LLM_MODELS[Vendor.OpenAI].GPT_5_6_LUNA;
 ```
 
@@ -16541,8 +16731,9 @@ interface ILLMDescription {
 
 ### Available Models
 
-**OpenAI (48 models):**
-- GPT-5.6: Sol, Terra, Luna (current family)
+**OpenAI (49 models):**
+- GPT-6: Astra (current flagship; limited rollout)
+- GPT-5.6: Sol, Terra, Luna
 - GPT-5.5 Pro
 - GPT-5.3: codex, chat-latest
 - GPT-5.2: standard, pro, codex, chat-latest
@@ -16566,17 +16757,21 @@ interface ILLMDescription {
 - Claude 4.x legacy: Opus 4.1, Opus 4, Sonnet 4
 - Claude 3.7: Sonnet
 
-**Google (14 models):**
-- Gemini 3.6 Flash; Gemini 3.5 and 3.5 Flash-Lite
+**Google (15 models):**
+- Gemini 3.7 and 3.6 Flash; Gemini 3.5 and 3.5 Flash-Lite
 - Gemini 3.1: Pro, Flash-Lite, Flash Image, Flash Live
 - Gemini 3 (preview): Flash, Pro Image
 - Gemini 2.5: Pro, Flash, Flash-Lite, Flash Image
 
-**Grok / xAI (11 models):**
-- Grok 4.5, Grok 4.3, and Grok Build 0.1
+**Grok / xAI (12 models):**
+- Grok 4.6, Grok 4.5, Grok 4.3, and Grok Build 0.1
 - Grok 4.20 (2M context, flagship): reasoning, non-reasoning, multi-agent
 - Grok 4.1 fast (2M context): reasoning, non-reasoning
 - Grok Voice Think Fast 2.0 and maintained 1.0 migration entries
+
+**DeepSeek (5 models):**
+- V4 Flash, V4 Pro, and V4 Flash Vision Experimental
+- Retired `deepseek-chat` and `deepseek-reasoner` compatibility records
 
 Dedicated media registries add GPT Image 2, Gemini 3.1 Flash/Lite Image, Grok
 Imagine Image Quality, Sora 2, Veo/Omni, Grok Imagine Video 1.5, current OpenAI
@@ -17697,7 +17892,7 @@ if (!toolManager.isDestroyed) {
 1. **Use appropriate models:**
    - `gpt-5.6-luna`, `gemini-3.5-flash-lite`, or `claude-sonnet-5` for low-latency/high-throughput work
    - `gpt-5.6-terra`, `gemini-3.7-flash`, or `grok-4.6` for balanced production agents
-   - `gpt-5.6-sol`, `gpt-5.5-pro`, or `claude-opus-5` for the most demanding reasoning and long-horizon work
+   - `gpt-6-astra`, `gpt-5.5-pro`, or `claude-opus-5` for the most demanding reasoning and long-horizon work
 
 2. **Leverage caching:**
    - Use provider-aware prompt caching where `getAdvancedCapabilities()` reports support
@@ -17977,8 +18172,9 @@ const oneRingDriver = new OneRingAIDriver({
 });
 ```
 
-The bundled Codex and OneRingAI maps cover the current GPT-5.6 Sol/Terra/Luna
-family and retain GPT-5.3 Codex. Unsupported efforts, disable requests, and token
+The bundled OneRingAI map covers GPT-6 Astra and GPT-5.6 Sol/Terra/Luna; the
+Codex map covers GPT-5.6 Sol/Terra/Luna, and both retain GPT-5.3 Codex.
+Unsupported efforts, disable requests, and token
 budgets fail before an API call. Known models marked as non-reasoning reject reasoning
 configuration in both drivers. For OneRingAI agents, model overrides also update the
 managed context's model and registry-derived context limit; an explicit
@@ -18156,4 +18352,4 @@ MIT License - see LICENSE file for details.
 ---
 
 **Last Updated:** 2026-08-30
-**Version:** 1.1.3
+**Version:** 1.1.6

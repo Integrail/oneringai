@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { OpenAIResponsesConverter } from '@/infrastructure/providers/openai/OpenAIResponsesConverter.js';
 import { MessageRole } from '@/domain/entities/Message.js';
 import { ContentType } from '@/domain/entities/Content.js';
+import { InvalidConfigError } from '@/domain/errors/AIErrors.js';
 import type * as ResponsesAPI from 'openai/resources/responses/responses.js';
 
 describe('OpenAIResponsesConverter', () => {
@@ -89,6 +90,32 @@ describe('OpenAIResponsesConverter', () => {
       });
     });
 
+    it('preserves async function and custom tool calls', () => {
+      const result = converter.convertResponse({
+        id: 'resp_async',
+        object: 'response',
+        created_at: 1,
+        status: 'completed',
+        model: 'gpt-6-astra',
+        output: [
+          {
+            type: 'function_call', call_id: 'call_fn', name: 'lookup',
+            arguments: '{}', async: true, status: 'completed',
+          },
+          {
+            type: 'custom_tool_call', call_id: 'call_custom', name: 'shell',
+            input: 'long task', async: true, status: 'completed',
+          },
+        ],
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+      } as any);
+
+      expect((result.output[0] as any).content).toEqual([
+        { type: 'tool_use', id: 'call_fn', name: 'lookup', arguments: '{}', async: true },
+        { type: 'custom_tool_use', id: 'call_custom', name: 'shell', input: 'long task', async: true },
+      ]);
+    });
+
     it('should handle response with reasoning item (GPT-5 models)', () => {
       const mockResponse: ResponsesAPI.Response = {
         id: 'resp_12345',
@@ -165,6 +192,48 @@ describe('OpenAIResponsesConverter', () => {
       // No message item, so fallback to response ID
       expect(result.output[0].id).toBe('resp_12345');
     });
+
+    it('preserves compaction items in provider output order', () => {
+      const result = converter.convertResponse({
+        id: 'resp_compacted',
+        object: 'response',
+        created_at: 1,
+        status: 'completed',
+        model: 'gpt-6-astra',
+        output: [
+          {
+            type: 'message', id: 'msg_before', status: 'completed', role: 'assistant',
+            content: [{ type: 'output_text', text: 'Before.', annotations: [] }],
+          },
+          { type: 'compaction', id: 'cmp_1', encrypted_content: 'opaque-state' },
+          {
+            type: 'message', id: 'msg_after', status: 'completed', role: 'assistant',
+            content: [{ type: 'output_text', text: 'After.', annotations: [] }],
+          },
+        ],
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+      } as any);
+
+      expect(result.output).toEqual([
+        expect.objectContaining({ type: 'message', id: 'msg_before' }),
+        { type: 'compaction', id: 'cmp_1', encrypted_content: 'opaque-state' },
+        expect.objectContaining({ type: 'message', id: 'msg_after' }),
+      ]);
+      expect(result.output_text).toBe('Before.After.');
+    });
+
+    it('keeps a compaction-only response compaction-only', () => {
+      const result = converter.convertResponse({
+        id: 'resp_compacted', object: 'response', created_at: 1,
+        status: 'completed', model: 'gpt-6-astra',
+        output: [{ type: 'compaction', id: 'cmp_1', encrypted_content: 'opaque-state' }],
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+      } as any);
+
+      expect(result.output).toEqual([
+        { type: 'compaction', id: 'cmp_1', encrypted_content: 'opaque-state' },
+      ]);
+    });
   });
 
   describe('convertInput() - Our format → Responses API', () => {
@@ -228,6 +297,52 @@ describe('OpenAIResponsesConverter', () => {
       expect(items[1].type).toBe('function_call_output');
       expect((items[1] as any).call_id).toBe('call_abc123');
       expect((items[1] as any).output).toBe('{"temp":22,"condition":"sunny"}');
+    });
+
+    it('converts Astra configuration updates and top-level async results', () => {
+      const { input } = converter.convertInput([
+        { type: 'configuration_update', reasoning: { effort: 'high' } },
+        { type: 'function_call_output', call_id: 'call_fn', output: '{"ok":true}' },
+        { type: 'custom_tool_call_output', call_id: 'call_custom', output: 'done' },
+        { type: 'compaction_trigger' },
+      ]);
+
+      expect(input).toEqual([
+        { type: 'configuration_update', reasoning: { effort: 'high' } },
+        { type: 'function_call_output', call_id: 'call_fn', output: '{"ok":true}' },
+        { type: 'custom_tool_call_output', call_id: 'call_custom', output: 'done' },
+        { type: 'compaction_trigger' },
+      ]);
+    });
+
+    it('rejects adjacent configuration updates and non-final compaction triggers', () => {
+      expect(() => converter.convertInput([
+        { type: 'configuration_update', reasoning: { effort: 'low' } },
+        { type: 'configuration_update', reasoning: { effort: 'high' } },
+      ])).toThrow(InvalidConfigError);
+      expect(() => converter.convertInput([
+        { type: 'compaction_trigger' },
+        { type: 'function_call_output', call_id: 'call_fn', output: 'done' },
+      ])).toThrow(InvalidConfigError);
+    });
+  });
+
+  describe('convertTools()', () => {
+    it('serializes async function and custom tools', () => {
+      expect(converter.convertTools([
+        {
+          type: 'function',
+          function: { name: 'lookup', parameters: { type: 'object' } },
+          async: true,
+        },
+        { type: 'custom', name: 'shell', async: true },
+      ])).toEqual([
+        {
+          type: 'function', name: 'lookup', description: '',
+          parameters: { type: 'object' }, strict: false, async: true,
+        },
+        { type: 'custom', name: 'shell', async: true },
+      ]);
     });
   });
 
